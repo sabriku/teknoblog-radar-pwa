@@ -185,8 +185,9 @@
     }).join('');
   }
 
-  async function fetchJson(url, options) {
-    const res = await fetch(url, options);
+  async function fetchJson(url, options = {}) {
+    const noStore = { cache: 'no-store', ...options };
+    const res = await fetch(url, noStore);
     const text = await res.text();
     let data = {};
     try { data = text ? JSON.parse(text) : {}; } catch {}
@@ -195,13 +196,13 @@
   }
 
   async function loadRecommendations() {
-    const data = await fetchJson(`/api/recommendations?sort=${encodeURIComponent(state.sort)}`);
+    const data = await fetchJson(`/api/recommendations?sort=${encodeURIComponent(state.sort)}&t=${Date.now()}`);
     state.items = Array.isArray(data?.items) ? data.items : [];
     renderItems();
   }
 
   async function loadSources() {
-    const data = await fetchJson('/api/sources');
+    const data = await fetchJson(`/api/sources?t=${Date.now()}`);
     state.sources = Array.isArray(data?.items) ? data.items : [];
     renderSources();
   }
@@ -234,7 +235,7 @@
 
     status.textContent = 'İçerikler yenileniyor...';
 
-    const data = await fetchJson(`/api/run-pipeline?token=${encodeURIComponent(token)}`);
+    const data = await fetchJson(`/api/run-pipeline?token=${encodeURIComponent(token)}&t=${Date.now()}`);
     await Promise.all([loadRecommendations(), loadSources()]);
 
     status.textContent = `İçerikler güncellendi. Alınan: ${data.ingested ?? 0}, işlenen: ${data.processed ?? 0}`;
