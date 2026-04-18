@@ -9,93 +9,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fira+Sans+Condensed:wght@500;600;700&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/styles.css?v=20260418-5" />
 </head>
 <body>
-  <div class="app-shell">
-    <header class="topbar">
-      <div>
-        <p class="eyebrow">Teknoblog Editör Aracı</p>
-        <h1>Radar</h1>
-      </div>
-      <div class="topbar-actions">
-        <button id="refreshBtn" class="button secondary">Veriyi yenile</button>
-        <button id="copySelectedBtn" class="button">Seçilen URL'leri kopyala</button>
-      </div>
-    </header>
-
-    <main class="layout">
-      <section class="panel main-panel">
-        <div class="filters">
-          <label>
-            Sırala
-            <select id="sortSelect">
-              <option value="total_score">Toplam</option>
-              <option value="discover_score">Discover</option>
-              <option value="traffic_score">Trafik</option>
-              <option value="conversion_score">Dönüşüm</option>
-              <option value="social_score">Sosyal</option>
-              <option value="editorial_score">Editoryal</option>
-              <option value="published_at">Tarih</option>
-            </select>
-          </label>
-
-          <label>
-            Tür
-            <select id="typeSelect">
-              <option value="all">Tümü</option>
-              <option value="hot_news">Hızlı haber</option>
-              <option value="launch">Lansman</option>
-              <option value="update">Güncelleme</option>
-              <option value="guide">Rehber</option>
-              <option value="comparison">Karşılaştırma</option>
-              <option value="deal">Fırsat</option>
-              <option value="analysis">Analiz</option>
-            </select>
-          </label>
-
-          <label class="range-wrap">
-            Minimum skor
-            <input type="range" min="0" max="100" value="0" id="scoreFilter">
-            <span id="scoreFilterValue">0</span>
-          </label>
-        </div>
-
-        <div id="statusBar" class="status-bar">Hazır</div>
-        <div id="cards" class="cards"></div>
-      </section>
-
-      <aside class="panel side-panel">
-        <section class="stack">
-          <h2>Yeni RSS kaynağı ekle</h2>
-          <form id="sourceForm" class="source-form">
-            <input name="name" placeholder="Kaynak adı" required />
-            <input name="rss_url" placeholder="RSS / Feed URL" required />
-            <input name="site_url" placeholder="Site URL" />
-            <div class="form-grid">
-              <select name="market_relevance">
-                <option value="global">Global</option>
-                <option value="turkey">Türkiye</option>
-                <option value="mixed">Karma</option>
-              </select>
-              <select name="source_type">
-                <option value="news">Haber</option>
-                <option value="official">Resmî</option>
-                <option value="deal">Fırsat</option>
-                <option value="blog">Blog</option>
-              </select>
-            </div>
-            <button class="button" type="submit">Kaynağı ekle</button>
-          </form>
-        </section>
-
-        <section class="stack">
-          <h2>Kaynaklar</h2>
-          <div id="sourcesList" class="sources-list"></div>
-        </section>
-      </aside>
-    </main>
-  </div>
-  <script src="/app.js?v=20260418-4?v=20260418-3" defer></script>
+  <div id="app"></div>
+  <script src="/app.js?v=20260418-5" defer></script>
 </body>
 </html>
