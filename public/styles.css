@@ -4,9 +4,9 @@
   --text: #10233f;
   --muted: #61738f;
   --border: #d9e1ee;
-  --primary: #0b57d0;
-  --primary-dark: #083b8f;
-  --chip: #edf3ff;
+  --primary: #f04a0a;
+  --primary-dark: #b53607;
+  --chip: #fff1eb;
   --success: #177245;
 }
 
@@ -86,7 +86,7 @@ select, input {
 }
 .status-bar {
   background: var(--chip);
-  border: 1px solid #d3e2ff;
+  border: 1px solid #ffd7c8;
   color: var(--primary-dark);
   padding: 10px 12px;
   border-radius: 12px;
@@ -164,7 +164,7 @@ select, input {
   border: 1px solid var(--border);
 }
 .button.ghost {
-  background: #f0f5ff;
+  background: #fff1eb;
   color: var(--primary-dark);
 }
 .stack { display: grid; gap: 12px; margin-bottom: 20px; }
