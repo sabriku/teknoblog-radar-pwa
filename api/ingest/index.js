@@ -130,6 +130,7 @@ export default async function handler(req, res) {
           const title = safeText(item.title);
           const url = safeText(item.url || item.link);
           const summary = safeText(item.summary || item.description);
+          const published_at = safeText(item.published_at || '') || null;
           let image_url = safeText(item.image_url || item.image || '');
           const content_hash = hashValue(`${title}|${url}`);
 
@@ -158,7 +159,7 @@ export default async function handler(req, res) {
             const patch = {};
             if (image_url && !current.image_url) patch.image_url = image_url;
             if (summary && (!current.summary || current.summary.length < summary.length)) patch.summary = summary;
-            if (item.published_at && !current.published_at) patch.published_at = item.published_at;
+            if (published_at && !current.published_at) patch.published_at = published_at;
 
             if (Object.keys(patch).length > 0) {
               const { error: updateError } = await supabase
@@ -178,12 +179,14 @@ export default async function handler(req, res) {
 
           const payload = {
             source_id: source.id,
+            source_name: source.name || '',
+            source_url: source.site_url || source.rss_url || source.feed_url || '',
             title,
             url,
             canonical_url: url,
             summary,
             image_url: image_url || null,
-            published_at: item.published_at || null,
+            published_at,
             content_hash,
             created_at: nowIso()
           };
