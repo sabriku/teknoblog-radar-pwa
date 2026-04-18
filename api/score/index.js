@@ -1,57 +1,79 @@
 import { getSupabaseAdmin, json, nowIso, hashValue } from '../_lib.js';
 
-function scoreTitle(title = '') {
+function clamp(value) {
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function scoreTitle(title = '', publishedAt = null) {
   const t = title.toLowerCase();
 
-  let traffic = 20;
-  let conversion = 10;
-  let discover = 15;
-  let social = 10;
-  let editorial = 15;
+  let traffic = 38;
+  let conversion = 24;
+  let discover = 34;
+  let social = 26;
+  let editorial = 36;
   let contentType = 'analysis';
 
   const strongBrands = [
     'apple', 'iphone', 'ipad', 'mac', 'samsung', 'galaxy', 'google', 'android',
     'microsoft', 'windows', 'openai', 'chatgpt', 'meta', 'intel', 'qualcomm',
-    'xiaomi', 'huawei', 'oneplus', 'sony', 'nvidia', 'amd', 'tesla'
+    'xiaomi', 'huawei', 'oneplus', 'sony', 'nvidia', 'amd', 'tesla', 'gemini'
   ];
 
-  const dealWords = ['discount', 'deal', 'sale', 'coupon', 'price', 'indirim', 'fiyat', 'kampanya'];
-  const launchWords = ['launch', 'announced', 'introduces', 'unveils', 'tanıttı', 'duyurdu'];
-  const updateWords = ['update', 'rollout', 'beta', 'one ui', 'ios', 'android 16', 'windows 11'];
+  const dealWords = ['discount', 'deal', 'sale', 'coupon', 'price', 'indirim', 'fiyat', 'kampanya', 'sepette', 'prime'];
+  const launchWords = ['launch', 'announced', 'introduces', 'unveils', 'reveals', 'tanıttı', 'duyurdu', 'çıktı'];
+  const updateWords = ['update', 'rollout', 'beta', 'one ui', 'ios', 'android 16', 'windows 11', 'patch', 'security'];
+  const aiWords = ['ai', 'yapay zeka', 'chatgpt', 'gemini', 'copilot', 'claude', 'openai'];
+  const urgencyWords = ['today', 'now', 'bugün', 'şimdi', 'son dakika', 'breaking'];
 
-  if (strongBrands.some(w => t.includes(w))) {
-    traffic += 15;
-    discover += 10;
+  if (strongBrands.some((w) => t.includes(w))) {
+    traffic += 14;
+    discover += 12;
     editorial += 10;
   }
 
-  if (dealWords.some(w => t.includes(w))) {
-    conversion += 25;
-    traffic += 10;
+  if (dealWords.some((w) => t.includes(w))) {
+    conversion += 30;
+    traffic += 14;
+    discover += 6;
     contentType = 'deal';
   }
 
-  if (launchWords.some(w => t.includes(w))) {
-    traffic += 15;
-    social += 15;
-    discover += 10;
+  if (launchWords.some((w) => t.includes(w))) {
+    traffic += 16;
+    social += 16;
+    discover += 12;
+    editorial += 6;
     contentType = 'launch';
   }
 
-  if (updateWords.some(w => t.includes(w))) {
-    traffic += 10;
-    discover += 10;
+  if (updateWords.some((w) => t.includes(w))) {
+    traffic += 12;
+    discover += 12;
     social += 10;
+    editorial += 6;
     contentType = 'update';
   }
 
+  if (aiWords.some((w) => t.includes(w))) {
+    discover += 12;
+    social += 10;
+    traffic += 8;
+    editorial += 6;
+  }
+
+  if (urgencyWords.some((w) => t.includes(w))) {
+    discover += 8;
+    traffic += 8;
+    social += 6;
+  }
+
   if (/\b(2022|2023|2024)\b/.test(t)) {
-    traffic -= 40;
-    conversion -= 20;
-    discover -= 30;
-    social -= 20;
-    editorial -= 20;
+    traffic -= 24;
+    conversion -= 12;
+    discover -= 18;
+    social -= 12;
+    editorial -= 12;
   }
 
   const blacklist = [
@@ -59,7 +81,7 @@ function scoreTitle(title = '') {
     'email marketing', 'how i get free traffic', 'best wordpress plugin'
   ];
 
-  if (blacklist.some(w => t.includes(w))) {
+  if (blacklist.some((w) => t.includes(w))) {
     traffic -= 35;
     conversion -= 35;
     discover -= 35;
@@ -67,16 +89,39 @@ function scoreTitle(title = '') {
     editorial -= 25;
   }
 
-  traffic = Math.max(0, Math.min(100, traffic));
-  conversion = Math.max(0, Math.min(100, conversion));
-  discover = Math.max(0, Math.min(100, discover));
-  social = Math.max(0, Math.min(100, social));
-  editorial = Math.max(0, Math.min(100, editorial));
+  if (publishedAt) {
+    const publishedMs = new Date(publishedAt).getTime();
+    if (Number.isFinite(publishedMs)) {
+      const ageHours = (Date.now() - publishedMs) / (1000 * 60 * 60);
+      if (ageHours <= 12) {
+        traffic += 10;
+        discover += 12;
+        social += 8;
+      } else if (ageHours <= 24) {
+        traffic += 8;
+        discover += 8;
+        social += 6;
+      } else if (ageHours <= 72) {
+        traffic += 4;
+        discover += 4;
+      } else if (ageHours > 720) {
+        traffic -= 18;
+        discover -= 18;
+        social -= 10;
+      }
+    }
+  }
 
-  const total = Math.round(
-    traffic * 0.30 +
-    conversion * 0.20 +
-    discover * 0.20 +
+  traffic = clamp(traffic);
+  conversion = clamp(conversion);
+  discover = clamp(discover);
+  social = clamp(social);
+  editorial = clamp(editorial);
+
+  const total = clamp(
+    traffic * 0.28 +
+    conversion * 0.18 +
+    discover * 0.24 +
     social * 0.10 +
     editorial * 0.20
   );
@@ -122,7 +167,7 @@ export default async function handler(req, res) {
     const errors = [];
 
     for (const row of rows || []) {
-      const scores = scoreTitle(row.title || '');
+      const scores = scoreTitle(row.title || '', row.published_at || row.created_at || null);
       const url = row.url || row.canonical_url || '';
       const title = row.title || '';
       const candidate_hash = hashValue(`${title}|${url}`);
@@ -130,7 +175,7 @@ export default async function handler(req, res) {
       const payload = {
         raw_feed_item_id: row.id,
         source_id: row.source_id || null,
-        source_name: sourceMap.get(String(row.source_id || '')) || '',
+        source_name: sourceMap.get(String(row.source_id || '')) || row.source_name || '',
         title,
         summary: row.summary || '',
         url,
