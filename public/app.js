@@ -5,6 +5,7 @@
     sort: 'total_score',
     selected: new Set(),
     refreshing: false,
+    cleaning: false,
     page: 1,
     pageSize: 20
   };
@@ -153,6 +154,20 @@
               </form>
               <div id="tb-source-form-status" style="margin-top:10px;font-size:13px;color:#4b5563"></div>
             </section>
+
+            <section style="border:1px solid #dbe3ef;border-radius:18px;background:#fff;padding:16px;box-shadow:0 6px 18px rgba(9,30,66,.06)">
+              <div style="font:700 22px/1 'Fira Sans Condensed',sans-serif;margin-bottom:12px">Haberleri Temizle</div>
+              <div style="display:flex;flex-direction:column;gap:10px">
+                <select id="tb-cleanup-period" style="padding:11px 12px;border:1px solid #d1d5db;border-radius:10px">
+                  <option value="all">Tüm haberler</option>
+                  <option value="1d">Son 1 gün</option>
+                  <option value="1w">Son 1 hafta</option>
+                  <option value="1m">Son 1 ay</option>
+                </select>
+                <button id="tb-cleanup" type="button" style="padding:11px 14px;border:0;border-radius:10px;background:#111827;color:#fff;font-weight:700;cursor:pointer">Seçili haberleri sil</button>
+              </div>
+              <div id="tb-cleanup-status" style="margin-top:10px;font-size:13px;color:#4b5563"></div>
+            </section>
           </aside>
         </div>
       </div>
@@ -172,6 +187,15 @@
     btn.style.opacity = isLoading ? '0.7' : '1';
     btn.style.cursor = isLoading ? 'wait' : 'pointer';
     btn.textContent = isLoading ? 'Yenileniyor...' : 'İçerikleri Yenile';
+  }
+
+  function setCleanupButtonState(isLoading) {
+    const btn = document.getElementById('tb-cleanup');
+    if (!btn) return;
+    btn.disabled = isLoading;
+    btn.style.opacity = isLoading ? '0.7' : '1';
+    btn.style.cursor = isLoading ? 'wait' : 'pointer';
+    btn.textContent = isLoading ? 'Siliniyor...' : 'Seçili haberleri sil';
   }
 
   function badge(label, value) {
@@ -371,12 +395,61 @@
       status.textContent = 'Puanlama ve aday listesi güncelleniyor...';
       const qs = `?token=${encodeURIComponent(token)}&t=${Date.now()}`;
       const scoreData = await fetchJson(`/api/score${qs}`, { timeoutMs: 90000 });
+      state.page = 1;
       status.textContent = 'Kartlar yenileniyor...';
       await Promise.allSettled([loadRecommendations(), loadSources()]);
       status.textContent = `İçerikler güncellendi. Alınan: ${ingest.totalIngested}, güncellenen: ${ingest.totalUpdated}, işlenen: ${scoreData.processed ?? 0}`;
     } finally {
       state.refreshing = false;
       setRefreshButtonState(false);
+    }
+  }
+
+  async function triggerCleanup() {
+    const status = document.getElementById('tb-cleanup-status');
+    const periodEl = document.getElementById('tb-cleanup-period');
+    const period = periodEl ? periodEl.value : 'all';
+    let token = localStorage.getItem('tb_radar_cron_token') || '';
+
+    if (!token) {
+      token = window.prompt('CRON_TOKEN değerini girin');
+      if (!token) {
+        status.textContent = 'Temizleme iptal edildi.';
+        return;
+      }
+      localStorage.setItem('tb_radar_cron_token', token);
+    }
+
+    const confirmTextMap = {
+      all: 'Tüm haberleri silmek üzeresiniz. Devam edilsin mi?',
+      '1d': 'Son 1 günün haberleri silinecek. Devam edilsin mi?',
+      '1w': 'Son 1 haftanın haberleri silinecek. Devam edilsin mi?',
+      '1m': 'Son 1 ayın haberleri silinecek. Devam edilsin mi?'
+    };
+
+    if (!window.confirm(confirmTextMap[period] || 'Seçili haberler silinecek. Devam edilsin mi?')) {
+      status.textContent = 'Temizleme iptal edildi.';
+      return;
+    }
+
+    state.cleaning = true;
+    setCleanupButtonState(true);
+    status.textContent = 'Haberler siliniyor...';
+
+    try {
+      const result = await fetchJson(`/api/sources?token=${encodeURIComponent(token)}&t=${Date.now()}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ period }),
+        timeoutMs: 60000
+      });
+      state.items = [];
+      state.page = 1;
+      await Promise.allSettled([loadRecommendations(), loadSources()]);
+      status.textContent = `Temizleme tamamlandı. Adaylar: ${result.deleted_topic_candidates ?? 0}, ham kayıtlar: ${result.deleted_raw_feed_items ?? 0}`;
+    } finally {
+      state.cleaning = false;
+      setCleanupButtonState(false);
     }
   }
 
@@ -435,6 +508,18 @@
       return;
     }
 
+    const cleanupBtn = e.target.closest('#tb-cleanup');
+    if (cleanupBtn) {
+      try {
+        await triggerCleanup();
+      } catch (err) {
+        state.cleaning = false;
+        setCleanupButtonState(false);
+        document.getElementById('tb-cleanup-status').textContent = `Hata: ${err.message}`;
+      }
+      return;
+    }
+
     const pageBtn = e.target.closest('[data-page-action]');
     if (pageBtn) {
       const action = pageBtn.getAttribute('data-page-action');
@@ -473,6 +558,7 @@
     try {
       await Promise.allSettled([loadRecommendations(), loadSources()]);
       setRefreshButtonState(false);
+      setCleanupButtonState(false);
     } catch (err) {
       const status = document.getElementById('tb-status');
       if (status) status.textContent = `Hata: ${err.message}`;
