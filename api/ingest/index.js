@@ -20,6 +20,7 @@ export default async function handler(req, res) {
     if (sourcesError) return json(res, 500, { error: sourcesError.message });
 
     let ingested = 0;
+    let updated = 0;
     const debug = [];
 
     for (const source of sources || []) {
@@ -35,7 +36,8 @@ export default async function handler(req, res) {
           headers: {
             'user-agent': 'Mozilla/5.0 TeknoblogRadarBot/1.0',
             'accept': 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8'
-          }
+          },
+          cache: 'no-store'
         });
 
         if (!response.ok) {
@@ -57,13 +59,30 @@ export default async function handler(req, res) {
 
           if (!title || !url) continue;
 
-          const { data: existing } = await supabase
+          const { data: existing, error: existingError } = await supabase
             .from('raw_feed_items')
-            .select('id')
+            .select('id,image_url,summary,published_at')
             .eq('content_hash', content_hash)
             .limit(1);
 
-          if (existing && existing.length > 0) continue;
+          if (existingError) continue;
+
+          if (existing && existing.length > 0) {
+            const current = existing[0];
+            const patch = {};
+            if (image_url && !current.image_url) patch.image_url = image_url;
+            if (summary && (!current.summary || current.summary.length < summary.length)) patch.summary = summary;
+            if (item.published_at && !current.published_at) patch.published_at = item.published_at;
+
+            if (Object.keys(patch).length > 0) {
+              const { error: updateError } = await supabase
+                .from('raw_feed_items')
+                .update(patch)
+                .eq('id', current.id);
+              if (!updateError) updated += 1;
+            }
+            continue;
+          }
 
           const payload = {
             source_id: source.id,
@@ -96,6 +115,7 @@ export default async function handler(req, res) {
     return json(res, 200, {
       ok: true,
       ingested,
+      updated,
       debug,
       finished_at: nowIso()
     });
