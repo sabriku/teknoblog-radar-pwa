@@ -1,11 +1,11 @@
 (() => {
-  const state = { items: [], sources: [], sort: 'total_score', selected: new Set() };
+  const state = { items: [], sources: [], sort: 'total_score', selected: new Set(), refreshing: false };
 
   const esc = (v) => String(v ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
+    .replace(/\"/g, '&quot;')
     .replace(/'/g, '&#39;');
 
   const pick = (...vals) => {
@@ -110,6 +110,15 @@
     return document.getElementById('tb-radar-root');
   }
 
+  function setRefreshButtonState(isLoading) {
+    const btn = document.getElementById('tb-refresh');
+    if (!btn) return;
+    btn.disabled = isLoading;
+    btn.style.opacity = isLoading ? '0.7' : '1';
+    btn.style.cursor = isLoading ? 'wait' : 'pointer';
+    btn.textContent = isLoading ? 'Yenileniyor...' : 'İçerikleri Yenile';
+  }
+
   function badge(label, value) {
     return `<span style="display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;background:#fff1eb;color:#b53607;font-size:12px;font-weight:700">${esc(label)} ${esc(value)}</span>`;
   }
@@ -122,7 +131,7 @@
     if (sort) sort.value = state.sort;
 
     const items = [...state.items].sort((a, b) => score(b, state.sort) - score(a, state.sort));
-    status.textContent = `${items.length} içerik listeleniyor`;
+    if (!state.refreshing) status.textContent = `${items.length} içerik listeleniyor`;
 
     if (!items.length) {
       grid.innerHTML = `<div style="padding:24px;border:1px solid #dbe3ef;border-radius:18px;background:#fff">Henüz içerik yok.</div>`;
@@ -186,23 +195,42 @@
   }
 
   async function fetchJson(url, options = {}) {
-    const noStore = { cache: 'no-store', ...options };
-    const res = await fetch(url, noStore);
-    const text = await res.text();
-    let data = {};
-    try { data = text ? JSON.parse(text) : {}; } catch {}
-    if (!res.ok) throw new Error(data?.error || text || `HTTP ${res.status}`);
-    return data;
+    const controller = new AbortController();
+    const timeoutMs = options.timeoutMs || 30000;
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const fetchOptions = {
+        cache: 'no-store',
+        ...options,
+        signal: controller.signal
+      };
+      delete fetchOptions.timeoutMs;
+
+      const res = await fetch(url, fetchOptions);
+      const text = await res.text();
+      let data = {};
+      try { data = text ? JSON.parse(text) : {}; } catch {}
+      if (!res.ok) throw new Error(data?.error || text || `HTTP ${res.status}`);
+      return data;
+    } catch (error) {
+      if (error?.name === 'AbortError') {
+        throw new Error('İstek zaman aşımına uğradı.');
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 
   async function loadRecommendations() {
-    const data = await fetchJson(`/api/recommendations?sort=${encodeURIComponent(state.sort)}&t=${Date.now()}`);
+    const data = await fetchJson(`/api/recommendations?sort=${encodeURIComponent(state.sort)}&t=${Date.now()}`, { timeoutMs: 15000 });
     state.items = Array.isArray(data?.items) ? data.items : [];
     renderItems();
   }
 
   async function loadSources() {
-    const data = await fetchJson(`/api/sources?t=${Date.now()}`);
+    const data = await fetchJson(`/api/sources?t=${Date.now()}`, { timeoutMs: 15000 });
     state.sources = Array.isArray(data?.items) ? data.items : [];
     renderSources();
   }
@@ -233,12 +261,18 @@
       localStorage.setItem('tb_radar_cron_token', token);
     }
 
+    state.refreshing = true;
+    setRefreshButtonState(true);
     status.textContent = 'İçerikler yenileniyor...';
 
-    const data = await fetchJson(`/api/run-pipeline?token=${encodeURIComponent(token)}&t=${Date.now()}`);
-    await Promise.all([loadRecommendations(), loadSources()]);
-
-    status.textContent = `İçerikler güncellendi. Alınan: ${data.ingested ?? 0}, işlenen: ${data.processed ?? 0}`;
+    try {
+      const data = await fetchJson(`/api/run-pipeline?token=${encodeURIComponent(token)}&t=${Date.now()}`, { timeoutMs: 45000 });
+      await Promise.allSettled([loadRecommendations(), loadSources()]);
+      status.textContent = `İçerikler güncellendi. Alınan: ${data.ingested ?? 0}, işlenen: ${data.processed ?? 0}`;
+    } finally {
+      state.refreshing = false;
+      setRefreshButtonState(false);
+    }
   }
 
   async function submitSourceForm(form) {
@@ -255,7 +289,8 @@
       await fetchJson('/api/sources', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        timeoutMs: 15000
       });
       form.reset();
       status.textContent = 'Kaynak eklendi.';
@@ -287,6 +322,8 @@
       try {
         await triggerRefresh();
       } catch (err) {
+        state.refreshing = false;
+        setRefreshButtonState(false);
         document.getElementById('tb-status').textContent = `Hata: ${err.message}`;
       }
       return;
@@ -319,7 +356,8 @@
   document.addEventListener('DOMContentLoaded', async () => {
     root();
     try {
-      await Promise.all([loadRecommendations(), loadSources()]);
+      await Promise.allSettled([loadRecommendations(), loadSources()]);
+      setRefreshButtonState(false);
     } catch (err) {
       const status = document.getElementById('tb-status');
       if (status) status.textContent = `Hata: ${err.message}`;
