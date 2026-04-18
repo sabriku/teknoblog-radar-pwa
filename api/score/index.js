@@ -1,4 +1,4 @@
-import { getSupabaseAdmin, json, nowIso } from '../_lib.js';
+import { getSupabaseAdmin, json, nowIso, hashValue } from '../_lib.js';
 
 function scoreTitle(title = '') {
   const t = title.toLowerCase();
@@ -111,18 +111,31 @@ export default async function handler(req, res) {
 
     if (error) return json(res, 500, { error: error.message });
 
+    const { data: sources } = await supabase
+      .from('sources')
+      .select('id,name');
+    const sourceMap = new Map((sources || []).map((s) => [String(s.id), s.name || '']));
+
     let processed = 0;
+    let inserted = 0;
+    let updated = 0;
+    const errors = [];
 
     for (const row of rows || []) {
       const scores = scoreTitle(row.title || '');
+      const url = row.url || row.canonical_url || '';
+      const title = row.title || '';
+      const candidate_hash = hashValue(`${title}|${url}`);
 
       const payload = {
         raw_feed_item_id: row.id,
         source_id: row.source_id || null,
-        title: row.title || '',
+        source_name: sourceMap.get(String(row.source_id || '')) || '',
+        title,
         summary: row.summary || '',
-        url: row.url || row.canonical_url || '',
+        url,
         image_url: row.image_url || null,
+        candidate_hash,
         content_type_hint: scores.content_type_hint,
         total_score: scores.total_score,
         traffic_score: scores.traffic_score,
@@ -131,14 +144,20 @@ export default async function handler(req, res) {
         social_score: scores.social_score,
         editorial_score: scores.editorial_score,
         status: 'active',
+        published_at: row.published_at || null,
         updated_at: nowIso()
       };
 
-      const { data: existing } = await supabase
+      const { data: existing, error: existingError } = await supabase
         .from('topic_candidates')
         .select('id')
         .eq('raw_feed_item_id', row.id)
         .limit(1);
+
+      if (existingError) {
+        errors.push(existingError.message);
+        continue;
+      }
 
       if (existing && existing.length > 0) {
         const { error: updateError } = await supabase
@@ -146,17 +165,34 @@ export default async function handler(req, res) {
           .update(payload)
           .eq('raw_feed_item_id', row.id);
 
-        if (!updateError) processed += 1;
+        if (!updateError) {
+          processed += 1;
+          updated += 1;
+        } else {
+          errors.push(updateError.message);
+        }
       } else {
         const { error: insertError } = await supabase
           .from('topic_candidates')
-          .insert(payload);
+          .insert({ ...payload, created_at: nowIso() });
 
-        if (!insertError) processed += 1;
+        if (!insertError) {
+          processed += 1;
+          inserted += 1;
+        } else {
+          errors.push(insertError.message);
+        }
       }
     }
 
-    return json(res, 200, { ok: true, processed, finished_at: nowIso() });
+    return json(res, 200, {
+      ok: true,
+      processed,
+      inserted,
+      updated,
+      errors: [...new Set(errors)].slice(0, 10),
+      finished_at: nowIso()
+    });
   } catch (error) {
     return json(res, 500, { error: error?.message || String(error), finished_at: nowIso() });
   }
