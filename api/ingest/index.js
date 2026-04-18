@@ -1,5 +1,10 @@
 import { json, getSupabaseAdmin, parseFeedItems, hashValue, chooseFeedUrl, safeText, nowIso } from '../_lib.js';
 
+function toPositiveInt(value, fallback) {
+  const n = Number.parseInt(String(value ?? ''), 10);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
 export default async function handler(req, res) {
   try {
     const token = req.query?.token || '';
@@ -9,21 +14,33 @@ export default async function handler(req, res) {
       return json(res, 401, { error: 'Yetkisiz istek' });
     }
 
+    const sourceLimit = Math.min(toPositiveInt(req.query?.source_limit, 6), 12);
+    const itemLimit = Math.min(toPositiveInt(req.query?.item_limit, 12), 20);
+    const startedAt = Date.now();
+    const hardStopMs = 45000;
+
     const supabase = getSupabaseAdmin();
 
     const { data: sources, error: sourcesError } = await supabase
       .from('sources')
       .select('*')
       .eq('is_active', true)
-      .order('priority_weight', { ascending: false });
+      .order('priority_weight', { ascending: false })
+      .limit(sourceLimit);
 
     if (sourcesError) return json(res, 500, { error: sourcesError.message });
 
     let ingested = 0;
     let updated = 0;
     const debug = [];
+    let processed_sources = 0;
 
     for (const source of sources || []) {
+      if (Date.now() - startedAt > hardStopMs) {
+        debug.push({ source: source.name, status: 'stopped', reason: 'Time budget reached' });
+        break;
+      }
+
       const feedUrl = chooseFeedUrl(source);
 
       if (!feedUrl) {
@@ -33,7 +50,7 @@ export default async function handler(req, res) {
 
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 12000);
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
 
         const response = await fetch(feedUrl, {
           headers: {
@@ -52,7 +69,8 @@ export default async function handler(req, res) {
         }
 
         const xml = await response.text();
-        const items = parseFeedItems(xml).slice(0, 20);
+        const items = parseFeedItems(xml).slice(0, itemLimit);
+        processed_sources += 1;
 
         debug.push({ source: source.name, status: 'fetched', feedUrl, count: items.length });
 
@@ -122,6 +140,9 @@ export default async function handler(req, res) {
       ok: true,
       ingested,
       updated,
+      processed_sources,
+      source_limit: sourceLimit,
+      item_limit: itemLimit,
       debug,
       finished_at: nowIso()
     });
