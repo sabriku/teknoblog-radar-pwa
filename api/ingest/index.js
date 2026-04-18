@@ -117,6 +117,12 @@ export default async function handler(req, res) {
         const items = parseFeedItems(xml).slice(0, itemLimit);
         processed_sources += 1;
         let ogLookups = 0;
+        let insertErrors = 0;
+        let updateErrors = 0;
+        let selectErrors = 0;
+        let insertedForSource = 0;
+        let updatedForSource = 0;
+        let sampleError = '';
 
         debug.push({ source: source.name, status: 'fetched', feedUrl, count: items.length });
 
@@ -135,7 +141,11 @@ export default async function handler(req, res) {
             .eq('content_hash', content_hash)
             .limit(1);
 
-          if (existingError) continue;
+          if (existingError) {
+            selectErrors += 1;
+            if (!sampleError) sampleError = existingError.message || 'select failed';
+            continue;
+          }
 
           const current = existing && existing.length > 0 ? existing[0] : null;
 
@@ -155,7 +165,13 @@ export default async function handler(req, res) {
                 .from('raw_feed_items')
                 .update(patch)
                 .eq('id', current.id);
-              if (!updateError) updated += 1;
+              if (!updateError) {
+                updated += 1;
+                updatedForSource += 1;
+              } else {
+                updateErrors += 1;
+                if (!sampleError) sampleError = updateError.message || 'update failed';
+              }
             }
             continue;
           }
@@ -176,8 +192,25 @@ export default async function handler(req, res) {
             .from('raw_feed_items')
             .insert(payload);
 
-          if (!insertError) ingested += 1;
+          if (!insertError) {
+            ingested += 1;
+            insertedForSource += 1;
+          } else {
+            insertErrors += 1;
+            if (!sampleError) sampleError = insertError.message || 'insert failed';
+          }
         }
+
+        debug.push({
+          source: source.name,
+          status: 'db_result',
+          inserted: insertedForSource,
+          updated: updatedForSource,
+          insertErrors,
+          updateErrors,
+          selectErrors,
+          error: sampleError || ''
+        });
       } catch (error) {
         debug.push({
           source: source.name,
