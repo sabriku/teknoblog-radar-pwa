@@ -1,5 +1,13 @@
 (() => {
-  const state = { items: [], sources: [], sort: 'total_score', selected: new Set(), refreshing: false };
+  const state = {
+    items: [],
+    sources: [],
+    sort: 'total_score',
+    selected: new Set(),
+    refreshing: false,
+    page: 1,
+    pageSize: 20
+  };
 
   const esc = (v) => String(v ?? '')
     .replace(/&/g, '&amp;')
@@ -22,6 +30,30 @@
     return el.value;
   }
 
+  function formatToday() {
+    return new Intl.DateTimeFormat('tr-TR', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      timeZone: 'Europe/Istanbul'
+    }).format(new Date());
+  }
+
+  function formatPublishedAt(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return new Intl.DateTimeFormat('tr-TR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'Europe/Istanbul'
+    }).format(date);
+  }
+
   const getUrl = (item) => pick(
     item?.url,
     item?.canonical_url,
@@ -42,13 +74,27 @@
 
   const getTitle = (item) => decodeEntities(pick(item?.title, 'Başlıksız içerik'));
   const getSummary = (item) => decodeEntities(pick(item?.summary, item?.excerpt, item?.description));
+  const getSourceName = (item) => pick(item?.source_name);
+  const getPublishedAt = (item) => pick(item?.published_at, item?.created_at, item?.updated_at);
   const score = (item, key) => Number.isFinite(Number(item?.[key])) ? Number(item[key]) : 0;
 
-  function getSourceName(item) {
-    const sourceId = item?.source_id;
-    if (!sourceId) return '';
-    const found = state.sources.find((source) => String(source.id) === String(sourceId));
-    return found?.name || '';
+  function getSortedItems() {
+    return [...state.items].sort((a, b) => {
+      if (state.sort === 'published_at') {
+        return new Date(getPublishedAt(b) || 0).getTime() - new Date(getPublishedAt(a) || 0).getTime();
+      }
+      return score(b, state.sort) - score(a, state.sort);
+    });
+  }
+
+  function getPagedItems() {
+    const items = getSortedItems();
+    const start = (state.page - 1) * state.pageSize;
+    return items.slice(start, start + state.pageSize);
+  }
+
+  function getTotalPages() {
+    return Math.max(1, Math.ceil(state.items.length / state.pageSize));
   }
 
   function root() {
@@ -60,7 +106,7 @@
         <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;justify-content:space-between;margin-bottom:16px">
           <div>
             <div style="font:700 32px/1 'Fira Sans Condensed',sans-serif;color:#f04a0a">Teknoblog İçerik Radar</div>
-            <div style="margin-top:8px;font-size:14px;color:#4b5563">Kaynakları tara, haber seç, URL kopyala</div>
+            <div style="margin-top:8px;font-size:14px;color:#4b5563">${esc(formatToday())}</div>
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
             <label for="tb-sort" style="font-size:13px;font-weight:600">Sıralama</label>
@@ -71,6 +117,7 @@
               <option value="conversion_score">Dönüşüm</option>
               <option value="social_score">Sosyal</option>
               <option value="editorial_score">Editoryal</option>
+              <option value="published_at">Tarih</option>
             </select>
             <button id="tb-refresh" type="button" style="padding:10px 14px;border:0;border-radius:10px;background:#f04a0a;color:#fff;font-weight:700;cursor:pointer">İçerikleri Yenile</button>
             <button id="tb-copy-selected" type="button" style="padding:10px 14px;border:1px solid #f04a0a;border-radius:10px;background:#fff;color:#f04a0a;font-weight:700;cursor:pointer">Seçilen URL'leri kopyala</button>
@@ -82,6 +129,7 @@
         <div style="display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:20px" id="tb-layout">
           <main>
             <div id="tb-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px"></div>
+            <div id="tb-pagination" style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:16px;flex-wrap:wrap"></div>
           </main>
 
           <aside style="display:flex;flex-direction:column;gap:16px">
@@ -130,6 +178,19 @@
     return `<span style="display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;background:#fff1eb;color:#b53607;font-size:12px;font-weight:700">${esc(label)} ${esc(value)}</span>`;
   }
 
+  function renderPagination() {
+    const wrap = document.getElementById('tb-pagination');
+    if (!wrap) return;
+    const totalPages = getTotalPages();
+    state.page = Math.min(state.page, totalPages);
+
+    wrap.innerHTML = `
+      <button type="button" data-page-action="prev" style="padding:9px 12px;border:1px solid #f04a0a;border-radius:10px;background:#fff;color:#f04a0a;font-weight:700;cursor:pointer" ${state.page <= 1 ? 'disabled style="opacity:.5;cursor:not-allowed"' : ''}>Önceki</button>
+      <div style="font-size:14px;color:#4b5563;font-weight:700">Sayfa ${state.page} / ${totalPages}</div>
+      <button type="button" data-page-action="next" style="padding:9px 12px;border:1px solid #f04a0a;border-radius:10px;background:#fff;color:#f04a0a;font-weight:700;cursor:pointer" ${state.page >= totalPages ? 'disabled style="opacity:.5;cursor:not-allowed"' : ''}>Sonraki</button>
+    `;
+  }
+
   function renderItems() {
     root();
     const grid = document.getElementById('tb-grid');
@@ -137,11 +198,12 @@
     const sort = document.getElementById('tb-sort');
     if (sort) sort.value = state.sort;
 
-    const items = [...state.items].sort((a, b) => score(b, state.sort) - score(a, state.sort));
-    if (!state.refreshing) status.textContent = `${items.length} içerik listeleniyor`;
+    const items = getPagedItems();
+    if (!state.refreshing) status.textContent = `${state.items.length} içerik listeleniyor`;
 
     if (!items.length) {
       grid.innerHTML = `<div style="padding:24px;border:1px solid #dbe3ef;border-radius:18px;background:#fff">Henüz içerik yok.</div>`;
+      renderPagination();
       return;
     }
 
@@ -151,6 +213,7 @@
       const title = getTitle(item);
       const summary = getSummary(item);
       const sourceName = getSourceName(item);
+      const publishedAt = formatPublishedAt(getPublishedAt(item));
       const checked = state.selected.has(url) ? 'checked' : '';
 
       return `
@@ -173,19 +236,23 @@
 
             <h3 style="margin:0;font:700 22px/1.25 'Fira Sans Condensed',sans-serif;color:#111827">${esc(title)}</h3>
 
+            <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:12px;color:#6b7280;font-weight:700">
+              <div>${esc(publishedAt)}</div>
+              <div>${esc(sourceName)}</div>
+            </div>
+
             <p style="margin:0;font-size:14px;line-height:1.55;color:#4b5563;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(summary)}</p>
 
-            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:2px;align-items:center;justify-content:space-between">
-              <div style="display:flex;flex-wrap:wrap;gap:8px">
-                <a href="${esc(url || '#')}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;justify-content:center;padding:10px 12px;border-radius:10px;background:#f04a0a;color:#fff;text-decoration:none;font-size:14px;font-weight:700;${url ? '' : 'pointer-events:none;opacity:.5;'}">Haberi Aç</a>
-                <button type="button" data-copy-url="${esc(url)}" style="padding:10px 12px;border:1px solid #f04a0a;border-radius:10px;background:#fff;color:#f04a0a;font-size:14px;font-weight:700;cursor:pointer">URL kopyala</button>
-              </div>
-              <div style="font-size:12px;color:#6b7280;font-weight:700;white-space:nowrap">${esc(sourceName)}</div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:2px;align-items:center;justify-content:flex-start">
+              <a href="${esc(url || '#')}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;justify-content:center;padding:10px 12px;border-radius:10px;background:#f04a0a;color:#fff;text-decoration:none;font-size:14px;font-weight:700;${url ? '' : 'pointer-events:none;opacity:.5;'}">Haberi Aç</a>
+              <button type="button" data-copy-url="${esc(url)}" style="padding:10px 12px;border:1px solid #f04a0a;border-radius:10px;background:#fff;color:#f04a0a;font-size:14px;font-weight:700;cursor:pointer">URL kopyala</button>
             </div>
           </div>
         </article>
       `;
     }).join('');
+
+    renderPagination();
   }
 
   function renderSources() {
@@ -225,9 +292,7 @@
       if (!res.ok) throw new Error(data?.error || text || `HTTP ${res.status}`);
       return data;
     } catch (error) {
-      if (error?.name === 'AbortError') {
-        throw new Error('İstek zaman aşımına uğradı.');
-      }
+      if (error?.name === 'AbortError') throw new Error('İstek zaman aşımına uğradı.');
       throw error;
     } finally {
       clearTimeout(timeoutId);
@@ -237,6 +302,8 @@
   async function loadRecommendations() {
     const data = await fetchJson(`/api/recommendations?sort=${encodeURIComponent(state.sort)}&t=${Date.now()}`, { timeoutMs: 15000 });
     state.items = Array.isArray(data?.items) ? data.items : [];
+    const totalPages = getTotalPages();
+    if (state.page > totalPages) state.page = totalPages;
     renderItems();
   }
 
@@ -277,9 +344,11 @@
     status.textContent = 'İçerikler yenileniyor...';
 
     try {
-      const data = await fetchJson(`/api/run-pipeline?token=${encodeURIComponent(token)}&t=${Date.now()}`, { timeoutMs: 45000 });
+      const qs = `?token=${encodeURIComponent(token)}&t=${Date.now()}`;
+      const ingest = await fetchJson(`/api/ingest${qs}`, { timeoutMs: 30000 });
+      const scoreData = await fetchJson(`/api/score${qs}`, { timeoutMs: 30000 });
       await Promise.allSettled([loadRecommendations(), loadSources()]);
-      status.textContent = `İçerikler güncellendi. Alınan: ${data.ingested ?? 0}, işlenen: ${data.processed ?? 0}`;
+      status.textContent = `İçerikler güncellendi. Alınan: ${ingest.ingested ?? 0}, güncellenen: ${ingest.updated ?? 0}, işlenen: ${scoreData.processed ?? 0}`;
     } finally {
       state.refreshing = false;
       setRefreshButtonState(false);
@@ -315,6 +384,7 @@
     const sort = e.target.closest('#tb-sort');
     if (sort) {
       state.sort = sort.value || 'total_score';
+      state.page = 1;
       renderItems();
       return;
     }
@@ -337,6 +407,15 @@
         setRefreshButtonState(false);
         document.getElementById('tb-status').textContent = `Hata: ${err.message}`;
       }
+      return;
+    }
+
+    const pageBtn = e.target.closest('[data-page-action]');
+    if (pageBtn) {
+      const action = pageBtn.getAttribute('data-page-action');
+      if (action === 'prev' && state.page > 1) state.page -= 1;
+      if (action === 'next' && state.page < getTotalPages()) state.page += 1;
+      renderItems();
       return;
     }
 
