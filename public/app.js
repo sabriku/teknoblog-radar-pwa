@@ -1,4 +1,6 @@
 (() => {
+  const TB_LOGO = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAAAAXNSR0IArs4c6QAAAMBlWElmTU0AKgAAAAgABwESAAMAAAABAAEAAAEaAAUAAAABAAAAYgEbAAUAAAABAAAAagEoAAMAAAABAAIAAAExAAIAAAAPAAAAcgEyAAIAAAAUAAAAgodpAAQAAAABAAAAlgAAAAAAAAEgAAAAAQAAASAAAAABUGl4ZWxtYXRvciAzLjkAADIwMjA6MTE6MDIgMTU6MTE6OTMAAAOgAQADAAAAAQABAACgAgAEAAAAAQAAAgCgAwAEAAAAAQAAAgAAAAAAzyTkvgAAAAlwSFlzAAAsSwAALEsBpT2WqQAABCZpVFh0WE1MOmNvbS5hZG9iZS54bXAAAAAAADx4OnhtcG1ldGEgeG1sbnM6eD0iYWRvYmU6bnM6bWV0YS8iIHg6eG1wdGs9IlhNUCBDb3JlIDUuNC4wIj4KICAgPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4KICAgICAgPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIKICAgICAgICAgICAgeG1sbnM6ZGM9Imh0dHA6Ly9wdXJsLm9yZy9kYy9lbGVtZW50cy8xLjEvIgogICAgICAgICAgICB4bWxuczp4bXA9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC8iCiAgICAgICAgICAgIHhtbWxuczp4aWY9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGlmLzEuMC8iCiAgICAgICAgICAgIHhtbWxuczp0aWZmPSJodHRwOi8vbnMuYWRvYmUuY29tL3RpZmYvMS4wLyI+CiAgICAgICAgIDxkYzpzdWJqZWN0PgogICAgICAgICAgICA8cmRmOkJhZy8+CiAgICAgICAgIDwvZGM6c3ViamVjdD4KICAgICAgICAgPHhtcDpNb2RpZnlEYXRlPjIwMjAtMTEtMDJUMTU6MTE6OTM8L3htcDpNb2RpZnlEYXRlPgogICAgICAgICA8eG1wOkNyZWF0b3JUb29sPlBpeGVsbWF0b3IgMy45PC94bXA6Q3JlYXRvclRvb2w+CiAgICAgICAgIDxleGlmOlBpeGVsWERpbWVuc2lvbj41MTI8L2V4aWY6UGl4ZWxYRGltZW5zaW9uPgogICAgICAgICA8ZXhpZjpQaXhlbFlEaW1lbnNpb24+NTEyPC9leGlmOlBpeGVsWURpbWVuc2lvbj4KICAgICAgICAgPGV4aWY6Q29sb3JTcGFjZT4xPC9leGlmOkNvbG9yU3BhY2U+CiAgICAgICAgIDx0aWZmOkNvbXByZXNzaW9uPjA8L3RpZmY6Q29tcHJlc3Npb24+CiAgICAgICAgIDx0aWZmOlhSZXNvbHV0aW9uPjI4ODwvdGlmZjpYUmVzb2x1dGlvbj4KICAgICAgICAgPHRpZmY6T3JpZW50YXRpb24+MTwvdGlmZjpPcmllbnRhdGlvbj4KICAgICAgICAgPHRpZmY6UmVzb2x1dGlvblVuaXQ+MjwvdGlmZjpPcmllbnRhdGlvblVuaXQ+CiAgICAgICAgIDx0aWZmOllSZXNvbHV0aW9uPjI4ODwvdGlmZjpZUmVzb2x1dGlvbj4KICAgICAgPC9yZGY6RGVzY3JpcHRpb24+CiAgIDwvcmRmOlJERj4KPC94OnhtcG1ldGEKTr4V/wAAQABJRU5ErkJggg==';
+
   const state = {
     items: [],
     sources: [],
@@ -143,9 +145,14 @@
     document.body.innerHTML = `
       <div id="tb-radar-root" style="max-width:1380px;margin:0 auto;padding:16px;font-family:'Open Sans',sans-serif;color:#111827;background:#f8fafc;min-height:100vh">
         <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;justify-content:space-between;margin-bottom:16px">
-          <div>
-            <div style="font:700 34px/1 'Fira Sans Condensed',sans-serif;color:#f04a0a">Teknoblog İçerik Radar</div>
-            <div style="margin-top:8px;font-size:14px;color:#475569">${esc(formatToday())}</div>
+          <div style="display:flex;align-items:center;gap:14px;min-width:0">
+            <div style="flex:0 0 auto;width:62px;height:62px;border-radius:18px;background:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 22px rgba(9,30,66,.10);border:1px solid #f1f5f9;overflow:hidden">
+              <img src="${TB_LOGO}" alt="Teknoblog logosu" style="width:46px;height:46px;object-fit:contain;display:block">
+            </div>
+            <div style="min-width:0">
+              <div style="font:700 34px/1 'Fira Sans Condensed',sans-serif;color:#f04a0a;letter-spacing:.2px">Teknoblog İçerik Radar</div>
+              <div style="margin-top:8px;font-size:14px;color:#475569">${esc(formatToday())}</div>
+            </div>
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
             <label for="tb-sort" style="font-size:13px;font-weight:700">Sıralama</label>
@@ -222,6 +229,7 @@
     const style = document.createElement('style');
     style.textContent = `
       @media (max-width:980px){#tb-layout{grid-template-columns:1fr!important}}
+      @media (max-width:720px){#tb-radar-root{padding:14px} #tb-radar-root img[alt="Teknoblog logosu"]{width:40px!important;height:40px!important} }
       #tb-grid.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:16px}
       #tb-grid.list{display:flex;flex-direction:column;gap:12px}
     `;
