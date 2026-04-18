@@ -82,11 +82,29 @@
   const getPublishedAt = (item) => pick(item?.published_at, item?.created_at, item?.updated_at);
   const score = (item, key) => Number.isFinite(Number(item?.[key])) ? Number(item[key]) : 0;
 
-  function scoreTone(value) {
-    if (value >= 80) return { text: 'Çok güçlü', bg: '#dcfce7', fg: '#166534', border: '#86efac' };
-    if (value >= 60) return { text: 'Güçlü', bg: '#dbeafe', fg: '#1d4ed8', border: '#93c5fd' };
-    if (value >= 40) return { text: 'Orta', bg: '#fef3c7', fg: '#b45309', border: '#fcd34d' };
-    return { text: 'Düşük', bg: '#fee2e2', fg: '#b91c1c', border: '#fca5a5' };
+  function scoreTone(value, kind = 'general') {
+    const palettes = {
+      general: {
+        high: { bg: '#ffedd5', fg: '#9a3412', border: '#fdba74' },
+        mid: { bg: '#fff7ed', fg: '#c2410c', border: '#fdba74' },
+        low: { bg: '#fff1eb', fg: '#b45309', border: '#fed7aa' }
+      },
+      discover: {
+        high: { bg: '#dbeafe', fg: '#1d4ed8', border: '#93c5fd' },
+        mid: { bg: '#eff6ff', fg: '#2563eb', border: '#bfdbfe' },
+        low: { bg: '#f8fbff', fg: '#3b82f6', border: '#dbeafe' }
+      },
+      traffic: {
+        high: { bg: '#dcfce7', fg: '#166534', border: '#86efac' },
+        mid: { bg: '#f0fdf4', fg: '#15803d', border: '#bbf7d0' },
+        low: { bg: '#f7fee7', fg: '#4d7c0f', border: '#d9f99d' }
+      }
+    };
+
+    const palette = palettes[kind] || palettes.general;
+    const level = value >= 75 ? 'high' : value >= 50 ? 'mid' : 'low';
+    const label = value >= 75 ? 'Çok güçlü' : value >= 50 ? 'Güçlü' : value >= 35 ? 'Orta' : 'Düşük';
+    return { ...palette[level], text: label };
   }
 
   function sourceFilterOptions() {
@@ -240,9 +258,9 @@
     list.style.cssText += state.viewMode === 'list' ? active : passive;
   }
 
-  function scoreBadge(label, value) {
-    const tone = scoreTone(value);
-    return `<span style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:${tone.bg};color:${tone.fg};border:1px solid ${tone.border};font-size:12px;font-weight:700">${esc(label)} ${esc(value)} · ${esc(tone.text)}</span>`;
+  function scoreBadge(label, value, kind) {
+    const tone = scoreTone(value, kind);
+    return `<span style="display:inline-flex;align-items:center;gap:5px;padding:4px 8px;border-radius:999px;background:${tone.bg};color:${tone.fg};border:1px solid ${tone.border};font-size:11px;font-weight:700">${esc(label)} ${esc(value)} · ${esc(tone.text)}</span>`;
   }
 
   function renderSourceTabs() {
@@ -303,10 +321,10 @@
           </label>
         </div>
         <div style="padding:14px 14px 16px;display:flex;flex-direction:column;gap:10px">
-          <div style="display:flex;flex-wrap:wrap;gap:8px">
-            ${scoreBadge('Genel potansiyel', score(item, 'total_score'))}
-            ${scoreBadge('Discover uygunluğu', score(item, 'discover_score'))}
-            ${scoreBadge('Trafik potansiyeli', score(item, 'traffic_score'))}
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+            ${scoreBadge('Genel', score(item, 'total_score'), 'general')}
+            ${scoreBadge('Discover', score(item, 'discover_score'), 'discover')}
+            ${scoreBadge('Trafik', score(item, 'traffic_score'), 'traffic')}
           </div>
           <h3 style="margin:0;font:700 22px/1.25 'Fira Sans Condensed',sans-serif;color:#111827">${esc(title)}</h3>
           <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:12px;color:#64748b;font-weight:700">
@@ -340,10 +358,10 @@
           </label>
         </div>
         <div style="padding:14px 14px 16px;display:flex;flex-direction:column;gap:10px;min-width:0">
-          <div style="display:flex;flex-wrap:wrap;gap:8px">
-            ${scoreBadge('Genel potansiyel', score(item, 'total_score'))}
-            ${scoreBadge('Discover uygunluğu', score(item, 'discover_score'))}
-            ${scoreBadge('Trafik potansiyeli', score(item, 'traffic_score'))}
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+            ${scoreBadge('Genel', score(item, 'total_score'), 'general')}
+            ${scoreBadge('Discover', score(item, 'discover_score'), 'discover')}
+            ${scoreBadge('Trafik', score(item, 'traffic_score'), 'traffic')}
           </div>
           <h3 style="margin:0;font:700 24px/1.2 'Fira Sans Condensed',sans-serif;color:#111827">${esc(title)}</h3>
           <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:12px;color:#64748b;font-weight:700">
@@ -371,7 +389,7 @@
     const items = getPagedItems();
     const total = filteredItems().length;
     if (!state.refreshing) {
-      status.textContent = `${total} içerik listeleniyor`; 
+      status.textContent = `${total} içerik listeleniyor`;
     }
 
     grid.className = state.viewMode;
