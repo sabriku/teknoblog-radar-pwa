@@ -1,27 +1,39 @@
-const { json, sb } = require('./_lib');
+const { json, getSupabase, nowIso } = require('./_lib');
 
 module.exports = async (req, res) => {
   try {
-    if (req.method === 'GET') {
-      const sources = await sb('sources?select=*&order=priority_weight.desc', { method: 'GET' }, true);
-      return json(res, 200, { items: sources });
-    }
+    const supabase = await getSupabase();
+
     if (req.method === 'POST') {
       const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
       const payload = {
         name: body.name,
-        rss_url: body.rss_url,
+        feed_url: body.rss_url || body.feed_url,
+        rss_url: body.rss_url || body.feed_url,
         site_url: body.site_url || null,
         source_type: body.source_type || 'news',
         market_relevance: body.market_relevance || 'global',
         priority_weight: Number(body.priority_weight || 70),
-        trust_score: Number(body.trust_score || 75),
-        is_active: true,
+        trust_score: Number(body.trust_score || 70),
+        is_active: body.is_active !== false,
+        updated_at: nowIso(),
       };
-      const inserted = await sb('sources', { method: 'POST', body: JSON.stringify(payload) }, true);
-      return json(res, 200, { ok: true, item: inserted?.[0] || null });
+
+      if (!payload.name || !payload.rss_url) return json(res, 400, { error: 'name and rss_url are required' });
+
+      const { data, error } = await supabase.from('sources').insert(payload).select('*').single();
+      if (error) throw error;
+      return json(res, 200, { ok: true, item: data });
     }
-    return json(res, 405, { error: 'Method not allowed' });
+
+    const { data, error } = await supabase
+      .from('sources')
+      .select('id,name,feed_url,rss_url,site_url,source_type,market_relevance,priority_weight,trust_score,is_active')
+      .order('priority_weight', { ascending: false })
+      .limit(200);
+    if (error) throw error;
+
+    return json(res, 200, { items: data || [] });
   } catch (error) {
     return json(res, 500, { error: error.message });
   }

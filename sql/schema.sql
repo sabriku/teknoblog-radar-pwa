@@ -1,10 +1,10 @@
 create extension if not exists pgcrypto;
-create extension if not exists pg_net;
 
-create table if not exists sources (
+create table if not exists public.sources (
   id bigserial primary key,
   name text not null,
-  rss_url text not null unique,
+  feed_url text not null,
+  rss_url text,
   site_url text,
   source_type text not null default 'news',
   market_relevance text not null default 'global',
@@ -15,26 +15,29 @@ create table if not exists sources (
   updated_at timestamptz not null default now()
 );
 
-create table if not exists raw_feed_items (
+create table if not exists public.raw_feed_items (
   id bigserial primary key,
-  source_id bigint references sources(id) on delete cascade,
-  guid_hash text not null unique,
-  title text,
-  link text,
+  source_id bigint references public.sources(id) on delete set null,
+  title text not null,
+  url text not null,
+  canonical_url text,
   summary text,
   image_url text,
   published_at timestamptz,
-  fetched_at timestamptz not null default now()
+  content_hash text not null unique,
+  created_at timestamptz not null default now()
 );
 
-create table if not exists topic_candidates (
+create table if not exists public.topic_candidates (
   id bigserial primary key,
-  raw_item_id bigint unique references raw_feed_items(id) on delete cascade,
+  raw_feed_item_id bigint not null unique references public.raw_feed_items(id) on delete cascade,
+  source_id bigint references public.sources(id) on delete set null,
   title text not null,
-  url text not null,
   summary text,
+  url text not null,
   image_url text,
-  content_type_hint text not null default 'hot_news',
+  published_at timestamptz,
+  content_type_hint text not null default 'analysis',
   total_score integer not null default 0,
   traffic_score integer not null default 0,
   conversion_score integer not null default 0,
@@ -46,26 +49,13 @@ create table if not exists topic_candidates (
   updated_at timestamptz not null default now()
 );
 
-create table if not exists pipeline_runs (
+create table if not exists public.pipeline_runs (
   id bigserial primary key,
   started_at timestamptz not null default now(),
   finished_at timestamptz,
+  status text not null default 'running',
   ingested_count integer not null default 0,
   processed_count integer not null default 0,
-  status text not null default 'running',
-  notes text
+  notes text,
+  created_at timestamptz not null default now()
 );
-
-create or replace function touch_updated_at()
-returns trigger as $$
-begin
-  new.updated_at = now();
-  return new;
-end;
-$$ language plpgsql;
-
-create trigger trg_sources_updated before update on sources
-for each row execute procedure touch_updated_at();
-
-create trigger trg_topic_candidates_updated before update on topic_candidates
-for each row execute procedure touch_updated_at();

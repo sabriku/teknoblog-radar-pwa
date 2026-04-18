@@ -1,127 +1,101 @@
 <!doctype html>
 <html lang="tr">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Teknoblog Radar</title>
-  <meta name="theme-color" content="#0077b6">
-  <link rel="manifest" href="/manifest.webmanifest">
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" href="/icon-192.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&family=Fira+Sans+Condensed:wght@600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Sans+Condensed:wght@500;600;700&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <header class="topbar">
-    <div>
-      <div class="eyebrow">Editoryal Radar</div>
-      <h1>Teknoblog Radar</h1>
-    </div>
-    <div class="topbar-actions">
-      <button id="refreshBtn" class="btn primary">Veriyi yenile</button>
-      <button id="copySelectedBtn" class="btn">Seçilen URL'leri kopyala</button>
-    </div>
-  </header>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Teknoblog Editör Aracı</p>
+        <h1>Radar</h1>
+      </div>
+      <div class="topbar-actions">
+        <button id="refreshBtn" class="button secondary">Veriyi yenile</button>
+        <button id="copySelectedBtn" class="button">Seçilen URL'leri kopyala</button>
+      </div>
+    </header>
 
-  <main class="layout">
-    <section class="main-panel">
-      <div class="filters card">
-        <div class="filter-grid">
+    <main class="layout">
+      <section class="panel main-panel">
+        <div class="filters">
           <label>
-            <span>Sıralama</span>
+            Sırala
             <select id="sortSelect">
-              <option value="total">Toplam skor</option>
-              <option value="discover">Discover</option>
-              <option value="traffic">Trafik</option>
-              <option value="conversion">Dönüşüm</option>
-              <option value="social">Sosyal</option>
-              <option value="editorial">Editoryal</option>
+              <option value="total_score">Toplam</option>
+              <option value="discover_score">Discover</option>
+              <option value="traffic_score">Trafik</option>
+              <option value="conversion_score">Dönüşüm</option>
+              <option value="social_score">Sosyal</option>
+              <option value="editorial_score">Editoryal</option>
+              <option value="published_at">Tarih</option>
             </select>
           </label>
+
           <label>
-            <span>İçerik türü</span>
+            Tür
             <select id="typeSelect">
               <option value="all">Tümü</option>
-              <option value="hot_news">Sıcak haber</option>
+              <option value="hot_news">Hızlı haber</option>
               <option value="launch">Lansman</option>
               <option value="update">Güncelleme</option>
               <option value="guide">Rehber</option>
+              <option value="comparison">Karşılaştırma</option>
               <option value="deal">Fırsat</option>
               <option value="analysis">Analiz</option>
             </select>
           </label>
-          <label>
-            <span>Minimum toplam skor</span>
-            <div class="range-wrap">
-              <input type="range" min="0" max="100" value="0" id="scoreFilter">
-              <strong id="scoreFilterValue">0</strong>
+
+          <label class="range-wrap">
+            Minimum skor
+            <input type="range" min="0" max="100" value="0" id="scoreFilter">
+            <span id="scoreFilterValue">0</span>
+          </label>
+        </div>
+
+        <div id="statusBar" class="status-bar">Hazır</div>
+        <div id="cards" class="cards"></div>
+      </section>
+
+      <aside class="panel side-panel">
+        <section class="stack">
+          <h2>Yeni RSS kaynağı ekle</h2>
+          <form id="sourceForm" class="source-form">
+            <input name="name" placeholder="Kaynak adı" required />
+            <input name="rss_url" placeholder="RSS / Feed URL" required />
+            <input name="site_url" placeholder="Site URL" />
+            <div class="form-grid">
+              <select name="market_relevance">
+                <option value="global">Global</option>
+                <option value="turkey">Türkiye</option>
+                <option value="mixed">Karma</option>
+              </select>
+              <select name="source_type">
+                <option value="news">Haber</option>
+                <option value="official">Resmî</option>
+                <option value="deal">Fırsat</option>
+                <option value="blog">Blog</option>
+              </select>
             </div>
-          </label>
-          <label>
-            <span>Ara</span>
-            <input id="searchInput" type="search" placeholder="Başlıkta ara">
-          </label>
-        </div>
-      </div>
+            <button class="button" type="submit">Kaynağı ekle</button>
+          </form>
+        </section>
 
-      <div id="resultsMeta" class="results-meta"></div>
-      <div id="results" class="results"></div>
-    </section>
-
-    <aside class="side-panel">
-      <section class="card sticky-block">
-        <h2>Yeni RSS kaynağı ekle</h2>
-        <form id="sourceForm" class="stack-form">
-          <label><span>Kaynak adı</span><input name="name" required></label>
-          <label><span>RSS adresi</span><input name="rss_url" type="url" required></label>
-          <label><span>Site adresi</span><input name="site_url" type="url"></label>
-          <label><span>Kaynak tipi</span>
-            <select name="source_type">
-              <option value="news">Haber</option>
-              <option value="official">Resmî</option>
-              <option value="deal">Fırsat</option>
-              <option value="blog">Blog</option>
-            </select>
-          </label>
-          <label><span>Pazar ilgisi</span>
-            <select name="market_relevance">
-              <option value="global">Global</option>
-              <option value="turkey">Türkiye</option>
-              <option value="mixed">Karışık</option>
-            </select>
-          </label>
-          <label><span>Öncelik</span><input name="priority_weight" type="number" value="70"></label>
-          <label><span>Güven skoru</span><input name="trust_score" type="number" value="75"></label>
-          <button class="btn primary" type="submit">Kaynak ekle</button>
-        </form>
-      </section>
-
-      <section class="card">
-        <h2>Kaynaklar</h2>
-        <div id="sourcesList" class="sources-list"></div>
-      </section>
-    </aside>
-  </main>
-
-  <template id="cardTemplate">
-    <article class="news-card card">
-      <label class="selectbox"><input type="checkbox" class="pick-item"></label>
-      <img class="thumb" alt="">
-      <div class="card-content">
-        <div class="card-top">
-          <span class="badge type-badge"></span>
-          <div class="score-row"></div>
-        </div>
-        <h3 class="card-title"></h3>
-        <p class="card-summary"></p>
-        <div class="card-actions">
-          <a class="btn link-btn open-link" target="_blank" rel="noopener">Haberi aç</a>
-          <button class="btn copy-btn" type="button">URL kopyala</button>
-        </div>
-      </div>
-    </article>
-  </template>
-
+        <section class="stack">
+          <h2>Kaynaklar</h2>
+          <div id="sourcesList" class="sources-list"></div>
+        </section>
+      </aside>
+    </main>
+  </div>
   <script src="/app.js" defer></script>
 </body>
 </html>

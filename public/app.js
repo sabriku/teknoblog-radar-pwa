@@ -1,142 +1,158 @@
-const els = {
-  results: document.getElementById('results'),
-  resultsMeta: document.getElementById('resultsMeta'),
-  sortSelect: document.getElementById('sortSelect'),
-  typeSelect: document.getElementById('typeSelect'),
-  scoreFilter: document.getElementById('scoreFilter'),
-  scoreFilterValue: document.getElementById('scoreFilterValue'),
-  searchInput: document.getElementById('searchInput'),
-  refreshBtn: document.getElementById('refreshBtn'),
-  copySelectedBtn: document.getElementById('copySelectedBtn'),
-  cardTemplate: document.getElementById('cardTemplate'),
-  sourceForm: document.getElementById('sourceForm'),
-  sourcesList: document.getElementById('sourcesList'),
+const state = {
+  items: [],
+  selected: new Set(),
+  sources: [],
 };
 
-let recommendations = [];
-let selectedUrls = new Set();
+const cardsEl = document.getElementById('cards');
+const statusBarEl = document.getElementById('statusBar');
+const scoreFilterEl = document.getElementById('scoreFilter');
+const scoreFilterValueEl = document.getElementById('scoreFilterValue');
+const sortSelectEl = document.getElementById('sortSelect');
+const typeSelectEl = document.getElementById('typeSelect');
+const refreshBtn = document.getElementById('refreshBtn');
+const copySelectedBtn = document.getElementById('copySelectedBtn');
+const sourceForm = document.getElementById('sourceForm');
+const sourcesList = document.getElementById('sourcesList');
 
-async function fetchJson(url, options) {
-  const response = await fetch(url, options);
-  return response.json();
+function setStatus(text) {
+  statusBarEl.textContent = text;
 }
 
-function scoreMarkup(item) {
-  return `
-    <span class="score-pill">Toplam ${item.total_score}</span>
-    <span class="score-pill">Discover ${item.discover_score}</span>
-    <span class="score-pill">Trafik ${item.traffic_score}</span>
-  `;
+function formatDate(value) {
+  if (!value) return 'Tarih yok';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return 'Tarih yok';
+  return d.toLocaleString('tr-TR');
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    setStatus('Kopyalandı');
+  } catch {
+    const area = document.createElement('textarea');
+    area.value = text;
+    document.body.appendChild(area);
+    area.select();
+    document.execCommand('copy');
+    area.remove();
+    setStatus('Kopyalandı');
+  }
 }
 
 function renderCards() {
-  const q = els.searchInput.value.trim().toLowerCase();
-  const filtered = recommendations.filter(item => !q || item.title.toLowerCase().includes(q));
-  els.results.innerHTML = '';
-  els.resultsMeta.textContent = `${filtered.length} öneri listeleniyor`;
-  if (!filtered.length) {
-    els.results.innerHTML = '<div class="empty card">Gösterilecek sonuç yok.</div>';
+  cardsEl.innerHTML = '';
+  if (!state.items.length) {
+    cardsEl.innerHTML = '<div class="status-bar">Henüz gösterilecek veri yok.</div>';
     return;
   }
 
-  filtered.forEach(item => {
-    const node = els.cardTemplate.content.cloneNode(true);
-    const card = node.querySelector('.news-card');
-    const checkbox = node.querySelector('.pick-item');
-    const img = node.querySelector('.thumb');
-    const badge = node.querySelector('.type-badge');
-    const scoreRow = node.querySelector('.score-row');
-    const title = node.querySelector('.card-title');
-    const summary = node.querySelector('.card-summary');
-    const openLink = node.querySelector('.open-link');
-    const copyBtn = node.querySelector('.copy-btn');
+  for (const item of state.items) {
+    const checked = state.selected.has(item.url) ? 'checked' : '';
+    const card = document.createElement('article');
+    card.className = 'card';
+    card.innerHTML = `
+      <input type="checkbox" class="select-box" data-url="${item.url}" ${checked} aria-label="Haberi seç">
+      <img src="${item.image_url || '/icon-512.png'}" alt="">
+      <div class="card-content">
+        <div class="meta">
+          <span class="score-badge">Toplam ${item.total_score ?? 0}</span>
+          <span class="chip">Discover ${item.discover_score ?? 0}</span>
+          <span class="chip">Trafik ${item.traffic_score ?? 0}</span>
+          <span class="chip">${item.content_type_hint || 'analysis'}</span>
+        </div>
+        <h3>${item.title || ''}</h3>
+        <p class="summary">${item.summary || ''}</p>
+        <div class="meta">
+          <span class="chip">${formatDate(item.published_at || item.updated_at)}</span>
+        </div>
+        <div class="card-actions">
+          <a class="button secondary" href="${item.url}" target="_blank" rel="noopener noreferrer">Haberi aç</a>
+          <button class="button ghost copy-one" data-url="${item.url}">URL kopyala</button>
+        </div>
+      </div>
+    `;
+    cardsEl.appendChild(card);
+  }
 
-    checkbox.checked = selectedUrls.has(item.url);
-    checkbox.addEventListener('change', () => {
-      if (checkbox.checked) selectedUrls.add(item.url);
-      else selectedUrls.delete(item.url);
+  cardsEl.querySelectorAll('.select-box').forEach((el) => {
+    el.addEventListener('change', (event) => {
+      const url = event.currentTarget.dataset.url;
+      if (event.currentTarget.checked) state.selected.add(url);
+      else state.selected.delete(url);
     });
+  });
 
-    img.src = item.image_url || 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><rect width="100%" height="100%" fill="#e7eef5"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#5d7288" font-family="Arial" font-size="24">Teknoblog Radar</text></svg>');
-    img.alt = item.title;
-    badge.textContent = typeLabel(item.content_type_hint);
-    scoreRow.innerHTML = scoreMarkup(item);
-    title.textContent = item.title;
-    summary.textContent = item.summary || '';
-    openLink.href = item.url;
-    copyBtn.addEventListener('click', async () => {
-      await navigator.clipboard.writeText(item.url);
-      copyBtn.textContent = 'Kopyalandı';
-      setTimeout(() => { copyBtn.textContent = 'URL kopyala'; }, 1200);
+  cardsEl.querySelectorAll('.copy-one').forEach((el) => {
+    el.addEventListener('click', async (event) => {
+      await copyText(event.currentTarget.dataset.url);
     });
-    els.results.appendChild(node);
   });
 }
 
-function typeLabel(type) {
-  const map = {
-    hot_news: 'Sıcak haber',
-    launch: 'Lansman',
-    update: 'Güncelleme',
-    guide: 'Rehber',
-    deal: 'Fırsat',
-    analysis: 'Analiz'
-  };
-  return map[type] || type;
-}
-
 async function loadRecommendations() {
-  const sort = els.sortSelect.value;
-  const type = els.typeSelect.value;
-  const minScore = els.scoreFilter.value;
-  els.scoreFilterValue.textContent = minScore;
-  const data = await fetchJson(`/api/recommendations?sort=${encodeURIComponent(sort)}&type=${encodeURIComponent(type)}&minScore=${encodeURIComponent(minScore)}`);
-  recommendations = data.items || [];
+  setStatus('Öneriler yükleniyor...');
+  const params = new URLSearchParams({
+    sortBy: sortSelectEl.value,
+    minScore: scoreFilterEl.value,
+    contentType: typeSelectEl.value,
+  });
+  const response = await fetch(`/api/recommendations?${params.toString()}`);
+  const payload = await response.json();
+  state.items = payload.items || [];
   renderCards();
+  setStatus(`${state.items.length} öneri listelendi`);
 }
 
 async function loadSources() {
-  const data = await fetchJson('/api/sources');
-  const items = data.items || [];
-  els.sourcesList.innerHTML = items.map(item => `
+  const response = await fetch('/api/sources');
+  const payload = await response.json();
+  state.sources = payload.items || [];
+  sourcesList.innerHTML = state.sources.map((item) => `
     <div class="source-item">
       <strong>${item.name}</strong>
-      <small>${item.rss_url}</small>
+      <span>${item.rss_url || item.feed_url || ''}</span>
     </div>
   `).join('');
 }
 
-els.sortSelect.addEventListener('change', loadRecommendations);
-els.typeSelect.addEventListener('change', loadRecommendations);
-els.scoreFilter.addEventListener('input', loadRecommendations);
-els.searchInput.addEventListener('input', renderCards);
-els.refreshBtn.addEventListener('click', loadRecommendations);
-els.copySelectedBtn.addEventListener('click', async () => {
-  const urls = [...selectedUrls];
-  if (!urls.length) return;
-  await navigator.clipboard.writeText(urls.join('\n'));
-  els.copySelectedBtn.textContent = 'Kopyalandı';
-  setTimeout(() => { els.copySelectedBtn.textContent = "Seçilen URL'leri kopyala"; }, 1200);
+refreshBtn.addEventListener('click', loadRecommendations);
+copySelectedBtn.addEventListener('click', async () => {
+  const text = Array.from(state.selected).join('\n');
+  if (!text) return setStatus('Önce en az bir haber seçin');
+  await copyText(text);
 });
-els.sourceForm.addEventListener('submit', async (event) => {
+
+scoreFilterEl.addEventListener('input', () => {
+  scoreFilterValueEl.textContent = scoreFilterEl.value;
+});
+scoreFilterEl.addEventListener('change', loadRecommendations);
+sortSelectEl.addEventListener('change', loadRecommendations);
+typeSelectEl.addEventListener('change', loadRecommendations);
+
+sourceForm.addEventListener('submit', async (event) => {
   event.preventDefault();
-  const fd = new FormData(event.currentTarget);
-  const payload = Object.fromEntries(fd.entries());
-  const result = await fetchJson('/api/sources', {
+  const form = new FormData(sourceForm);
+  const body = Object.fromEntries(form.entries());
+  setStatus('Kaynak ekleniyor...');
+  const response = await fetch('/api/sources', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(body),
   });
-  if (result.ok) {
-    event.currentTarget.reset();
-    await loadSources();
-  } else {
-    alert(result.error || 'Kaynak eklenemedi');
+  const payload = await response.json();
+  if (!response.ok) {
+    setStatus(payload.error || 'Kaynak eklenemedi');
+    return;
   }
+  sourceForm.reset();
+  setStatus('Kaynak eklendi');
+  await loadSources();
 });
 
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js'));
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
 }
 
 loadRecommendations();
