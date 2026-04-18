@@ -133,6 +133,7 @@ export default async function handler(req, res) {
           const published_at = safeText(item.published_at || '') || null;
           let image_url = safeText(item.image_url || item.image || '');
           const content_hash = hashValue(`${title}|${url}`);
+          const url_hash = hashValue(url);
 
           if (!title || !url) continue;
 
@@ -180,7 +181,7 @@ export default async function handler(req, res) {
           const payload = {
             source_id: source.id,
             source_name: source.name || '',
-            source_url: source.site_url || source.rss_url || source.feed_url || '',
+            source_url: source.site_url || source.rss_url || source.feed_url || url,
             title,
             url,
             canonical_url: url,
@@ -188,6 +189,7 @@ export default async function handler(req, res) {
             image_url: image_url || null,
             published_at,
             content_hash,
+            url_hash,
             created_at: nowIso()
           };
 
