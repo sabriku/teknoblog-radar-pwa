@@ -7,7 +7,8 @@
     refreshing: false,
     cleaning: false,
     page: 1,
-    pageSize: 20
+    pageSize: 20,
+    ingestDebug: []
   };
 
   const esc = (v) => String(v ?? '')
@@ -168,6 +169,11 @@
               </div>
               <div id="tb-cleanup-status" style="margin-top:10px;font-size:13px;color:#4b5563"></div>
             </section>
+
+            <section style="border:1px solid #dbe3ef;border-radius:18px;background:#fff;padding:16px;box-shadow:0 6px 18px rgba(9,30,66,.06)">
+              <div style="font:700 22px/1 'Fira Sans Condensed',sans-serif;margin-bottom:12px">İçe Aktarma Tanısı</div>
+              <div id="tb-debug" style="display:flex;flex-direction:column;gap:10px;max-height:320px;overflow:auto;font-size:12px;color:#4b5563"></div>
+            </section>
           </aside>
         </div>
       </div>
@@ -200,6 +206,24 @@
 
   function badge(label, value) {
     return `<span style="display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;background:#fff1eb;color:#b53607;font-size:12px;font-weight:700">${esc(label)} ${esc(value)}</span>`;
+  }
+
+  function renderDebug() {
+    root();
+    const wrap = document.getElementById('tb-debug');
+    if (!wrap) return;
+    if (!state.ingestDebug.length) {
+      wrap.innerHTML = `<div>Henüz tanı kaydı yok.</div>`;
+      return;
+    }
+    wrap.innerHTML = state.ingestDebug.map((row) => {
+      const title = pick(row.source, 'Kaynak');
+      const status = pick(row.status, 'bilgi');
+      const extra = [row.reason, row.error, row.feedUrl, row.code ? `HTTP ${row.code}` : '', row.count ? `Öğe ${row.count}` : '']
+        .filter(Boolean)
+        .join(' • ');
+      return `<div style="padding:10px;border:1px solid #e5e7eb;border-radius:12px"><div style="font-weight:700;color:#111827">${esc(title)}</div><div style="margin-top:4px"><strong>${esc(status)}</strong></div><div style="margin-top:4px">${esc(extra)}</div></div>`;
+    }).join('');
   }
 
   function renderPagination() {
@@ -356,6 +380,7 @@
     let totalIngested = 0;
     let totalUpdated = 0;
     let batches = 0;
+    const debugRows = [];
 
     while (batches < 6) {
       statusEl.textContent = `RSS içerikleri alınıyor, parti ${batches + 1}...`;
@@ -363,6 +388,9 @@
       const result = await fetchJson(`/api/ingest${qs}`, { timeoutMs: 40000 });
       totalIngested += result.ingested ?? 0;
       totalUpdated += result.updated ?? 0;
+      debugRows.push(...(Array.isArray(result.debug) ? result.debug : []));
+      state.ingestDebug = debugRows;
+      renderDebug();
       batches += 1;
 
       if (!result.has_more || (result.processed_sources ?? 0) < sourceLimit) {
@@ -371,7 +399,7 @@
       offset += sourceLimit;
     }
 
-    return { totalIngested, totalUpdated, batches };
+    return { totalIngested, totalUpdated, batches, debugRows };
   }
 
   async function triggerRefresh() {
@@ -388,6 +416,8 @@
     }
 
     state.refreshing = true;
+    state.ingestDebug = [];
+    renderDebug();
     setRefreshButtonState(true);
 
     try {
@@ -445,6 +475,8 @@
       });
       state.items = [];
       state.page = 1;
+      state.ingestDebug = [];
+      renderDebug();
       await Promise.allSettled([loadRecommendations(), loadSources()]);
       status.textContent = `Temizleme tamamlandı. Adaylar: ${result.deleted_topic_candidates ?? 0}, ham kayıtlar: ${result.deleted_raw_feed_items ?? 0}`;
     } finally {
@@ -557,6 +589,7 @@
     root();
     try {
       await Promise.allSettled([loadRecommendations(), loadSources()]);
+      renderDebug();
       setRefreshButtonState(false);
       setCleanupButtonState(false);
     } catch (err) {
