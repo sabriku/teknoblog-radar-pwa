@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111827">
+  <meta name="description" content="Teknoblog için editoryal radar ve konu öneri PWA'sı">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="/styles.css">
+  <title>Teknoblog Radar</title>
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>Teknoblog Radar</h1>
+      <p>Editoryal öneri ve içerik araştırma paneli</p>
+    </div>
+    <button id="refreshBtn">Veriyi yenile</button>
+  </header>
+
+  <main class="grid">
+    <section class="card">
+      <h2>Durum</h2>
+      <div id="status">Yükleniyor...</div>
+      <div class="actions">
+        <input id="cronToken" type="password" placeholder="CRON_TOKEN">
+        <button id="runPipelineBtn">Pipeline çalıştır</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Önerilen Konular</h2>
+      <div id="recommendations" class="list"></div>
+    </section>
+
+    <section class="card">
+      <h2>Filtreler</h2>
+      <label>Minimum toplam skor</label>
+      <input type="range" min="0" max="100" value="50" id="scoreFilter">
+      <div id="scoreFilterValue">50</div>
+    </section>
+  </main>
+
+  <script src="/app.js" defer></script>
+</body>
+</html>

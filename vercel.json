@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "cleanUrls": true,
+  "crons": [
+    {
+      "path": "/api/run-pipeline?token=@CRON_TOKEN",
+      "schedule": "0 */4 * * *"
+    }
+  ]
+}
