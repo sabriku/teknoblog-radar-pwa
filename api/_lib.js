@@ -29,16 +29,32 @@ export function nowIso() {
   return new Date().toISOString();
 }
 
-export function safeText(value) {
-  if (value == null) return '';
+function decodeHtml(value = '') {
   return String(value)
-    .replace(/<!\[CDATA\[(.*?)\]\]>/gs, '$1')
-    .replace(/<[^>]*>/g, ' ')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCharCode(parseInt(n, 16)))
     .replace(/&amp;/g, '&')
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&ldquo;/g, '“')
+    .replace(/&rdquo;/g, '”')
+    .replace(/&lsquo;/g, '‘')
+    .replace(/&rsquo;/g, '’')
+    .replace(/&mdash;/g, '—')
+    .replace(/&ndash;/g, '–');
+}
+
+export function safeText(value) {
+  if (value == null) return '';
+  return decodeHtml(
+    String(value)
+      .replace(/<!\[CDATA\[(.*?)\]\]>/gs, '$1')
+      .replace(/<[^>]*>/g, ' ')
+  )
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -56,23 +72,40 @@ function firstMatch(pattern, text) {
   return match ? (match[1] || '').trim() : '';
 }
 
-function decodeHtml(s = '') {
-  return String(s)
-    .replace(/&amp;/g, '&')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>');
+function firstSrcFromSrcset(value = '') {
+  const first = String(value).split(',')[0] || '';
+  return (first.trim().split(/\s+/)[0] || '').trim();
+}
+
+function normalizeImageUrl(url = '') {
+  const clean = decodeHtml(url).trim();
+  if (!clean) return '';
+  if (/^https?:\/\//i.test(clean)) return clean;
+  if (/^\/\//.test(clean)) return `https:${clean}`;
+  return clean;
 }
 
 function extractImage(block) {
-  return decodeHtml(
-    firstMatch(/<media:content[^>]*url=["']([^"']+)["']/i, block) ||
-    firstMatch(/<media:thumbnail[^>]*url=["']([^"']+)["']/i, block) ||
-    firstMatch(/<enclosure[^>]*url=["']([^"']+)["'][^>]*type=["']image\/[^"']*["']/i, block) ||
-    firstMatch(/<itunes:image[^>]*href=["']([^"']+)["']/i, block) ||
+  const candidates = [
+    firstMatch(/<media:content[^>]*url=["']([^"']+)["']/i, block),
+    firstMatch(/<media:thumbnail[^>]*url=["']([^"']+)["']/i, block),
+    firstMatch(/<enclosure[^>]*url=["']([^"']+)["'][^>]*type=["']image\/[^"']*["']/i, block),
+    firstMatch(/<enclosure[^>]*url=["']([^"']+)["'][^>]*medium=["']image["']/i, block),
+    firstMatch(/<itunes:image[^>]*href=["']([^"']+)["']/i, block),
+    firstMatch(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i, block),
+    firstMatch(/<meta[^>]*name=["']twitter:image["'][^>]*content=["']([^"']+)["']/i, block),
+    firstMatch(/<img[^>]*data-lazy-src=["']([^"']+)["']/i, block),
+    firstMatch(/<img[^>]*data-src=["']([^"']+)["']/i, block),
+    firstSrcFromSrcset(firstMatch(/<img[^>]*srcset=["']([^"']+)["']/i, block)),
     firstMatch(/<img[^>]*src=["']([^"']+)["']/i, block)
-  );
+  ];
+
+  for (const candidate of candidates) {
+    const normalized = normalizeImageUrl(candidate);
+    if (normalized) return normalized;
+  }
+
+  return '';
 }
 
 function parseRssItems(xml) {
@@ -91,7 +124,7 @@ function parseRssItems(xml) {
     const published_at =
       firstMatch(/<pubDate>([\s\S]*?)<\/pubDate>/i, block) ||
       firstMatch(/<dc:date>([\s\S]*?)<\/dc:date>/i, block);
-    const image_url = extractImage(block);
+    const image_url = extractImage(block) || extractImage(summaryRaw);
     const summary = safeText(summaryRaw);
 
     if (title && url) {
@@ -119,7 +152,7 @@ function parseAtomEntries(xml) {
     const published_at =
       firstMatch(/<updated>([\s\S]*?)<\/updated>/i, block) ||
       firstMatch(/<published>([\s\S]*?)<\/published>/i, block);
-    const image_url = extractImage(block);
+    const image_url = extractImage(block) || extractImage(summaryRaw);
     const summary = safeText(summaryRaw);
 
     if (title && url) {
