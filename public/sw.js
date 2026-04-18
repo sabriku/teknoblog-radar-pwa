@@ -1,5 +1,7 @@
-const CACHE_NAME = 'tb-radar-v20260418-2';
-self.addEventListener('install', () => self.skipWaiting());
+const CACHE_NAME = 'tb-radar-v20260418-5';
+self.addEventListener('install', event => {
+  event.waitUntil(self.skipWaiting());
+});
 self.addEventListener('activate', event => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
@@ -8,5 +10,5 @@ self.addEventListener('activate', event => {
   })());
 });
 self.addEventListener('fetch', event => {
-  event.respondWith(fetch(event.request));
+  event.respondWith(fetch(event.request, { cache: 'no-store' }));
 });
