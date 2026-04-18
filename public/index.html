@@ -3,44 +3,43 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#111827">
-  <meta name="description" content="Teknoblog için editoryal radar ve konu öneri PWA'sı">
+  <title>Teknoblog Editorial Radar</title>
   <link rel="manifest" href="/manifest.json">
   <link rel="stylesheet" href="/styles.css">
-  <title>Teknoblog Radar</title>
 </head>
 <body>
-  <header class="topbar">
-    <div>
-      <h1>Teknoblog Radar</h1>
-      <p>Editoryal öneri ve içerik araştırma paneli</p>
-    </div>
-    <button id="refreshBtn">Veriyi yenile</button>
-  </header>
+  <main class="wrap">
+    <header>
+      <h1>Teknoblog Editorial Radar</h1>
+      <p id="status">Yükleniyor...</p>
+    </header>
 
-  <main class="grid">
-    <section class="card">
-      <h2>Durum</h2>
-      <div id="status">Yükleniyor...</div>
-      <div class="actions">
-        <input id="cronToken" type="password" placeholder="CRON_TOKEN">
-        <button id="runPipelineBtn">Pipeline çalıştır</button>
-      </div>
+    <section class="toolbar">
+      <label>Minimum toplam skor
+        <input type="range" min="0" max="100" value="0" id="scoreFilter">
+        <span id="scoreFilterValue">0</span>
+      </label>
+      <label>Tür
+        <select id="typeFilter">
+          <option value="">Tümü</option>
+          <option value="hot_news">Bugün haber olur</option>
+          <option value="launch">Lansman</option>
+          <option value="update">Güncelleme</option>
+          <option value="guide">Rehbere dönüşür</option>
+          <option value="comparison">Karşılaştırma</option>
+          <option value="deal">Dönüşüm potansiyeli yüksek</option>
+          <option value="analysis">Analiz</option>
+        </select>
+      </label>
+      <label>CRON token
+        <input type="password" id="cronToken" placeholder="Sadece manuel tetikleme için">
+      </label>
+      <button id="refreshBtn">Veriyi yenile</button>
+      <button id="runPipelineBtn">Pipeline çalıştır</button>
     </section>
 
-    <section class="card">
-      <h2>Önerilen Konular</h2>
-      <div id="recommendations" class="list"></div>
-    </section>
-
-    <section class="card">
-      <h2>Filtreler</h2>
-      <label>Minimum toplam skor</label>
-      <input type="range" min="0" max="100" value="0" id="scoreFilter">
-      <div id="scoreFilterValue">0</div>
-    </section>
+    <section id="recommendations" class="list"></section>
   </main>
-
-  <script src="/app.js" defer></script>
+  <script src="/app.js"></script>
 </body>
 </html>
