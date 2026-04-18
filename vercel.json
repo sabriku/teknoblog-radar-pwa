@@ -1,4 +1,15 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "cleanUrls": true
+  "cleanUrls": true,
+  "functions": {
+    "api/ingest/index.js": {
+      "maxDuration": 60
+    },
+    "api/score/index.js": {
+      "maxDuration": 60
+    },
+    "api/recommendations.js": {
+      "maxDuration": 30
+    }
+  }
 }
