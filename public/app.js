@@ -1,71 +1,45 @@
 (() => {
-  const state = {
-    items: [],
-    sources: [],
-    sort: 'total_score',
-    selected: new Set()
-  };
+  const state = { items: [], sources: [], sort: 'total_score', selected: new Set() };
 
-  function esc(value) {
-    return String(value ?? '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  }
+  const esc = (v) => String(v ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 
-  function val(...args) {
-    for (const v of args) {
+  const pick = (...vals) => {
+    for (const v of vals) {
       if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();
     }
     return '';
-  }
+  };
 
-  function getUrl(item) {
-    return val(
-      item?.url,
-      item?.link,
-      item?.canonical_url,
-      item?.article_url,
-      item?.target_url,
-      item?.source_url,
-      item?.site_url
-    );
-  }
+  const getUrl = (item) => pick(
+    item?.url,
+    item?.canonical_url,
+    item?.link,
+    item?.article_url,
+    item?.target_url,
+    item?.source_url,
+    item?.site_url
+  );
 
-  function getImage(item) {
-    return val(
-      item?.image_url,
-      item?.image,
-      item?.thumbnail,
-      item?.thumb_url,
-      item?.media_url
-    );
-  }
+  const getImage = (item) => pick(
+    item?.image_url,
+    item?.image,
+    item?.thumbnail,
+    item?.thumb_url,
+    item?.media_url
+  );
 
-  function getSummary(item) {
-    return val(item?.summary, item?.excerpt, item?.description);
-  }
+  const getTitle = (item) => pick(item?.title, 'Başlıksız içerik');
+  const getSummary = (item) => pick(item?.summary, item?.excerpt, item?.description);
+  const score = (item, key) => Number.isFinite(Number(item?.[key])) ? Number(item[key]) : 0;
 
-  function getTitle(item) {
-    return val(item?.title, 'Başlıksız içerik');
-  }
-
-  function getScore(item, key) {
-    const n = Number(item?.[key]);
-    return Number.isFinite(n) ? n : 0;
-  }
-
-  function sortItems(items) {
-    const key = state.sort || 'total_score';
-    return [...items].sort((a, b) => getScore(b, key) - getScore(a, key));
-  }
-
-  function ensureRoot() {
-    let root = document.getElementById('tb-radar-root');
-    if (root) return root;
-
+  function root() {
+    let el = document.getElementById('tb-radar-root');
+    if (el) return el;
     document.body.innerHTML = `
       <div id="tb-radar-root" style="max-width:1320px;margin:0 auto;padding:16px;font-family:'Open Sans',sans-serif;color:#111827">
         <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;justify-content:space-between;margin-bottom:16px">
@@ -120,16 +94,9 @@
         </div>
       </div>
     `;
-
     const style = document.createElement('style');
-    style.textContent = `
-      @media (max-width: 980px) {
-        #tb-layout { grid-template-columns: 1fr !important; }
-      }
-      a.tb-btn:hover, button.tb-btn:hover { opacity: .92; }
-    `;
+    style.textContent = `@media (max-width:980px){#tb-layout{grid-template-columns:1fr!important}}`;
     document.head.appendChild(style);
-
     return document.getElementById('tb-radar-root');
   }
 
@@ -138,35 +105,27 @@
   }
 
   function renderItems() {
-    ensureRoot();
+    root();
     const grid = document.getElementById('tb-grid');
     const status = document.getElementById('tb-status');
     const sort = document.getElementById('tb-sort');
     if (sort) sort.value = state.sort;
-
-    const items = sortItems(state.items);
+    const items = [...state.items].sort((a, b) => score(b, state.sort) - score(a, state.sort));
     status.textContent = `${items.length} içerik listeleniyor`;
-
     if (!items.length) {
       grid.innerHTML = `<div style="padding:24px;border:1px solid #dbe3ef;border-radius:18px;background:#fff">Henüz içerik yok.</div>`;
       return;
     }
-
     grid.innerHTML = items.map((item) => {
       const url = getUrl(item);
+      const image = getImage(item);
       const title = getTitle(item);
       const summary = getSummary(item);
-      const image = getImage(item);
       const checked = state.selected.has(url) ? 'checked' : '';
-
       return `
         <article style="display:flex;flex-direction:column;overflow:hidden;border:1px solid #dbe3ef;border-radius:18px;background:#fff;box-shadow:0 6px 18px rgba(9,30,66,.06)">
           <div style="position:relative">
-            ${
-              image
-                ? `<img src="${esc(image)}" alt="${esc(title)}" style="display:block;width:100%;aspect-ratio:16/9;object-fit:cover;background:#f3f6fa" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
-                : ''
-            }
+            ${image ? `<img src="${esc(image)}" alt="${esc(title)}" style="display:block;width:100%;aspect-ratio:16/9;object-fit:cover;background:#f3f6fa" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">` : ''}
             <div style="display:${image ? 'none' : 'flex'};width:100%;aspect-ratio:16/9;align-items:center;justify-content:center;background:#f3f6fa;color:#6b7280;font-weight:700">Görsel yok</div>
             <label style="position:absolute;top:10px;left:10px;background:rgba(255,255,255,.95);border-radius:999px;padding:6px 10px;display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700">
               <input type="checkbox" data-select-url="${esc(url)}" ${checked}>
@@ -175,21 +134,15 @@
           </div>
           <div style="padding:14px 14px 16px;display:flex;flex-direction:column;gap:10px">
             <div style="display:flex;flex-wrap:wrap;gap:8px">
-              ${badge('Toplam', getScore(item, 'total_score'))}
-              ${badge('Discover', getScore(item, 'discover_score'))}
-              ${badge('Trafik', getScore(item, 'traffic_score'))}
+              ${badge('Toplam', score(item, 'total_score'))}
+              ${badge('Discover', score(item, 'discover_score'))}
+              ${badge('Trafik', score(item, 'traffic_score'))}
             </div>
-
             <h3 style="margin:0;font:700 22px/1.25 'Fira Sans Condensed',sans-serif;color:#111827">${esc(title)}</h3>
-
             <p style="margin:0;font-size:14px;line-height:1.55;color:#4b5563;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(summary)}</p>
-
             <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:2px">
-              <a class="tb-btn" href="${esc(url || '#')}" target="_blank" rel="noopener noreferrer"
-                 style="display:inline-flex;align-items:center;justify-content:center;padding:10px 12px;border-radius:10px;background:#0057b8;color:#fff;text-decoration:none;font-size:14px;font-weight:700;${url ? '' : 'pointer-events:none;opacity:.5;'}">Haberi Aç</a>
-
-              <button class="tb-btn" type="button" data-copy-url="${esc(url)}"
-                 style="padding:10px 12px;border:1px solid #0057b8;border-radius:10px;background:#fff;color:#0057b8;font-size:14px;font-weight:700;cursor:pointer">URL kopyala</button>
+              <a href="${esc(url || '#')}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;justify-content:center;padding:10px 12px;border-radius:10px;background:#0057b8;color:#fff;text-decoration:none;font-size:14px;font-weight:700;${url ? '' : 'pointer-events:none;opacity:.5;'}">Haberi Aç</a>
+              <button type="button" data-copy-url="${esc(url)}" style="padding:10px 12px;border:1px solid #0057b8;border-radius:10px;background:#fff;color:#0057b8;font-size:14px;font-weight:700;cursor:pointer">URL kopyala</button>
             </div>
           </div>
         </article>
@@ -198,24 +151,17 @@
   }
 
   function renderSources() {
-    ensureRoot();
+    root();
     const wrap = document.getElementById('tb-sources-list');
     if (!wrap) return;
-
     if (!state.sources.length) {
       wrap.innerHTML = `<div style="font-size:14px;color:#6b7280">Henüz kaynak görünmüyor.</div>`;
       return;
     }
-
-    wrap.innerHTML = state.sources.map((source) => {
-      const feed = val(source.rss_url, source.feed_url);
-      const site = val(source.site_url, source.url);
-      return `
-        <div style="padding:12px;border:1px solid #e5e7eb;border-radius:12px">
-          <div style="font-weight:700;color:#111827">${esc(source.name || 'İsimsiz kaynak')}</div>
-          <div style="margin-top:6px;font-size:12px;color:#6b7280;word-break:break-all">${esc(feed || site)}</div>
-        </div>
-      `;
+    wrap.innerHTML = state.sources.map((s) => {
+      const feed = pick(s.rss_url, s.feed_url);
+      const site = pick(s.site_url, s.url);
+      return `<div style="padding:12px;border:1px solid #e5e7eb;border-radius:12px"><div style="font-weight:700;color:#111827">${esc(s.name || 'İsimsiz kaynak')}</div><div style="margin-top:6px;font-size:12px;color:#6b7280;word-break:break-all">${esc(feed || site)}</div></div>`;
     }).join('');
   }
 
@@ -253,15 +199,6 @@
     }
   }
 
-  async function copySelected() {
-    const urls = [...state.selected].filter(Boolean);
-    if (!urls.length) {
-      alert('Önce en az bir içerik seçin.');
-      return;
-    }
-    await copyText(urls.join('\n'));
-  }
-
   async function submitSourceForm(form) {
     const fd = new FormData(form);
     const payload = {
@@ -270,10 +207,8 @@
       site_url: String(fd.get('site_url') || '').trim(),
       market_relevance: String(fd.get('market_relevance') || 'global').trim()
     };
-
     const status = document.getElementById('tb-source-form-status');
     status.textContent = 'Kaydediliyor...';
-
     try {
       await fetchJson('/api/sources', {
         method: 'POST',
@@ -288,25 +223,24 @@
     }
   }
 
-  document.addEventListener('change', (event) => {
-    const sort = event.target.closest('#tb-sort');
+  document.addEventListener('change', (e) => {
+    const sort = e.target.closest('#tb-sort');
     if (sort) {
       state.sort = sort.value || 'total_score';
       renderItems();
       return;
     }
-
-    const checkbox = event.target.closest('[data-select-url]');
-    if (checkbox) {
-      const url = checkbox.getAttribute('data-select-url') || '';
+    const cb = e.target.closest('[data-select-url]');
+    if (cb) {
+      const url = cb.getAttribute('data-select-url') || '';
       if (!url) return;
-      if (checkbox.checked) state.selected.add(url);
+      if (cb.checked) state.selected.add(url);
       else state.selected.delete(url);
     }
   });
 
-  document.addEventListener('click', async (event) => {
-    const refreshBtn = event.target.closest('#tb-refresh');
+  document.addEventListener('click', async (e) => {
+    const refreshBtn = e.target.closest('#tb-refresh');
     if (refreshBtn) {
       try {
         document.getElementById('tb-status').textContent = 'Yenileniyor...';
@@ -316,30 +250,31 @@
       }
       return;
     }
-
-    const copySelectedBtn = event.target.closest('#tb-copy-selected');
-    if (copySelectedBtn) {
-      await copySelected();
+    const copySelected = e.target.closest('#tb-copy-selected');
+    if (copySelected) {
+      const urls = [...state.selected].filter(Boolean);
+      if (!urls.length) {
+        alert('Önce en az bir içerik seçin.');
+        return;
+      }
+      await copyText(urls.join('\n'));
       return;
     }
-
-    const copyBtn = event.target.closest('[data-copy-url]');
+    const copyBtn = e.target.closest('[data-copy-url]');
     if (copyBtn) {
-      const url = copyBtn.getAttribute('data-copy-url') || '';
-      await copyText(url, copyBtn);
-      return;
+      await copyText(copyBtn.getAttribute('data-copy-url') || '', copyBtn);
     }
   });
 
-  document.addEventListener('submit', async (event) => {
-    const form = event.target.closest('#tb-source-form');
+  document.addEventListener('submit', async (e) => {
+    const form = e.target.closest('#tb-source-form');
     if (!form) return;
-    event.preventDefault();
+    e.preventDefault();
     await submitSourceForm(form);
   });
 
   document.addEventListener('DOMContentLoaded', async () => {
-    ensureRoot();
+    root();
     try {
       await Promise.all([loadRecommendations(), loadSources()]);
     } catch (err) {
