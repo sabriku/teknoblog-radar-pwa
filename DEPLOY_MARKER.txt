@@ -1,0 +1,6 @@
+FINAL VISIBLE MARKER
+
+Deploy this commit on Vercel.
+
+Marker ID: tb-visible-marker-2026-04-19-02
+Purpose: Confirms the latest GitHub state is visible and easy to verify from the repo root.
