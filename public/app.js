@@ -185,9 +185,9 @@
     state.page = Math.min(state.page, totalPages);
 
     wrap.innerHTML = `
-      <button type="button" data-page-action="prev" style="padding:9px 12px;border:1px solid #f04a0a;border-radius:10px;background:#fff;color:#f04a0a;font-weight:700;cursor:pointer" ${state.page <= 1 ? 'disabled style="opacity:.5;cursor:not-allowed"' : ''}>Önceki</button>
+      <button type="button" data-page-action="prev" ${state.page <= 1 ? 'disabled' : ''} style="padding:9px 12px;border:1px solid #f04a0a;border-radius:10px;background:#fff;color:#f04a0a;font-weight:700;cursor:pointer;${state.page <= 1 ? 'opacity:.5;cursor:not-allowed;' : ''}">Önceki</button>
       <div style="font-size:14px;color:#4b5563;font-weight:700">Sayfa ${state.page} / ${totalPages}</div>
-      <button type="button" data-page-action="next" style="padding:9px 12px;border:1px solid #f04a0a;border-radius:10px;background:#fff;color:#f04a0a;font-weight:700;cursor:pointer" ${state.page >= totalPages ? 'disabled style="opacity:.5;cursor:not-allowed"' : ''}>Sonraki</button>
+      <button type="button" data-page-action="next" ${state.page >= totalPages ? 'disabled' : ''} style="padding:9px 12px;border:1px solid #f04a0a;border-radius:10px;background:#fff;color:#f04a0a;font-weight:700;cursor:pointer;${state.page >= totalPages ? 'opacity:.5;cursor:not-allowed;' : ''}">Sonraki</button>
     `;
   }
 
@@ -274,7 +274,7 @@
 
   async function fetchJson(url, options = {}) {
     const controller = new AbortController();
-    const timeoutMs = options.timeoutMs || 30000;
+    const timeoutMs = options.timeoutMs || 60000;
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
@@ -300,7 +300,7 @@
   }
 
   async function loadRecommendations() {
-    const data = await fetchJson(`/api/recommendations?sort=${encodeURIComponent(state.sort)}&t=${Date.now()}`, { timeoutMs: 15000 });
+    const data = await fetchJson(`/api/recommendations?sort=${encodeURIComponent(state.sort)}&t=${Date.now()}`, { timeoutMs: 20000 });
     state.items = Array.isArray(data?.items) ? data.items : [];
     const totalPages = getTotalPages();
     if (state.page > totalPages) state.page = totalPages;
@@ -308,7 +308,7 @@
   }
 
   async function loadSources() {
-    const data = await fetchJson(`/api/sources?t=${Date.now()}`, { timeoutMs: 15000 });
+    const data = await fetchJson(`/api/sources?t=${Date.now()}`, { timeoutMs: 20000 });
     state.sources = Array.isArray(data?.items) ? data.items : [];
     renderSources();
   }
@@ -341,12 +341,14 @@
 
     state.refreshing = true;
     setRefreshButtonState(true);
-    status.textContent = 'İçerikler yenileniyor...';
+    status.textContent = 'RSS içerikleri alınıyor...';
 
     try {
       const qs = `?token=${encodeURIComponent(token)}&t=${Date.now()}`;
-      const ingest = await fetchJson(`/api/ingest${qs}`, { timeoutMs: 30000 });
-      const scoreData = await fetchJson(`/api/score${qs}`, { timeoutMs: 30000 });
+      const ingest = await fetchJson(`/api/ingest${qs}`, { timeoutMs: 120000 });
+      status.textContent = 'Puanlama ve aday listesi güncelleniyor...';
+      const scoreData = await fetchJson(`/api/score${qs}`, { timeoutMs: 90000 });
+      status.textContent = 'Kartlar yenileniyor...';
       await Promise.allSettled([loadRecommendations(), loadSources()]);
       status.textContent = `İçerikler güncellendi. Alınan: ${ingest.ingested ?? 0}, güncellenen: ${ingest.updated ?? 0}, işlenen: ${scoreData.processed ?? 0}`;
     } finally {
@@ -370,7 +372,7 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
-        timeoutMs: 15000
+        timeoutMs: 20000
       });
       form.reset();
       status.textContent = 'Kaynak eklendi.';
