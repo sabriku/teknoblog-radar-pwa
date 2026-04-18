@@ -107,7 +107,7 @@ export default async function handler(req, res) {
       .from('raw_feed_items')
       .select('*')
       .order('created_at', { ascending: false })
-      .limit(200);
+      .limit(1000);
 
     if (error) return json(res, 500, { error: error.message });
 
