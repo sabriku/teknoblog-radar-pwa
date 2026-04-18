@@ -57,7 +57,7 @@
               <option value="social_score">Sosyal</option>
               <option value="editorial_score">Editoryal</option>
             </select>
-            <button id="tb-refresh" type="button" style="padding:10px 14px;border:0;border-radius:10px;background:#0057b8;color:#fff;font-weight:700;cursor:pointer">Yenile</button>
+            <button id="tb-refresh" type="button" style="padding:10px 14px;border:0;border-radius:10px;background:#0057b8;color:#fff;font-weight:700;cursor:pointer">İçerikleri Yenile</button>
             <button id="tb-copy-selected" type="button" style="padding:10px 14px;border:1px solid #0057b8;border-radius:10px;background:#fff;color:#0057b8;font-weight:700;cursor:pointer">Seçilen URL'leri kopyala</button>
           </div>
         </div>
@@ -112,16 +112,19 @@
     if (sort) sort.value = state.sort;
     const items = [...state.items].sort((a, b) => score(b, state.sort) - score(a, state.sort));
     status.textContent = `${items.length} içerik listeleniyor`;
+
     if (!items.length) {
       grid.innerHTML = `<div style="padding:24px;border:1px solid #dbe3ef;border-radius:18px;background:#fff">Henüz içerik yok.</div>`;
       return;
     }
+
     grid.innerHTML = items.map((item) => {
       const url = getUrl(item);
       const image = getImage(item);
       const title = getTitle(item);
       const summary = getSummary(item);
       const checked = state.selected.has(url) ? 'checked' : '';
+
       return `
         <article style="display:flex;flex-direction:column;overflow:hidden;border:1px solid #dbe3ef;border-radius:18px;background:#fff;box-shadow:0 6px 18px rgba(9,30,66,.06)">
           <div style="position:relative">
@@ -132,14 +135,18 @@
               Seç
             </label>
           </div>
+
           <div style="padding:14px 14px 16px;display:flex;flex-direction:column;gap:10px">
             <div style="display:flex;flex-wrap:wrap;gap:8px">
               ${badge('Toplam', score(item, 'total_score'))}
               ${badge('Discover', score(item, 'discover_score'))}
               ${badge('Trafik', score(item, 'traffic_score'))}
             </div>
+
             <h3 style="margin:0;font:700 22px/1.25 'Fira Sans Condensed',sans-serif;color:#111827">${esc(title)}</h3>
+
             <p style="margin:0;font-size:14px;line-height:1.55;color:#4b5563;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(summary)}</p>
+
             <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:2px">
               <a href="${esc(url || '#')}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;justify-content:center;padding:10px 12px;border-radius:10px;background:#0057b8;color:#fff;text-decoration:none;font-size:14px;font-weight:700;${url ? '' : 'pointer-events:none;opacity:.5;'}">Haberi Aç</a>
               <button type="button" data-copy-url="${esc(url)}" style="padding:10px 12px;border:1px solid #0057b8;border-radius:10px;background:#fff;color:#0057b8;font-size:14px;font-weight:700;cursor:pointer">URL kopyala</button>
@@ -154,10 +161,12 @@
     root();
     const wrap = document.getElementById('tb-sources-list');
     if (!wrap) return;
+
     if (!state.sources.length) {
       wrap.innerHTML = `<div style="font-size:14px;color:#6b7280">Henüz kaynak görünmüyor.</div>`;
       return;
     }
+
     wrap.innerHTML = state.sources.map((s) => {
       const feed = pick(s.rss_url, s.feed_url);
       const site = pick(s.site_url, s.url);
@@ -243,13 +252,15 @@
     const refreshBtn = e.target.closest('#tb-refresh');
     if (refreshBtn) {
       try {
-        document.getElementById('tb-status').textContent = 'Yenileniyor...';
+        document.getElementById('tb-status').textContent = 'İçerikler yenileniyor...';
         await Promise.all([loadRecommendations(), loadSources()]);
+        document.getElementById('tb-status').textContent = 'İçerikler güncellendi.';
       } catch (err) {
         document.getElementById('tb-status').textContent = `Hata: ${err.message}`;
       }
       return;
     }
+
     const copySelected = e.target.closest('#tb-copy-selected');
     if (copySelected) {
       const urls = [...state.selected].filter(Boolean);
@@ -260,6 +271,7 @@
       await copyText(urls.join('\n'));
       return;
     }
+
     const copyBtn = e.target.closest('[data-copy-url]');
     if (copyBtn) {
       await copyText(copyBtn.getAttribute('data-copy-url') || '', copyBtn);

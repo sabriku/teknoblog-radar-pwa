@@ -53,14 +53,24 @@ export function chooseFeedUrl(source = {}) {
 
 function firstMatch(pattern, text) {
   const match = text.match(pattern);
-  return match ? safeText(match[1]) : '';
+  return match ? (match[1] || '').trim() : '';
+}
+
+function decodeHtml(s = '') {
+  return String(s)
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
 }
 
 function extractImage(block) {
-  return (
+  return decodeHtml(
     firstMatch(/<media:content[^>]*url=["']([^"']+)["']/i, block) ||
     firstMatch(/<media:thumbnail[^>]*url=["']([^"']+)["']/i, block) ||
-    firstMatch(/<enclosure[^>]*url=["']([^"']+)["'][^>]*type=["']image\//i, block) ||
+    firstMatch(/<enclosure[^>]*url=["']([^"']+)["'][^>]*type=["']image\/[^"']*["']/i, block) ||
+    firstMatch(/<itunes:image[^>]*href=["']([^"']+)["']/i, block) ||
     firstMatch(/<img[^>]*src=["']([^"']+)["']/i, block)
   );
 }
@@ -70,17 +80,19 @@ function parseRssItems(xml) {
   const matches = xml.match(/<item\b[\s\S]*?<\/item>/gi) || [];
 
   for (const block of matches) {
-    const title = firstMatch(/<title>([\s\S]*?)<\/title>/i, block);
-    const url =
+    const title = safeText(firstMatch(/<title>([\s\S]*?)<\/title>/i, block));
+    const url = decodeHtml(
       firstMatch(/<link>([\s\S]*?)<\/link>/i, block) ||
-      firstMatch(/<guid[^>]*>([\s\S]*?)<\/guid>/i, block);
-    const summary =
+      firstMatch(/<guid[^>]*>([\s\S]*?)<\/guid>/i, block)
+    );
+    const summaryRaw =
       firstMatch(/<description>([\s\S]*?)<\/description>/i, block) ||
       firstMatch(/<content:encoded>([\s\S]*?)<\/content:encoded>/i, block);
     const published_at =
       firstMatch(/<pubDate>([\s\S]*?)<\/pubDate>/i, block) ||
       firstMatch(/<dc:date>([\s\S]*?)<\/dc:date>/i, block);
     const image_url = extractImage(block);
+    const summary = safeText(summaryRaw);
 
     if (title && url) {
       items.push({ title, url, summary, published_at, image_url });
@@ -95,17 +107,20 @@ function parseAtomEntries(xml) {
   const matches = xml.match(/<entry\b[\s\S]*?<\/entry>/gi) || [];
 
   for (const block of matches) {
-    const title = firstMatch(/<title[^>]*>([\s\S]*?)<\/title>/i, block);
-    const url =
+    const title = safeText(firstMatch(/<title[^>]*>([\s\S]*?)<\/title>/i, block));
+    const url = decodeHtml(
+      firstMatch(/<link[^>]*rel=["']alternate["'][^>]*href=["']([^"']+)["'][^>]*\/?>/i, block) ||
       firstMatch(/<link[^>]*href=["']([^"']+)["'][^>]*\/?>/i, block) ||
-      firstMatch(/<id>([\s\S]*?)<\/id>/i, block);
-    const summary =
+      firstMatch(/<id>([\s\S]*?)<\/id>/i, block)
+    );
+    const summaryRaw =
       firstMatch(/<summary[^>]*>([\s\S]*?)<\/summary>/i, block) ||
       firstMatch(/<content[^>]*>([\s\S]*?)<\/content>/i, block);
     const published_at =
       firstMatch(/<updated>([\s\S]*?)<\/updated>/i, block) ||
       firstMatch(/<published>([\s\S]*?)<\/published>/i, block);
     const image_url = extractImage(block);
+    const summary = safeText(summaryRaw);
 
     if (title && url) {
       items.push({ title, url, summary, published_at, image_url });
