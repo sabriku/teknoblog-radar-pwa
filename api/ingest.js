@@ -17,9 +17,7 @@ export default async function handler(req, res) {
       .eq('is_active', true)
       .order('priority_weight', { ascending: false });
 
-    if (sourcesError) {
-      return json(res, 500, { error: sourcesError.message });
-    }
+    if (sourcesError) return json(res, 500, { error: sourcesError.message });
 
     let ingested = 0;
     const debug = [];
@@ -41,34 +39,31 @@ export default async function handler(req, res) {
         });
 
         if (!response.ok) {
-          debug.push({
-            source: source.name,
-            status: 'http_error',
-            feedUrl,
-            code: response.status
-          });
+          debug.push({ source: source.name, status: 'http_error', feedUrl, code: response.status });
           continue;
         }
 
         const xml = await response.text();
         const items = parseFeedItems(xml);
 
-        debug.push({
-          source: source.name,
-          status: 'fetched',
-          feedUrl,
-          count: items.length
-        });
+        debug.push({ source: source.name, status: 'fetched', feedUrl, count: items.length });
 
         for (const item of items) {
           const title = safeText(item.title);
           const url = safeText(item.url || item.link);
           const summary = safeText(item.summary || item.description);
           const image_url = safeText(item.image_url || item.image || '');
+          const content_hash = hashValue(`${title}|${url}`);
 
           if (!title || !url) continue;
 
-          const content_hash = hashValue(`${title}|${url}`);
+          const { data: existing } = await supabase
+            .from('raw_feed_items')
+            .select('id')
+            .eq('content_hash', content_hash)
+            .limit(1);
+
+          if (existing && existing.length > 0) continue;
 
           const payload = {
             source_id: source.id,
@@ -84,11 +79,9 @@ export default async function handler(req, res) {
 
           const { error: insertError } = await supabase
             .from('raw_feed_items')
-            .upsert(payload, { onConflict: 'content_hash' });
+            .insert(payload);
 
-          if (!insertError) {
-            ingested += 1;
-          }
+          if (!insertError) ingested += 1;
         }
       } catch (error) {
         debug.push({

@@ -1,4 +1,13 @@
-import { getSupabaseAdmin, json } from './_lib.js';
+import { getSupabaseAdmin, json, nowIso } from './_lib.js';
+
+async function parseResponseSafe(response) {
+  const text = await response.text();
+  try {
+    return { ok: true, data: JSON.parse(text), raw: text };
+  } catch {
+    return { ok: false, data: null, raw: text };
+  }
+}
 
 export default async function handler(req, res) {
   try {
@@ -8,7 +17,7 @@ export default async function handler(req, res) {
     if (!expected || token !== expected) {
       return json(res, 401, {
         error: 'Yetkisiz istek',
-        finished_at: new Date().toISOString()
+        finished_at: nowIso()
       });
     }
 
@@ -27,46 +36,59 @@ export default async function handler(req, res) {
     if (runInsertError) {
       return json(res, 500, {
         error: runInsertError.message,
-        finished_at: new Date().toISOString()
+        finished_at: nowIso()
       });
     }
 
     const baseUrl = `https://${req.headers.host}`;
 
     const ingestResp = await fetch(`${baseUrl}/api/ingest?token=${encodeURIComponent(token)}`);
-    const ingestJson = await ingestResp.json();
+    const ingestParsed = await parseResponseSafe(ingestResp);
 
-    if (!ingestResp.ok) {
+    if (!ingestResp.ok || !ingestParsed.ok) {
       await supabase
         .from('pipeline_runs')
         .update({
           status: 'failed',
-          finished_at: new Date().toISOString(),
-          notes: JSON.stringify(ingestJson)
+          finished_at: nowIso(),
+          notes: ingestParsed.raw?.slice(0, 4000) || 'Ingest failed'
         })
         .eq('id', runRow.id);
 
-      return json(res, 500, ingestJson);
+      return json(res, 500, {
+        error: 'Ingest failed',
+        status: ingestResp.status,
+        body: ingestParsed.raw?.slice(0, 4000) || null,
+        finished_at: nowIso()
+      });
     }
+
+    const ingestJson = ingestParsed.data;
 
     const scoreResp = await fetch(`${baseUrl}/api/score?token=${encodeURIComponent(token)}`);
-    const scoreJson = await scoreResp.json();
+    const scoreParsed = await parseResponseSafe(scoreResp);
 
-    if (!scoreResp.ok) {
+    if (!scoreResp.ok || !scoreParsed.ok) {
       await supabase
         .from('pipeline_runs')
         .update({
           status: 'failed',
-          finished_at: new Date().toISOString(),
-          notes: JSON.stringify(scoreJson),
-          ingested_count: Number(ingestJson.ingested || 0)
+          finished_at: nowIso(),
+          ingested_count: Number(ingestJson.ingested || 0),
+          notes: scoreParsed.raw?.slice(0, 4000) || 'Score failed'
         })
         .eq('id', runRow.id);
 
-      return json(res, 500, scoreJson);
+      return json(res, 500, {
+        error: 'Score failed',
+        status: scoreResp.status,
+        body: scoreParsed.raw?.slice(0, 4000) || null,
+        finished_at: nowIso()
+      });
     }
 
-    const finishedAt = new Date().toISOString();
+    const scoreJson = scoreParsed.data;
+    const finishedAt = nowIso();
 
     await supabase
       .from('pipeline_runs')
@@ -87,7 +109,7 @@ export default async function handler(req, res) {
   } catch (error) {
     return json(res, 500, {
       error: error?.message || String(error),
-      finished_at: new Date().toISOString()
+      finished_at: nowIso()
     });
   }
 }

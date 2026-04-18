@@ -1,4 +1,4 @@
-import { getSupabaseAdmin, json } from './_lib.js';
+import { getSupabaseAdmin, json, nowIso } from './_lib.js';
 
 function scoreTitle(title = '') {
   const t = title.toLowerCase();
@@ -109,9 +109,7 @@ export default async function handler(req, res) {
       .order('created_at', { ascending: false })
       .limit(200);
 
-    if (error) {
-      return json(res, 500, { error: error.message });
-    }
+    if (error) return json(res, 500, { error: error.message });
 
     let processed = 0;
 
@@ -133,20 +131,33 @@ export default async function handler(req, res) {
         social_score: scores.social_score,
         editorial_score: scores.editorial_score,
         status: 'active',
-        updated_at: new Date().toISOString()
+        updated_at: nowIso()
       };
 
-      const { error: insertError } = await supabase
+      const { data: existing } = await supabase
         .from('topic_candidates')
-        .upsert(payload, { onConflict: 'raw_feed_item_id' });
+        .select('id')
+        .eq('raw_feed_item_id', row.id)
+        .limit(1);
 
-      if (!insertError) {
-        processed += 1;
+      if (existing && existing.length > 0) {
+        const { error: updateError } = await supabase
+          .from('topic_candidates')
+          .update(payload)
+          .eq('raw_feed_item_id', row.id);
+
+        if (!updateError) processed += 1;
+      } else {
+        const { error: insertError } = await supabase
+          .from('topic_candidates')
+          .insert(payload);
+
+        if (!insertError) processed += 1;
       }
     }
 
-    return json(res, 200, { ok: true, processed });
+    return json(res, 200, { ok: true, processed, finished_at: nowIso() });
   } catch (error) {
-    return json(res, 500, { error: error?.message || String(error) });
+    return json(res, 500, { error: error?.message || String(error), finished_at: nowIso() });
   }
 }
