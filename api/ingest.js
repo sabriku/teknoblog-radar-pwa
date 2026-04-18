@@ -1,25 +1,34 @@
-const { json, getSupabase, parseFeedItems, hashValue, chooseFeedUrl, safeText, nowIso } = require('./_lib');
+import { json, getSupabaseAdmin, parseFeedItems, hashValue, chooseFeedUrl, safeText, nowIso } from './_lib.js';
 
-module.exports = async (req, res) => {
-  const supabase = await getSupabase();
-  const debug = [];
+export default async function handler(req, res) {
   try {
+    const token = req.query?.token || '';
+    const expected = process.env.CRON_TOKEN || '';
+
+    if (!expected || token !== expected) {
+      return json(res, 401, { error: 'Yetkisiz istek' });
+    }
+
+    const supabase = getSupabaseAdmin();
+
     const { data: sources, error: sourcesError } = await supabase
       .from('sources')
-      .select('id,name,feed_url,rss_url,site_url,is_active')
+      .select('*')
       .eq('is_active', true)
-      .order('priority_weight', { ascending: false })
-      .limit(50);
+      .order('priority_weight', { ascending: false });
 
-    if (sourcesError) throw sourcesError;
+    if (sourcesError) {
+      return json(res, 500, { error: sourcesError.message });
+    }
 
     let ingested = 0;
-    let processedSources = 0;
+    const debug = [];
 
     for (const source of sources || []) {
       const feedUrl = chooseFeedUrl(source);
+
       if (!feedUrl) {
-        debug.push({ source: source.name, skipped: 'missing_feed_url' });
+        debug.push({ source: source.name, status: 'skipped', reason: 'No feed URL' });
         continue;
       }
 
@@ -27,58 +36,80 @@ module.exports = async (req, res) => {
         const response = await fetch(feedUrl, {
           headers: {
             'user-agent': 'Mozilla/5.0 TeknoblogRadarBot/1.0',
-            'accept': 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8',
-          },
+            'accept': 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8'
+          }
         });
 
         if (!response.ok) {
-          debug.push({ source: source.name, feedUrl, skipped: `http_${response.status}` });
+          debug.push({
+            source: source.name,
+            status: 'http_error',
+            feedUrl,
+            code: response.status
+          });
           continue;
         }
 
-        const xml = await safeText(response);
-        if (!xml || xml.length < 80) {
-          debug.push({ source: source.name, feedUrl, skipped: 'empty_xml' });
-          continue;
-        }
+        const xml = await response.text();
+        const items = parseFeedItems(xml);
 
-        const items = parseFeedItems(xml).slice(0, 20);
-        processedSources += 1;
+        debug.push({
+          source: source.name,
+          status: 'fetched',
+          feedUrl,
+          count: items.length
+        });
 
         for (const item of items) {
-          const contentHash = hashValue(`${item.title}|${item.url}`);
-          const row = {
+          const title = safeText(item.title);
+          const url = safeText(item.url || item.link);
+          const summary = safeText(item.summary || item.description);
+          const image_url = safeText(item.image_url || item.image || '');
+
+          if (!title || !url) continue;
+
+          const content_hash = hashValue(`${title}|${url}`);
+
+          const payload = {
             source_id: source.id,
-            title: item.title,
-            url: item.url,
-            canonical_url: item.canonical_url || item.url,
-            summary: item.summary || '',
-            image_url: item.image_url,
-            published_at: item.published_at,
-            content_hash: contentHash,
+            title,
+            url,
+            canonical_url: url,
+            summary,
+            image_url: image_url || null,
+            published_at: item.published_at || null,
+            content_hash,
+            created_at: nowIso()
           };
 
           const { error: insertError } = await supabase
             .from('raw_feed_items')
-            .upsert(row, { onConflict: 'content_hash', ignoreDuplicates: false });
+            .upsert(payload, { onConflict: 'content_hash' });
 
-          if (!insertError) ingested += 1;
+          if (!insertError) {
+            ingested += 1;
+          }
         }
-
-        debug.push({ source: source.name, feedUrl, fetched: items.length });
       } catch (error) {
-        debug.push({ source: source.name, feedUrl, skipped: error.message });
+        debug.push({
+          source: source.name,
+          status: 'exception',
+          feedUrl,
+          error: error?.message || String(error)
+        });
       }
     }
 
     return json(res, 200, {
       ok: true,
       ingested,
-      processed_sources: processedSources,
-      finished_at: nowIso(),
       debug,
+      finished_at: nowIso()
     });
   } catch (error) {
-    return json(res, 500, { error: error.message, finished_at: nowIso(), debug });
+    return json(res, 500, {
+      error: error?.message || String(error),
+      finished_at: nowIso()
+    });
   }
-};
+}
