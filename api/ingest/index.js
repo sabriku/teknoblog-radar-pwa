@@ -1,4 +1,4 @@
-import { json, getSupabaseAdmin, parseFeedItems, hashValue, chooseFeedUrl, safeText, nowIso } from './_lib.js';
+import { json, getSupabaseAdmin, parseFeedItems, hashValue, chooseFeedUrl, safeText, nowIso } from '../_lib.js';
 
 export default async function handler(req, res) {
   try {

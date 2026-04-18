@@ -1,4 +1,4 @@
-import { getSupabaseAdmin, json, nowIso } from './_lib.js';
+import { getSupabaseAdmin, json, nowIso } from '../_lib.js';
 
 function scoreTitle(title = '') {
   const t = title.toLowerCase();
