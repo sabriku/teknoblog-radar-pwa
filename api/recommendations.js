@@ -1,30 +1,35 @@
-const { json, getSupabase } = require('./_lib');
+import { getSupabaseAdmin, json } from './_lib.js';
 
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
   try {
-    const supabase = await getSupabase();
-    const sortBy = req.query?.sortBy || 'total_score';
-    const orderBy = ['total_score','traffic_score','conversion_score','discover_score','social_score','editorial_score','published_at'].includes(sortBy)
-      ? sortBy
-      : 'total_score';
-    const minScore = Number(req.query?.minScore || 0);
-    const contentType = req.query?.contentType || 'all';
+    const supabase = getSupabaseAdmin();
 
-    let query = supabase
+    const sort = req.query.sort || 'total_score';
+    const allowedSorts = [
+      'total_score',
+      'traffic_score',
+      'conversion_score',
+      'discover_score',
+      'social_score',
+      'editorial_score',
+      'updated_at'
+    ];
+
+    const sortKey = allowedSorts.includes(sort) ? sort : 'total_score';
+
+    const { data, error } = await supabase
       .from('topic_candidates')
-      .select('id,title,summary,url,image_url,content_type_hint,total_score,traffic_score,conversion_score,discover_score,social_score,editorial_score,published_at,updated_at,status')
+      .select('*')
       .eq('status', 'active')
-      .gte('total_score', minScore)
-      .order(orderBy, { ascending: false })
-      .limit(200);
+      .order(sortKey, { ascending: false })
+      .limit(100);
 
-    if (contentType !== 'all') query = query.eq('content_type_hint', contentType);
-
-    const { data, error } = await query;
-    if (error) throw error;
+    if (error) {
+      return json(res, 500, { error: error.message });
+    }
 
     return json(res, 200, { items: data || [] });
   } catch (error) {
-    return json(res, 500, { error: `Supabase error: ${error.message}` });
+    return json(res, 500, { error: error?.message || String(error) });
   }
-};
+}

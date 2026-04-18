@@ -1,40 +1,52 @@
-const { json, getSupabase, nowIso } = require('./_lib');
+import { getSupabaseAdmin, json } from './_lib.js';
 
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
   try {
-    const supabase = await getSupabase();
+    const supabase = getSupabaseAdmin();
 
-    if (req.method === 'POST') {
-      const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
-      const payload = {
-        name: body.name,
-        feed_url: body.rss_url || body.feed_url,
-        rss_url: body.rss_url || body.feed_url,
-        site_url: body.site_url || null,
-        source_type: body.source_type || 'news',
-        market_relevance: body.market_relevance || 'global',
-        priority_weight: Number(body.priority_weight || 70),
-        trust_score: Number(body.trust_score || 70),
-        is_active: body.is_active !== false,
-        updated_at: nowIso(),
-      };
+    if (req.method === 'GET') {
+      const { data, error } = await supabase
+        .from('sources')
+        .select('*')
+        .order('priority_weight', { ascending: false });
 
-      if (!payload.name || !payload.rss_url) return json(res, 400, { error: 'name and rss_url are required' });
+      if (error) {
+        return json(res, 500, { error: error.message });
+      }
 
-      const { data, error } = await supabase.from('sources').insert(payload).select('*').single();
-      if (error) throw error;
-      return json(res, 200, { ok: true, item: data });
+      return json(res, 200, { items: data || [] });
     }
 
-    const { data, error } = await supabase
-      .from('sources')
-      .select('id,name,feed_url,rss_url,site_url,source_type,market_relevance,priority_weight,trust_score,is_active')
-      .order('priority_weight', { ascending: false })
-      .limit(200);
-    if (error) throw error;
+    if (req.method === 'POST') {
+      const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
 
-    return json(res, 200, { items: data || [] });
+      const payload = {
+        name: body?.name || '',
+        feed_url: body?.rss_url || body?.feed_url || '',
+        rss_url: body?.rss_url || body?.feed_url || '',
+        site_url: body?.site_url || '',
+        source_type: body?.source_type || 'news',
+        market_relevance: body?.market_relevance || 'global',
+        priority_weight: Number(body?.priority_weight || 50),
+        trust_score: Number(body?.trust_score || 70),
+        is_active: body?.is_active ?? true
+      };
+
+      const { data, error } = await supabase
+        .from('sources')
+        .insert(payload)
+        .select()
+        .single();
+
+      if (error) {
+        return json(res, 500, { error: error.message });
+      }
+
+      return json(res, 200, { item: data });
+    }
+
+    return json(res, 405, { error: 'Method not allowed' });
   } catch (error) {
-    return json(res, 500, { error: error.message });
+    return json(res, 500, { error: error?.message || String(error) });
   }
-};
+}
