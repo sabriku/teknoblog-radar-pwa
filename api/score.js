@@ -1,43 +1,70 @@
-const { json, getSupabase, stripHtml, nowIso } = require('./_lib');
+import { getSupabaseAdmin, json } from './_lib.js';
 
-const BRANDS = ['apple','google','samsung','microsoft','meta','openai','intel','qualcomm','xiaomi','huawei','oneplus','asus','nvidia','amd','sony'];
-const KEYWORDS = ['iphone','galaxy','android','windows','chrome','gemini','chatgpt','one ui','wear os','copilot','ipad','pixel','tesla','ev','fold','watch'];
-const BLACKLIST = ['affiliate','grammarly','commission junction','plr','email marketing','content creator tools','blogger','how i get free traffic','best wordpress plugin'];
-const DEAL_WORDS = ['price','fiyat','discount','indirim','sale','campaign','kampanya','coupon','kupon','preorder','ön sipariş'];
-const GUIDE_WORDS = ['how to','nasıl','guide','rehber','tips','ipuçları','vs','karşılaştırma','comparison'];
-const HOT_WORDS = ['launch','announced','duyurdu','rolling out','gets','update','güncelleme','released','tanıttı'];
+function scoreTitle(title = '') {
+  const t = title.toLowerCase();
 
-function scoreItem(item) {
-  const text = `${item.title || ''} ${item.summary || ''}`.toLowerCase();
-  let traffic = 18;
-  let conversion = 8;
-  let discover = 14;
+  let traffic = 20;
+  let conversion = 10;
+  let discover = 15;
   let social = 10;
-  let editorial = 12;
+  let editorial = 15;
+  let contentType = 'analysis';
 
-  if (BRANDS.some((b) => text.includes(b))) editorial += 10;
-  if (KEYWORDS.some((k) => text.includes(k))) traffic += 10;
-  if (DEAL_WORDS.some((k) => text.includes(k))) conversion += 18;
-  if (GUIDE_WORDS.some((k) => text.includes(k))) discover += 12;
-  if (HOT_WORDS.some((k) => text.includes(k))) social += 10;
+  const strongBrands = [
+    'apple', 'iphone', 'ipad', 'mac', 'samsung', 'galaxy', 'google', 'android',
+    'microsoft', 'windows', 'openai', 'chatgpt', 'meta', 'intel', 'qualcomm',
+    'xiaomi', 'huawei', 'oneplus', 'sony', 'nvidia', 'amd', 'tesla'
+  ];
 
-  if (/2022|2023|2024/i.test(text)) {
-    traffic -= 20;
-    discover -= 20;
+  const dealWords = ['discount', 'deal', 'sale', 'coupon', 'price', 'indirim', 'fiyat', 'kampanya'];
+  const launchWords = ['launch', 'announced', 'introduces', 'unveils', 'tanıttı', 'duyurdu'];
+  const updateWords = ['update', 'rollout', 'beta', 'one ui', 'ios', 'android 16', 'windows 11'];
+
+  if (strongBrands.some(w => t.includes(w))) {
+    traffic += 15;
+    discover += 10;
+    editorial += 10;
+  }
+
+  if (dealWords.some(w => t.includes(w))) {
+    conversion += 25;
+    traffic += 10;
+    contentType = 'deal';
+  }
+
+  if (launchWords.some(w => t.includes(w))) {
+    traffic += 15;
+    social += 15;
+    discover += 10;
+    contentType = 'launch';
+  }
+
+  if (updateWords.some(w => t.includes(w))) {
+    traffic += 10;
+    discover += 10;
+    social += 10;
+    contentType = 'update';
+  }
+
+  if (/\b(2022|2023|2024)\b/.test(t)) {
+    traffic -= 40;
+    conversion -= 20;
+    discover -= 30;
+    social -= 20;
+    editorial -= 20;
+  }
+
+  const blacklist = [
+    'affiliate', 'grammarly', 'commission junction', 'plr',
+    'email marketing', 'how i get free traffic', 'best wordpress plugin'
+  ];
+
+  if (blacklist.some(w => t.includes(w))) {
+    traffic -= 35;
+    conversion -= 35;
+    discover -= 35;
+    social -= 20;
     editorial -= 25;
-  }
-
-  if (BLACKLIST.some((k) => text.includes(k))) {
-    traffic -= 30;
-    conversion -= 15;
-    discover -= 20;
-    editorial -= 30;
-  }
-
-  const agePenalty = item.published_at ? Math.max(0, Math.floor((Date.now() - new Date(item.published_at).getTime()) / 86400000) - 7) : 0;
-  if (agePenalty > 0) {
-    traffic -= Math.min(agePenalty, 20);
-    social -= Math.min(agePenalty, 15);
   }
 
   traffic = Math.max(0, Math.min(100, traffic));
@@ -46,70 +73,80 @@ function scoreItem(item) {
   social = Math.max(0, Math.min(100, social));
   editorial = Math.max(0, Math.min(100, editorial));
 
-  const total = Math.round((traffic * 0.30) + (conversion * 0.20) + (discover * 0.20) + (social * 0.10) + (editorial * 0.20));
+  const total = Math.round(
+    traffic * 0.30 +
+    conversion * 0.20 +
+    discover * 0.20 +
+    social * 0.10 +
+    editorial * 0.20
+  );
 
-  let contentType = 'analysis';
-  if (DEAL_WORDS.some((k) => text.includes(k))) contentType = 'deal';
-  else if (GUIDE_WORDS.some((k) => text.includes(k))) contentType = text.includes('vs') || text.includes('comparison') ? 'comparison' : 'guide';
-  else if (HOT_WORDS.some((k) => text.includes(k))) contentType = 'hot_news';
-  else if (text.includes('launch') || text.includes('tanıttı')) contentType = 'launch';
-  else if (text.includes('update') || text.includes('güncelleme')) contentType = 'update';
-
-  return { total, traffic, conversion, discover, social, editorial, contentType };
+  return {
+    traffic_score: traffic,
+    conversion_score: conversion,
+    discover_score: discover,
+    social_score: social,
+    editorial_score: editorial,
+    total_score: total,
+    content_type_hint: contentType
+  };
 }
 
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
   try {
-    const supabase = await getSupabase();
+    const token = req.query?.token || '';
+    const expected = process.env.CRON_TOKEN || '';
 
-    const { data: rawItems, error } = await supabase
+    if (!expected || token !== expected) {
+      return json(res, 401, { error: 'Yetkisiz istek' });
+    }
+
+    const supabase = getSupabaseAdmin();
+
+    const { data: rows, error } = await supabase
       .from('raw_feed_items')
-      .select('id,source_id,title,url,canonical_url,summary,image_url,published_at,content_hash')
+      .select('*')
       .order('created_at', { ascending: false })
-      .limit(300);
+      .limit(200);
 
-    if (error) throw error;
+    if (error) {
+      return json(res, 500, { error: error.message });
+    }
 
     let processed = 0;
 
-    for (const item of rawItems || []) {
-      const scoring = scoreItem(item);
-      const row = {
-        raw_feed_item_id: item.id,
-        source_id: item.source_id,
-        title: stripHtml(item.title || ''),
-        summary: stripHtml(item.summary || ''),
-        url: item.url,
-        image_url: item.image_url,
-        published_at: item.published_at,
-        content_type_hint: scoring.contentType,
-        total_score: scoring.total,
-        traffic_score: scoring.traffic,
-        conversion_score: scoring.conversion,
-        discover_score: scoring.discover,
-        social_score: scoring.social,
-        editorial_score: scoring.editorial,
+    for (const row of rows || []) {
+      const scores = scoreTitle(row.title || '');
+
+      const payload = {
+        raw_feed_item_id: row.id,
+        source_id: row.source_id || null,
+        title: row.title || '',
+        summary: row.summary || '',
+        url: row.url || row.canonical_url || '',
+        image_url: row.image_url || null,
+        content_type_hint: scores.content_type_hint,
+        total_score: scores.total_score,
+        traffic_score: scores.traffic_score,
+        conversion_score: scores.conversion_score,
+        discover_score: scores.discover_score,
+        social_score: scores.social_score,
+        editorial_score: scores.editorial_score,
         status: 'active',
-        updated_at: nowIso(),
+        updated_at: new Date().toISOString()
       };
 
-      const { error: upsertError } = await supabase
+      const { error: insertError } = await supabase
         .from('topic_candidates')
-        .upsert(row, { onConflict: 'raw_feed_item_id', ignoreDuplicates: false });
+        .upsert(payload, { onConflict: 'raw_feed_item_id' });
 
-      if (!upsertError) processed += 1;
+      if (!insertError) {
+        processed += 1;
+      }
     }
 
-    await supabase.from('pipeline_runs').insert({
-      status: 'finished',
-      ingested_count: 0,
-      processed_count: processed,
-      notes: 'Score endpoint completed',
-      finished_at: nowIso(),
-    });
-
-    return json(res, 200, { ok: true, processed, finished_at: nowIso() });
+    return json(res, 200, { ok: true, processed });
   } catch (error) {
-    return json(res, 500, { error: error.message, finished_at: nowIso() });
+    return json(res, 500, { error: error?.message || String(error) });
   }
-};
+}

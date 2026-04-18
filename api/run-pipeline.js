@@ -1,64 +1,93 @@
-const { json, getSupabase, nowIso } = require('./_lib');
-const ingest = require('./ingest');
-const score = require('./score');
+import { getSupabaseAdmin, json } from './_lib.js';
 
-function runHandler(handler, req) {
-  return new Promise((resolve) => {
-    let body = '';
-    const res = {
-      statusCode: 200,
-      headers: {},
-      setHeader(name, value) { this.headers[name] = value; },
-      end(chunk) { body += chunk || ''; resolve({ statusCode: this.statusCode, body }); },
-    };
-    Promise.resolve(handler(req, res)).catch((error) => {
-      resolve({ statusCode: 500, body: JSON.stringify({ error: error.message }) });
-    });
-  });
-}
-
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
   try {
-    const token = req.query?.token || req.body?.token || req.headers['x-cron-token'];
-    if (!token || token !== process.env.CRON_TOKEN) {
-      return json(res, 401, { error: 'Yetkisiz istek' });
+    const token = req.query?.token || '';
+    const expected = process.env.CRON_TOKEN || '';
+
+    if (!expected || token !== expected) {
+      return json(res, 401, {
+        error: 'Yetkisiz istek',
+        finished_at: new Date().toISOString()
+      });
     }
 
-    const supabase = await getSupabase();
-    const { data: runRow } = await supabase
+    const supabase = getSupabaseAdmin();
+
+    const { data: runRow, error: runInsertError } = await supabase
       .from('pipeline_runs')
-      .insert({ status: 'running', notes: 'Pipeline started' })
-      .select('id')
+      .insert({
+        status: 'running',
+        ingested_count: 0,
+        processed_count: 0
+      })
+      .select()
       .single();
 
-    const ingestResult = await runHandler(ingest, { query: {}, body: {}, headers: {} });
-    const ingestPayload = JSON.parse(ingestResult.body || '{}');
-    const scoreResult = await runHandler(score, { query: {}, body: {}, headers: {} });
-    const scorePayload = JSON.parse(scoreResult.body || '{}');
+    if (runInsertError) {
+      return json(res, 500, {
+        error: runInsertError.message,
+        finished_at: new Date().toISOString()
+      });
+    }
+
+    const baseUrl = `https://${req.headers.host}`;
+
+    const ingestResp = await fetch(`${baseUrl}/api/ingest?token=${encodeURIComponent(token)}`);
+    const ingestJson = await ingestResp.json();
+
+    if (!ingestResp.ok) {
+      await supabase
+        .from('pipeline_runs')
+        .update({
+          status: 'failed',
+          finished_at: new Date().toISOString(),
+          notes: JSON.stringify(ingestJson)
+        })
+        .eq('id', runRow.id);
+
+      return json(res, 500, ingestJson);
+    }
+
+    const scoreResp = await fetch(`${baseUrl}/api/score?token=${encodeURIComponent(token)}`);
+    const scoreJson = await scoreResp.json();
+
+    if (!scoreResp.ok) {
+      await supabase
+        .from('pipeline_runs')
+        .update({
+          status: 'failed',
+          finished_at: new Date().toISOString(),
+          notes: JSON.stringify(scoreJson),
+          ingested_count: Number(ingestJson.ingested || 0)
+        })
+        .eq('id', runRow.id);
+
+      return json(res, 500, scoreJson);
+    }
+
+    const finishedAt = new Date().toISOString();
 
     await supabase
       .from('pipeline_runs')
       .update({
-        status: 'finished',
-        ingested_count: ingestPayload.ingested || 0,
-        processed_count: scorePayload.processed || 0,
-        notes: JSON.stringify({
-          ingest_status: ingestResult.statusCode,
-          score_status: scoreResult.statusCode,
-          processed_sources: ingestPayload.processed_sources || 0,
-        }),
-        finished_at: nowIso(),
+        status: 'completed',
+        finished_at: finishedAt,
+        ingested_count: Number(ingestJson.ingested || 0),
+        processed_count: Number(scoreJson.processed || 0)
       })
-      .eq('id', runRow?.id || 0);
+      .eq('id', runRow.id);
 
     return json(res, 200, {
       ok: true,
-      ingested: ingestPayload.ingested || 0,
-      processed: scorePayload.processed || 0,
-      finished_at: nowIso(),
-      debug: ingestPayload.debug || [],
+      ingested: Number(ingestJson.ingested || 0),
+      processed: Number(scoreJson.processed || 0),
+      finished_at: finishedAt
     });
   } catch (error) {
-    return json(res, 500, { error: error.message, finished_at: nowIso() });
+    return json(res, 500, {
+      error: error?.message || String(error),
+      finished_at: new Date().toISOString()
+    });
   }
-};
+}
