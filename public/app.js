@@ -326,6 +326,30 @@
     }
   }
 
+  async function runIngestBatches(token, statusEl) {
+    let offset = 0;
+    const sourceLimit = 4;
+    let totalIngested = 0;
+    let totalUpdated = 0;
+    let batches = 0;
+
+    while (batches < 6) {
+      statusEl.textContent = `RSS içerikleri alınıyor, parti ${batches + 1}...`;
+      const qs = `?token=${encodeURIComponent(token)}&source_limit=${sourceLimit}&source_offset=${offset}&item_limit=10&t=${Date.now()}`;
+      const result = await fetchJson(`/api/ingest${qs}`, { timeoutMs: 40000 });
+      totalIngested += result.ingested ?? 0;
+      totalUpdated += result.updated ?? 0;
+      batches += 1;
+
+      if (!result.has_more || (result.processed_sources ?? 0) < sourceLimit) {
+        break;
+      }
+      offset += sourceLimit;
+    }
+
+    return { totalIngested, totalUpdated, batches };
+  }
+
   async function triggerRefresh() {
     const status = document.getElementById('tb-status');
     let token = localStorage.getItem('tb_radar_cron_token') || '';
@@ -341,16 +365,15 @@
 
     state.refreshing = true;
     setRefreshButtonState(true);
-    status.textContent = 'RSS içerikleri alınıyor...';
 
     try {
-      const qs = `?token=${encodeURIComponent(token)}&t=${Date.now()}`;
-      const ingest = await fetchJson(`/api/ingest${qs}`, { timeoutMs: 120000 });
+      const ingest = await runIngestBatches(token, status);
       status.textContent = 'Puanlama ve aday listesi güncelleniyor...';
+      const qs = `?token=${encodeURIComponent(token)}&t=${Date.now()}`;
       const scoreData = await fetchJson(`/api/score${qs}`, { timeoutMs: 90000 });
       status.textContent = 'Kartlar yenileniyor...';
       await Promise.allSettled([loadRecommendations(), loadSources()]);
-      status.textContent = `İçerikler güncellendi. Alınan: ${ingest.ingested ?? 0}, güncellenen: ${ingest.updated ?? 0}, işlenen: ${scoreData.processed ?? 0}`;
+      status.textContent = `İçerikler güncellendi. Alınan: ${ingest.totalIngested}, güncellenen: ${ingest.totalUpdated}, işlenen: ${scoreData.processed ?? 0}`;
     } finally {
       state.refreshing = false;
       setRefreshButtonState(false);
