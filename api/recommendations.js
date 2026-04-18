@@ -17,15 +17,28 @@ export default async function handler(req, res) {
 
     const sortKey = allowedSorts.includes(sort) ? sort : 'total_score';
 
-    const { data, error } = await supabase
-      .from('topic_candidates')
-      .select('*')
-      .eq('status', 'active')
-      .order(sortKey, { ascending: false })
-      .limit(100);
+    const [{ data: items, error: itemsError }, { data: sources, error: sourcesError }] = await Promise.all([
+      supabase
+        .from('topic_candidates')
+        .select('*')
+        .eq('status', 'active')
+        .order(sortKey, { ascending: false })
+        .limit(100),
+      supabase
+        .from('sources')
+        .select('id,name')
+    ]);
 
-    if (error) return json(res, 500, { error: error.message });
-    return json(res, 200, { items: data || [] });
+    if (itemsError) return json(res, 500, { error: itemsError.message });
+    if (sourcesError) return json(res, 500, { error: sourcesError.message });
+
+    const sourceMap = new Map((sources || []).map((source) => [String(source.id), source.name || '']));
+    const enriched = (items || []).map((item) => ({
+      ...item,
+      source_name: item.source_name || sourceMap.get(String(item.source_id)) || ''
+    }));
+
+    return json(res, 200, { items: enriched });
   } catch (error) {
     return json(res, 500, { error: error?.message || String(error) });
   }
