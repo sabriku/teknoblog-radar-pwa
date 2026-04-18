@@ -15,6 +15,13 @@
     return '';
   };
 
+  function decodeEntities(input) {
+    const str = String(input ?? '');
+    const el = document.createElement('textarea');
+    el.innerHTML = str;
+    return el.value;
+  }
+
   const getUrl = (item) => pick(
     item?.url,
     item?.canonical_url,
@@ -33,13 +40,14 @@
     item?.media_url
   );
 
-  const getTitle = (item) => pick(item?.title, 'Başlıksız içerik');
-  const getSummary = (item) => pick(item?.summary, item?.excerpt, item?.description);
+  const getTitle = (item) => decodeEntities(pick(item?.title, 'Başlıksız içerik'));
+  const getSummary = (item) => decodeEntities(pick(item?.summary, item?.excerpt, item?.description));
   const score = (item, key) => Number.isFinite(Number(item?.[key])) ? Number(item[key]) : 0;
 
   function root() {
     let el = document.getElementById('tb-radar-root');
     if (el) return el;
+
     document.body.innerHTML = `
       <div id="tb-radar-root" style="max-width:1320px;margin:0 auto;padding:16px;font-family:'Open Sans',sans-serif;color:#111827">
         <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;justify-content:space-between;margin-bottom:16px">
@@ -94,9 +102,11 @@
         </div>
       </div>
     `;
+
     const style = document.createElement('style');
     style.textContent = `@media (max-width:980px){#tb-layout{grid-template-columns:1fr!important}}`;
     document.head.appendChild(style);
+
     return document.getElementById('tb-radar-root');
   }
 
@@ -110,6 +120,7 @@
     const status = document.getElementById('tb-status');
     const sort = document.getElementById('tb-sort');
     if (sort) sort.value = state.sort;
+
     const items = [...state.items].sort((a, b) => score(b, state.sort) - score(a, state.sort));
     status.textContent = `${items.length} içerik listeleniyor`;
 
@@ -208,6 +219,27 @@
     }
   }
 
+  async function triggerRefresh() {
+    const status = document.getElementById('tb-status');
+    let token = localStorage.getItem('tb_radar_cron_token') || '';
+
+    if (!token) {
+      token = window.prompt('CRON_TOKEN değerini girin');
+      if (!token) {
+        status.textContent = 'Yenileme iptal edildi.';
+        return;
+      }
+      localStorage.setItem('tb_radar_cron_token', token);
+    }
+
+    status.textContent = 'İçerikler yenileniyor...';
+
+    const data = await fetchJson(`/api/run-pipeline?token=${encodeURIComponent(token)}`);
+    await Promise.all([loadRecommendations(), loadSources()]);
+
+    status.textContent = `İçerikler güncellendi. Alınan: ${data.ingested ?? 0}, işlenen: ${data.processed ?? 0}`;
+  }
+
   async function submitSourceForm(form) {
     const fd = new FormData(form);
     const payload = {
@@ -252,9 +284,7 @@
     const refreshBtn = e.target.closest('#tb-refresh');
     if (refreshBtn) {
       try {
-        document.getElementById('tb-status').textContent = 'İçerikler yenileniyor...';
-        await Promise.all([loadRecommendations(), loadSources()]);
-        document.getElementById('tb-status').textContent = 'İçerikler güncellendi.';
+        await triggerRefresh();
       } catch (err) {
         document.getElementById('tb-status').textContent = `Hata: ${err.message}`;
       }
