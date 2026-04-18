@@ -1,12 +1,11 @@
 {
   "name": "teknoblog-radar-pwa",
   "private": true,
-  "version": "1.0.0",
-  "type": "commonjs",
+  "type": "module",
   "engines": {
     "node": ">=18"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.49.8"
+    "@supabase/supabase-js": "^2.49.1"
   }
 }
