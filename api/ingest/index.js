@@ -5,6 +5,50 @@ function toPositiveInt(value, fallback) {
   return Number.isFinite(n) && n >= 0 ? n : fallback;
 }
 
+function firstMatch(pattern, text) {
+  const match = String(text || '').match(pattern);
+  return match ? (match[1] || '').trim() : '';
+}
+
+function normalizeImageUrl(url = '', baseUrl = '') {
+  const clean = String(url || '').trim();
+  if (!clean) return '';
+  if (/^https?:\/\//i.test(clean)) return clean;
+  if (/^\/\//.test(clean)) return `https:${clean}`;
+  try {
+    return new URL(clean, baseUrl).toString();
+  } catch {
+    return clean;
+  }
+}
+
+async function fetchOgImage(url = '') {
+  if (!url) return '';
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 2500);
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'user-agent': 'Mozilla/5.0 TeknoblogRadarBot/1.0',
+        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+      },
+      cache: 'no-store',
+      signal: controller.signal
+    });
+
+    if (!response.ok) return '';
+    const html = await response.text();
+    const og = firstMatch(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i, html);
+    const tw = firstMatch(/<meta[^>]*name=["']twitter:image["'][^>]*content=["']([^"']+)["']/i, html);
+    return normalizeImageUrl(og || tw, url);
+  } catch {
+    return '';
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 export default async function handler(req, res) {
   try {
     const token = req.query?.token || '';
@@ -72,6 +116,7 @@ export default async function handler(req, res) {
         const xml = await response.text();
         const items = parseFeedItems(xml).slice(0, itemLimit);
         processed_sources += 1;
+        let ogLookups = 0;
 
         debug.push({ source: source.name, status: 'fetched', feedUrl, count: items.length });
 
@@ -79,7 +124,7 @@ export default async function handler(req, res) {
           const title = safeText(item.title);
           const url = safeText(item.url || item.link);
           const summary = safeText(item.summary || item.description);
-          const image_url = safeText(item.image_url || item.image || '');
+          let image_url = safeText(item.image_url || item.image || '');
           const content_hash = hashValue(`${title}|${url}`);
 
           if (!title || !url) continue;
@@ -92,8 +137,14 @@ export default async function handler(req, res) {
 
           if (existingError) continue;
 
-          if (existing && existing.length > 0) {
-            const current = existing[0];
+          const current = existing && existing.length > 0 ? existing[0] : null;
+
+          if (!image_url && !(current && current.image_url) && ogLookups < 1 && Date.now() - startedAt < hardStopMs - 3000) {
+            ogLookups += 1;
+            image_url = safeText(await fetchOgImage(url));
+          }
+
+          if (current) {
             const patch = {};
             if (image_url && !current.image_url) patch.image_url = image_url;
             if (summary && (!current.summary || current.summary.length < summary.length)) patch.summary = summary;
