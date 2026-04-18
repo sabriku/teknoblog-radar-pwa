@@ -44,6 +44,13 @@
   const getSummary = (item) => decodeEntities(pick(item?.summary, item?.excerpt, item?.description));
   const score = (item, key) => Number.isFinite(Number(item?.[key])) ? Number(item[key]) : 0;
 
+  function getSourceName(item) {
+    const sourceId = item?.source_id;
+    if (!sourceId) return '';
+    const found = state.sources.find((source) => String(source.id) === String(sourceId));
+    return found?.name || '';
+  }
+
   function root() {
     let el = document.getElementById('tb-radar-root');
     if (el) return el;
@@ -143,6 +150,7 @@
       const image = getImage(item);
       const title = getTitle(item);
       const summary = getSummary(item);
+      const sourceName = getSourceName(item);
       const checked = state.selected.has(url) ? 'checked' : '';
 
       return `
@@ -167,9 +175,12 @@
 
             <p style="margin:0;font-size:14px;line-height:1.55;color:#4b5563;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(summary)}</p>
 
-            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:2px">
-              <a href="${esc(url || '#')}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;justify-content:center;padding:10px 12px;border-radius:10px;background:#f04a0a;color:#fff;text-decoration:none;font-size:14px;font-weight:700;${url ? '' : 'pointer-events:none;opacity:.5;'}">Haberi Aç</a>
-              <button type="button" data-copy-url="${esc(url)}" style="padding:10px 12px;border:1px solid #f04a0a;border-radius:10px;background:#fff;color:#f04a0a;font-size:14px;font-weight:700;cursor:pointer">URL kopyala</button>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:2px;align-items:center;justify-content:space-between">
+              <div style="display:flex;flex-wrap:wrap;gap:8px">
+                <a href="${esc(url || '#')}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;justify-content:center;padding:10px 12px;border-radius:10px;background:#f04a0a;color:#fff;text-decoration:none;font-size:14px;font-weight:700;${url ? '' : 'pointer-events:none;opacity:.5;'}">Haberi Aç</a>
+                <button type="button" data-copy-url="${esc(url)}" style="padding:10px 12px;border:1px solid #f04a0a;border-radius:10px;background:#fff;color:#f04a0a;font-size:14px;font-weight:700;cursor:pointer">URL kopyala</button>
+              </div>
+              <div style="font-size:12px;color:#6b7280;font-weight:700;white-space:nowrap">${esc(sourceName)}</div>
             </div>
           </div>
         </article>
