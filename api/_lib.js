@@ -1,131 +1,166 @@
-function json(res, status, payload) {
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const ANON_KEY = process.env.SUPABASE_ANON_KEY;
+const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const CRON_TOKEN = process.env.CRON_TOKEN;
+
+function json(res, status, data) {
   res.statusCode = status;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
-  res.end(JSON.stringify(payload));
+  res.end(JSON.stringify(data));
 }
 
-async function getEnv() {
-  const required = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'];
-  const missing = required.filter(k => !process.env[k]);
-  return { ok: missing.length === 0, missing };
+function getSupabaseHeaders(useServiceRole = false) {
+  const key = useServiceRole ? SERVICE_ROLE_KEY : ANON_KEY;
+  return {
+    apikey: key,
+    Authorization: `Bearer ${key}`,
+    'Content-Type': 'application/json',
+    Prefer: 'return=representation'
+  };
 }
 
-async function supabaseFetch(path, options = {}) {
-  const base = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const res = await fetch(`${base}/rest/v1/${path}`, {
-    ...options,
-    headers: {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
-      'Content-Type': 'application/json',
-      Prefer: options.prefer || 'return=representation',
-      ...(options.headers || {})
-    }
-  });
-  const text = await res.text();
-  let data;
+async function sb(path, options = {}, useServiceRole = true) {
+  const headers = { ...getSupabaseHeaders(useServiceRole), ...(options.headers || {}) };
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { ...options, headers });
+  const text = await response.text();
+  let data = null;
   try { data = text ? JSON.parse(text) : null; } catch { data = text; }
-  if (!res.ok) {
-    throw new Error(typeof data === 'string' ? data : JSON.stringify(data));
+  if (!response.ok) {
+    throw new Error(`Supabase error ${response.status}: ${typeof data === 'string' ? data : JSON.stringify(data)}`);
   }
   return data;
 }
 
-function normalizeText(text = '') {
-  return text
-    .toLowerCase()
-    .replace(/&[^;]+;/g, ' ')
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+function stripHtml(html = '') {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
     .replace(/\s+/g, ' ')
     .trim();
 }
 
-function detectContentType(text) {
-  if (/(indirim|fiyat|kampanya|satın al|en ucuz|prime day|kupon|aksesuar)/.test(text)) return 'deal';
-  if (/(karşılaştırma|vs\b|hangisi|farkı ne)/.test(text)) return 'comparison';
-  if (/(nedir|nasıl|rehber|ipuçları|liste|en iyi)/.test(text)) return 'guide';
-  if (/(tanıt|duyurdu|unveils|announces|launch|introduces)/.test(text)) return 'launch';
-  if (/(güncelleme|update|one ui|ios|android|windows|chrome|gemini|chatgpt|copilot)/.test(text)) return 'update';
-  if (/(sızıntı|leak|render|renk|tasarım|iddiaya göre)/.test(text)) return 'analysis';
+function shortSummary(text = '', max = 180) {
+  const cleaned = stripHtml(text);
+  if (cleaned.length <= max) return cleaned;
+  return cleaned.slice(0, max).trim() + '…';
+}
+
+function decodeXml(text = '') {
+  return text
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
+function getTag(block, tags) {
+  const list = Array.isArray(tags) ? tags : [tags];
+  for (const tag of list) {
+    const re = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'i');
+    const match = block.match(re);
+    if (match) return decodeXml(match[1].trim());
+  }
+  return '';
+}
+
+function extractImage(block, summary = '') {
+  const imgMatch = block.match(/<media:content[^>]*url=["']([^"']+)["']/i)
+    || block.match(/<media:thumbnail[^>]*url=["']([^"']+)["']/i)
+    || summary.match(/<img[^>]*src=["']([^"']+)["']/i)
+    || block.match(/<enclosure[^>]*url=["']([^"']+)["'][^>]*type=["']image\//i);
+  return imgMatch ? imgMatch[1] : '';
+}
+
+function parseRssItems(xml = '') {
+  const items = [];
+  const blocks = xml.match(/<item\b[\s\S]*?<\/item>/gi) || xml.match(/<entry\b[\s\S]*?<\/entry>/gi) || [];
+  for (const block of blocks) {
+    const title = getTag(block, 'title');
+    const linkTag = block.match(/<link[^>]*href=["']([^"']+)["'][^>]*\/?>/i);
+    const link = linkTag ? linkTag[1] : getTag(block, 'link');
+    const guid = getTag(block, 'guid') || link || title;
+    const summary = getTag(block, ['description', 'summary', 'content']);
+    const pub = getTag(block, ['pubDate', 'published', 'updated']);
+    const image = extractImage(block, summary);
+    if (title && link) {
+      items.push({ title: stripHtml(title), link, guid, summary, published_at: pub || null, image_url: image || null });
+    }
+  }
+  return items;
+}
+
+function simpleHash(input = '') {
+  let hash = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    hash = ((hash << 5) - hash) + input.charCodeAt(i);
+    hash |= 0;
+  }
+  return `h${Math.abs(hash)}`;
+}
+
+const BLACKLIST = [
+  'affiliate','grammarly','commission junction','plr','email marketing','content creator tools','blogger','2022','2023','2024','how i get free traffic','best wordpress plugin'
+];
+const BRAND_TERMS = ['apple','samsung','google','openai','microsoft','meta','qualcomm','intel','xiaomi','huawei','oneplus','sony'];
+const PRODUCT_TERMS = ['iphone','galaxy','android','windows','chrome','gemini','chatgpt','one ui','wear os','copilot','ipad','pixel','macbook'];
+const TURKEY_TERMS = ['turkey','türkiye','turkish','tl','₺'];
+const DEAL_TERMS = ['discount','sale','deal','kampanya','fiyat','price','indirim','preorder','pre-order','satış'];
+const UPDATE_TERMS = ['update','güncelleme','rollout','release','beta','patch'];
+const LAUNCH_TERMS = ['launch','announces','announced','introduces','debut','tanıttı','duyurdu'];
+const GUIDE_TERMS = ['how to','guide','neden','nasıl','best','top','compare','comparison'];
+
+function inferContentType(title, summary = '') {
+  const text = `${title} ${summary}`.toLowerCase();
+  if (DEAL_TERMS.some(t => text.includes(t))) return 'deal';
+  if (LAUNCH_TERMS.some(t => text.includes(t))) return 'launch';
+  if (UPDATE_TERMS.some(t => text.includes(t))) return 'update';
+  if (GUIDE_TERMS.some(t => text.includes(t))) return 'guide';
   return 'hot_news';
 }
 
-function clusterKey(title = '') {
-  return normalizeText(title)
-    .split(' ')
-    .filter(w => w.length > 2)
-    .slice(0, 8)
-    .join('-')
-    .slice(0, 120);
-}
+function scoreCandidate(item, source = {}) {
+  const text = `${item.title} ${item.summary || ''}`.toLowerCase();
+  let traffic = 25;
+  let conversion = 10;
+  let discover = 15;
+  let social = 15;
+  let editorial = Math.round((source.priority_weight || 50) / 5);
 
-function scoreItem(item, blacklistTerms = []) {
-  const title = normalizeText(item.title || '');
-  const summary = normalizeText(item.summary || '');
-  const text = `${title} ${summary}`;
-  const publishedAt = item.published_at ? new Date(item.published_at) : null;
-  const ageHours = publishedAt ? (Date.now() - publishedAt.getTime()) / 36e5 : 999;
+  if (BRAND_TERMS.some(t => text.includes(t))) traffic += 10;
+  if (PRODUCT_TERMS.some(t => text.includes(t))) traffic += 10;
+  if (TURKEY_TERMS.some(t => text.includes(t))) conversion += 12;
+  if (DEAL_TERMS.some(t => text.includes(t))) conversion += 22;
+  if (UPDATE_TERMS.some(t => text.includes(t))) discover += 8;
+  if (LAUNCH_TERMS.some(t => text.includes(t))) social += 12;
+  if (source.source_type === 'official') editorial += 12;
+  editorial += Math.round((source.trust_score || 70) / 10);
 
-  let traffic = 15;
-  let conversion = 5;
-  let discover = 5;
-  let social = 5;
-  let editorial = 10;
-
-  const bigBrands = /(apple|iphone|ipad|mac|samsung|galaxy|google|android|pixel|microsoft|windows|openai|chatgpt|meta|instagram|whatsapp|qualcomm|intel|xiaomi|huawei|adobe|oneplus|sony|nintendo|tesla)/;
-  const coreProducts = /(one ui|ios|ipados|macos|watchos|visionos|wear os|chrome|gemini|copilot|threads|xbox|playstation|airpods|galaxy s|iphone 1[6-9]|pixel \d|windows 11)/;
-  const turkeySignals = /(türkiye|turkey|tl\b|fiyat|ön sipariş|önsipariş|satış|stok|verg|kdv|resmi|dağıtım|operatör)/;
-  const hotNewsSignals = /(duyurdu|tanıttı|başlattı|yayınladı|sunuyor|getiriyor|launch|announces|introduces|rolls out|now available)/;
-  const discoverSignals = /(nedir|nasıl|rehber|karşılaştırma|hangi|en iyi|liste|özellikleri|uyumlu cihazlar)/;
-  const socialSignals = /(sızıntı|leak|render|renk|tasarım|görsel|first look|hands on|video)/;
-  const conversionSignals = /(indirim|kampanya|satın al|satın alma|fiyatı|aksesuar|karşılaştırma|hangi model|uygun fiyat|amazon|hepsiburada|mediamarkt)/;
-  const bannedPatterns = /(affiliate|commission junction|plr|email marketing|content creator tools|best wordpress plugin|blogger)/;
-
-  if (bigBrands.test(text)) { traffic += 20; editorial += 16; social += 8; }
-  if (coreProducts.test(text)) { traffic += 14; discover += 8; social += 6; }
-  if (turkeySignals.test(text)) { conversion += 18; editorial += 18; discover += 6; }
-  if (hotNewsSignals.test(text)) { traffic += 12; social += 10; }
-  if (discoverSignals.test(text)) { discover += 24; conversion += 6; }
-  if (socialSignals.test(text)) { social += 20; }
-  if (conversionSignals.test(text)) { conversion += 28; discover += 5; }
-
-  if (item.source_type === 'official') { editorial += 18; traffic += 8; }
-  if (item.market_relevance === 'turkey') { editorial += 20; conversion += 10; }
-  if (item.market_relevance === 'mixed') { editorial += 10; }
-
-  if (typeof item.trust_score === 'number') editorial += Math.round((item.trust_score - 50) / 5);
-  if (typeof item.priority_weight === 'number') traffic += Math.round((item.priority_weight - 50) / 5);
-
-  if (ageHours <= 6) { traffic += 18; social += 8; }
-  else if (ageHours <= 24) { traffic += 10; social += 4; }
-  else if (ageHours <= 72) { traffic += 4; }
-  else if (ageHours > 24 * 30) { traffic -= 30; editorial -= 10; }
-
-  if (/\b(2022|2023|2024)\b/.test(text)) {
-    traffic -= 40; discover -= 20; editorial -= 20;
-  }
-
-  if (bannedPatterns.test(text)) {
-    traffic -= 35; conversion -= 25; discover -= 25; editorial -= 35;
-  }
-
-  for (const term of blacklistTerms) {
-    if (term && text.includes(term)) {
-      traffic -= 35;
-      conversion -= 20;
-      discover -= 20;
-      editorial -= 35;
-      break;
+  const published = item.published_at ? new Date(item.published_at) : null;
+  if (published && !Number.isNaN(published.getTime())) {
+    const ageHours = (Date.now() - published.getTime()) / 36e5;
+    if (ageHours <= 24) {
+      traffic += 10; discover += 10; social += 10;
+    } else if (ageHours > 24 * 7) {
+      traffic -= 10; discover -= 10; social -= 8;
+    } else if (ageHours > 24 * 30) {
+      traffic -= 20; discover -= 20; social -= 15;
     }
   }
 
-  const contentType = detectContentType(text);
-  if (!bigBrands.test(text) && !turkeySignals.test(text) && !conversionSignals.test(text)) {
-    editorial -= 25;
-    traffic -= 15;
+  if (BLACKLIST.some(term => text.includes(term))) {
+    traffic -= 25; conversion -= 20; discover -= 20; social -= 20; editorial -= 20;
   }
+
+  const contentType = inferContentType(item.title, item.summary);
+  if (contentType === 'guide') discover += 5;
+  if (contentType === 'deal') conversion += 10;
 
   const clamp = (n) => Math.max(0, Math.min(100, Math.round(n)));
   traffic = clamp(traffic);
@@ -133,20 +168,29 @@ function scoreItem(item, blacklistTerms = []) {
   discover = clamp(discover);
   social = clamp(social);
   editorial = clamp(editorial);
-
-  const total = clamp((traffic * 0.25) + (conversion * 0.20) + (discover * 0.15) + (social * 0.10) + (editorial * 0.30));
+  const total = clamp(Math.round((traffic * 0.3) + (conversion * 0.25) + (discover * 0.2) + (social * 0.15) + (editorial * 0.1)));
 
   return {
+    content_type_hint: contentType,
     traffic_score: traffic,
     conversion_score: conversion,
     discover_score: discover,
     social_score: social,
     editorial_score: editorial,
     total_score: total,
-    content_type_hint: contentType,
-    canonical_topic_title: item.title,
-    topic_cluster_key: clusterKey(item.title || '')
   };
 }
 
-module.exports = { json, getEnv, supabaseFetch, scoreItem, normalizeText, detectContentType, clusterKey };
+module.exports = {
+  SUPABASE_URL,
+  ANON_KEY,
+  SERVICE_ROLE_KEY,
+  CRON_TOKEN,
+  json,
+  sb,
+  stripHtml,
+  shortSummary,
+  parseRssItems,
+  simpleHash,
+  scoreCandidate,
+};

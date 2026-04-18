@@ -1,28 +1,21 @@
 # Teknoblog Radar PWA
 
-Teknoblog için hazırlanmış, WordPress'ten bağımsız çalışan bir editoryal radar PWA iskeletidir.
+Teknoblog için Vercel + GitHub + Supabase tabanlı, mobil uyumlu editoryal radar PWA projesi.
 
 ## Özellikler
+- RSS kaynaklarından içerik toplama
+- Teknoblog odaklı puanlama
+- Discover, trafik, dönüşüm, sosyal ve toplam skora göre sıralama
+- Kısa kartlar, tıklanabilir kaynak linkleri
+- Tek tek URL kopyalama ve çoklu seçim
+- Yeni RSS kaynağı ekleme
+- Mobil uyumlu arayüz
+- Supabase üzerinde hafif veri modeli ve retention mantığı
 
-- PWA, çevrimdışı önbellekleme ve kurulabilir arayüz
-- Supabase tabanlı hafif veri modeli
-- Vercel serverless API uçları
-- RSS ingest, scoring ve recommendation akışı
-- Storage dostu retention yaklaşımı
+## Klasörler
+- `api/`: Vercel serverless fonksiyonları
+- `public/`: PWA arayüzü
+- `sql/`: Supabase şema, seed ve cron SQL dosyaları
 
-## Klasör yapısı
-
-- `public/` PWA dosyaları
-- `api/` Vercel serverless fonksiyonları
-- `sql/` Supabase şema ve bakım dosyaları
-
-## Kurulum özeti
-
-1. Supabase'te `sql/schema_lean.sql` çalıştırın.
-2. İsterseniz `sql/cron_jobs.sql` ve `sql/retention_examples.sql` dosyalarını uygulayın.
-3. Bu repo'yu GitHub'a yükleyin.
-4. Vercel'de import edin.
-5. Environment variables ekleyin.
-6. `/api/health` ve `/api/run-pipeline?token=...` ile test edin.
-
+## Kurulum
 Detaylı adımlar için `INSTALL_GUIDE.md` dosyasına bakın.

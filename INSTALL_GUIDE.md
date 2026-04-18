@@ -1,37 +1,28 @@
 # Kurulum Rehberi
 
-## 1. Supabase
+## 1. GitHub
+Bu klasörü GitHub'da boş bir repoya yükleyin.
 
-Önce yeni bir Supabase projesi açın. SQL Editor içinden sırasıyla aşağıdaki dosyaları çalıştırın:
+## 2. Supabase
+SQL Editor içinde şu sırayla çalıştırın:
+1. `sql/schema.sql`
+2. `sql/seed.sql`
+3. `sql/ui_upgrade.sql`
 
-1. `sql/schema_lean.sql`
-2. `sql/cron_jobs.sql`, isteğe bağlı
-3. `sql/retention_examples.sql`, isteğe bağlı örnekler
-
-## 2. GitHub
-
-Bu klasörü yeni bir GitHub repository içine yükleyin.
+İsteğe bağlı:
+4. `sql/supabase_cron_setup.sql`
 
 ## 3. Vercel
-
-GitHub repository'sini Vercel'e import edin.
-
 Environment variables:
-
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `CRON_TOKEN`
 
-## 4. Test
-
-Deploy sonrası şu adresleri test edin:
-
+## 4. İlk test
 - `/api/health`
-- `/api/recommendations`
-- `/api/run-pipeline?token=YOUR_CRON_TOKEN`
+- `/api/run-pipeline?token=CRON_TOKEN`
+- Ana uygulama adresi
 
-## 5. Güvenlik
-
-`SUPABASE_SERVICE_ROLE_KEY` yalnızca sunucu tarafında kullanılmalı.
-Tarayıcıya sadece `SUPABASE_ANON_KEY` çıkmalı.
+## 5. Supabase Cron
+`sql/supabase_cron_setup.sql` dosyasındaki alan adını ve token'ı kendi değerlerinizle değiştirip çalıştırın.
