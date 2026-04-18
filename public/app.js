@@ -52,7 +52,7 @@
       <div id="tb-radar-root" style="max-width:1320px;margin:0 auto;padding:16px;font-family:'Open Sans',sans-serif;color:#111827">
         <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;justify-content:space-between;margin-bottom:16px">
           <div>
-            <div style="font:700 32px/1 'Fira Sans Condensed',sans-serif;color:#0057b8">Teknoblog İçerik Radar</div>
+            <div style="font:700 32px/1 'Fira Sans Condensed',sans-serif;color:#f04a0a">Teknoblog İçerik Radar</div>
             <div style="margin-top:8px;font-size:14px;color:#4b5563">Kaynakları tara, haber seç, URL kopyala</div>
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
@@ -65,8 +65,8 @@
               <option value="social_score">Sosyal</option>
               <option value="editorial_score">Editoryal</option>
             </select>
-            <button id="tb-refresh" type="button" style="padding:10px 14px;border:0;border-radius:10px;background:#0057b8;color:#fff;font-weight:700;cursor:pointer">İçerikleri Yenile</button>
-            <button id="tb-copy-selected" type="button" style="padding:10px 14px;border:1px solid #0057b8;border-radius:10px;background:#fff;color:#0057b8;font-weight:700;cursor:pointer">Seçilen URL'leri kopyala</button>
+            <button id="tb-refresh" type="button" style="padding:10px 14px;border:0;border-radius:10px;background:#f04a0a;color:#fff;font-weight:700;cursor:pointer">İçerikleri Yenile</button>
+            <button id="tb-copy-selected" type="button" style="padding:10px 14px;border:1px solid #f04a0a;border-radius:10px;background:#fff;color:#f04a0a;font-weight:700;cursor:pointer">Seçilen URL'leri kopyala</button>
           </div>
         </div>
 
@@ -94,7 +94,7 @@
                   <option value="turkey">Türkiye</option>
                   <option value="mixed">Karma</option>
                 </select>
-                <button type="submit" style="padding:11px 14px;border:0;border-radius:10px;background:#0057b8;color:#fff;font-weight:700;cursor:pointer">Kaynağı Ekle</button>
+                <button type="submit" style="padding:11px 14px;border:0;border-radius:10px;background:#f04a0a;color:#fff;font-weight:700;cursor:pointer">Kaynağı Ekle</button>
               </form>
               <div id="tb-source-form-status" style="margin-top:10px;font-size:13px;color:#4b5563"></div>
             </section>
@@ -111,7 +111,7 @@
   }
 
   function badge(label, value) {
-    return `<span style="display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;background:#eef4fb;color:#003b7a;font-size:12px;font-weight:700">${esc(label)} ${esc(value)}</span>`;
+    return `<span style="display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;background:#fff1eb;color:#b53607;font-size:12px;font-weight:700">${esc(label)} ${esc(value)}</span>`;
   }
 
   function renderItems() {
@@ -159,8 +159,8 @@
             <p style="margin:0;font-size:14px;line-height:1.55;color:#4b5563;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(summary)}</p>
 
             <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:2px">
-              <a href="${esc(url || '#')}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;justify-content:center;padding:10px 12px;border-radius:10px;background:#0057b8;color:#fff;text-decoration:none;font-size:14px;font-weight:700;${url ? '' : 'pointer-events:none;opacity:.5;'}">Haberi Aç</a>
-              <button type="button" data-copy-url="${esc(url)}" style="padding:10px 12px;border:1px solid #0057b8;border-radius:10px;background:#fff;color:#0057b8;font-size:14px;font-weight:700;cursor:pointer">URL kopyala</button>
+              <a href="${esc(url || '#')}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;justify-content:center;padding:10px 12px;border-radius:10px;background:#f04a0a;color:#fff;text-decoration:none;font-size:14px;font-weight:700;${url ? '' : 'pointer-events:none;opacity:.5;'}">Haberi Aç</a>
+              <button type="button" data-copy-url="${esc(url)}" style="padding:10px 12px;border:1px solid #f04a0a;border-radius:10px;background:#fff;color:#f04a0a;font-size:14px;font-weight:700;cursor:pointer">URL kopyala</button>
             </div>
           </div>
         </article>
