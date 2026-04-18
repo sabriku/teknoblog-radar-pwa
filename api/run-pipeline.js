@@ -9,12 +9,57 @@ async function parseResponseSafe(response) {
   }
 }
 
+function isAuthorized(req, expected) {
+  if (!expected) return false;
+  const token = req.query?.token || '';
+  if (token && token === expected) return true;
+  return Boolean(req.headers['x-vercel-cron']);
+}
+
+async function runIngestBatches(baseUrl, token) {
+  let offset = 0;
+  const sourceLimit = 4;
+  let totalIngested = 0;
+  let totalUpdated = 0;
+  let batches = 0;
+
+  while (batches < 10) {
+    const ingestResp = await fetch(`${baseUrl}/api/ingest?token=${encodeURIComponent(token)}&source_limit=${sourceLimit}&source_offset=${offset}&item_limit=10`);
+    const ingestParsed = await parseResponseSafe(ingestResp);
+
+    if (!ingestResp.ok || !ingestParsed.ok) {
+      return {
+        ok: false,
+        status: ingestResp.status,
+        raw: ingestParsed.raw?.slice(0, 4000) || 'Ingest failed'
+      };
+    }
+
+    const data = ingestParsed.data || {};
+    totalIngested += Number(data.ingested || 0);
+    totalUpdated += Number(data.updated || 0);
+    batches += 1;
+
+    if (!data.has_more || Number(data.processed_sources || 0) < sourceLimit) {
+      break;
+    }
+
+    offset += sourceLimit;
+  }
+
+  return {
+    ok: true,
+    ingested: totalIngested,
+    updated: totalUpdated,
+    batches
+  };
+}
+
 export default async function handler(req, res) {
   try {
-    const token = req.query?.token || '';
     const expected = process.env.CRON_TOKEN || '';
 
-    if (!expected || token !== expected) {
+    if (!isAuthorized(req, expected)) {
       return json(res, 401, {
         error: 'Yetkisiz istek',
         finished_at: nowIso()
@@ -41,31 +86,27 @@ export default async function handler(req, res) {
     }
 
     const baseUrl = `https://${req.headers.host}`;
+    const ingestResult = await runIngestBatches(baseUrl, expected);
 
-    const ingestResp = await fetch(`${baseUrl}/api/ingest?token=${encodeURIComponent(token)}`);
-    const ingestParsed = await parseResponseSafe(ingestResp);
-
-    if (!ingestResp.ok || !ingestParsed.ok) {
+    if (!ingestResult.ok) {
       await supabase
         .from('pipeline_runs')
         .update({
           status: 'failed',
           finished_at: nowIso(),
-          notes: ingestParsed.raw?.slice(0, 4000) || 'Ingest failed'
+          notes: ingestResult.raw || 'Ingest failed'
         })
         .eq('id', runRow.id);
 
       return json(res, 500, {
         error: 'Ingest failed',
-        status: ingestResp.status,
-        body: ingestParsed.raw?.slice(0, 4000) || null,
+        status: ingestResult.status,
+        body: ingestResult.raw || null,
         finished_at: nowIso()
       });
     }
 
-    const ingestJson = ingestParsed.data;
-
-    const scoreResp = await fetch(`${baseUrl}/api/score?token=${encodeURIComponent(token)}`);
+    const scoreResp = await fetch(`${baseUrl}/api/score?token=${encodeURIComponent(expected)}`);
     const scoreParsed = await parseResponseSafe(scoreResp);
 
     if (!scoreResp.ok || !scoreParsed.ok) {
@@ -74,7 +115,7 @@ export default async function handler(req, res) {
         .update({
           status: 'failed',
           finished_at: nowIso(),
-          ingested_count: Number(ingestJson.ingested || 0),
+          ingested_count: Number(ingestResult.ingested || 0),
           notes: scoreParsed.raw?.slice(0, 4000) || 'Score failed'
         })
         .eq('id', runRow.id);
@@ -87,7 +128,7 @@ export default async function handler(req, res) {
       });
     }
 
-    const scoreJson = scoreParsed.data;
+    const scoreJson = scoreParsed.data || {};
     const finishedAt = nowIso();
 
     await supabase
@@ -95,15 +136,18 @@ export default async function handler(req, res) {
       .update({
         status: 'completed',
         finished_at: finishedAt,
-        ingested_count: Number(ingestJson.ingested || 0),
-        processed_count: Number(scoreJson.processed || 0)
+        ingested_count: Number(ingestResult.ingested || 0),
+        processed_count: Number(scoreJson.processed || 0),
+        notes: `batches:${Number(ingestResult.batches || 0)},updated:${Number(ingestResult.updated || 0)}`
       })
       .eq('id', runRow.id);
 
     return json(res, 200, {
       ok: true,
-      ingested: Number(ingestJson.ingested || 0),
+      ingested: Number(ingestResult.ingested || 0),
+      updated: Number(ingestResult.updated || 0),
       processed: Number(scoreJson.processed || 0),
+      batches: Number(ingestResult.batches || 0),
       finished_at: finishedAt
     });
   } catch (error) {
