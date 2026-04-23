@@ -1,0 +1,2 @@
+This file exists only to force a brand new deployment after the accidental auth regression.
+Created: 2026-04-23
