@@ -1,5 +1,4 @@
 import { getSupabaseAdmin, json } from './_lib.js';
-import { requireAuthorizedRequest } from './auth.js';
 
 function getCutoff(period = '') {
   const now = Date.now();
@@ -11,10 +10,6 @@ function getCutoff(period = '') {
 
 export default async function handler(req, res) {
   try {
-    const allowCronToken = req.method === 'DELETE';
-    const access = await requireAuthorizedRequest(req, res, { allowCronToken });
-    if (!access) return;
-
     const supabase = getSupabaseAdmin();
 
     if (req.method === 'GET') {
@@ -54,6 +49,13 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'DELETE') {
+      const token = req.query?.token || req.headers['x-cron-token'] || '';
+      const expected = process.env.CRON_TOKEN || '';
+
+      if (!expected || token !== expected) {
+        return json(res, 401, { error: 'Yetkisiz istek' });
+      }
+
       const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
       const period = body.period || 'all';
       const cutoff = getCutoff(period);
