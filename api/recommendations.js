@@ -1,7 +1,11 @@
 import { getSupabaseAdmin, json } from './_lib.js';
+import { requireAuthorizedRequest } from './auth.js';
 
 export default async function handler(req, res) {
   try {
+    const access = await requireAuthorizedRequest(req, res);
+    if (!access) return;
+
     const supabase = getSupabaseAdmin();
     const sort = req.query?.sort || 'total_score';
 
