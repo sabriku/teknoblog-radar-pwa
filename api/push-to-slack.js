@@ -1,5 +1,4 @@
 import { json } from './_lib.js';
-import { requireAuthorizedRequest } from './auth.js';
 
 function escapeText(value = '') {
   return String(value)
@@ -17,9 +16,6 @@ export default async function handler(req, res) {
     if (req.method !== 'POST') {
       return json(res, 405, { error: 'Method not allowed' });
     }
-
-    const access = await requireAuthorizedRequest(req, res);
-    if (!access) return;
 
     const webhookUrl = process.env.SLACK_KAYNAK_WEBHOOK_URL || '';
     if (!webhookUrl) {
