@@ -17,9 +17,7 @@
       #tb-auth-gate-title { font: 700 32px/1 'Fira Sans Condensed', sans-serif; color: #f04a0a; margin: 0 0 12px; }
       #tb-auth-gate-text { margin: 0 0 16px; color: #475569; font-size: 14px; line-height: 1.55; }
       #tb-auth-password { width: 100%; box-sizing: border-box; padding: 12px 14px; border: 1px solid #cbd5e1; border-radius: 12px; font-size: 15px; }
-      #tb-auth-submit, #tb-auth-logout { width: 100%; margin-top: 12px; padding: 12px 14px; border-radius: 12px; border: 0; font-weight: 700; cursor: pointer; }
-      #tb-auth-submit { background: #f04a0a; color: #fff; }
-      #tb-auth-logout { background: #fff; color: #f04a0a; border: 1px solid #f04a0a; }
+      #tb-auth-submit { width: 100%; margin-top: 12px; padding: 12px 14px; border-radius: 12px; border: 0; font-weight: 700; cursor: pointer; background: #f04a0a; color: #fff; }
       #tb-auth-message { margin-top: 12px; min-height: 20px; font-size: 13px; color: #b91c1c; }
       #tb-auth-topbar-logout {
         position: fixed; top: 14px; right: 14px; z-index: 9999; padding: 10px 12px; border-radius: 12px;
@@ -45,8 +43,7 @@
       </div>
     `;
     document.body.appendChild(gate);
-    const input = document.getElementById('tb-auth-password');
-    if (input) input.focus();
+    document.getElementById('tb-auth-password')?.focus();
   }
 
   function hideGate() {
@@ -58,7 +55,7 @@
       btn.type = 'button';
       btn.textContent = 'Çıkış';
       btn.addEventListener('click', async () => {
-        await fetch('/api/exit', { method: 'POST' }).catch(() => null);
+        await fetch('/api/access', { method: 'DELETE', credentials: 'same-origin' }).catch(() => null);
         location.reload();
       });
       document.body.appendChild(btn);
@@ -66,7 +63,7 @@
   }
 
   async function checkStatus() {
-    const res = await fetch('/api/lock-status', { cache: 'no-store', credentials: 'same-origin' });
+    const res = await fetch('/api/access', { cache: 'no-store', credentials: 'same-origin' });
     const data = await res.json().catch(() => ({}));
     return Boolean(data?.unlocked);
   }
@@ -83,7 +80,7 @@
     if (btn) { btn.disabled = true; btn.textContent = 'Kontrol ediliyor...'; }
     if (msg) msg.textContent = '';
     try {
-      const res = await fetch('/api/enter', {
+      const res = await fetch('/api/access', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json; charset=utf-8' },
         credentials: 'same-origin',
@@ -102,30 +99,19 @@
     injectStyles();
     document.body.style.visibility = 'hidden';
     let unlocked = false;
-    try {
-      unlocked = await checkStatus();
-    } catch {
-      unlocked = false;
-    }
+    try { unlocked = await checkStatus(); } catch { unlocked = false; }
     document.body.style.visibility = '';
-    if (unlocked) {
-      hideGate();
-      return;
-    }
+    if (unlocked) { hideGate(); return; }
     showGate();
     document.addEventListener('click', (event) => {
       const btn = event.target.closest('#tb-auth-submit');
-      if (!btn) return;
-      submitPassword();
+      if (btn) submitPassword();
     });
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && document.getElementById('tb-auth-gate')) submitPassword();
     });
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', boot, { once: true });
-  } else {
-    boot();
-  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
+  else boot();
 })();
