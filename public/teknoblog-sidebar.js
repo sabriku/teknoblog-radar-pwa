@@ -23,7 +23,7 @@
 
     section.innerHTML = `
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px">
-        <div style="font:700 22px/1 'Fira Sans Condensed',sans-serif">Teknoblog.com son haberler</div>
+        <div style="font:700 22px/1 'Fira Sans Condensed',sans-serif">Bugün Teknoblog.com'da yayımlananlar</div>
         <a href="https://www.teknoblog.com" target="_blank" rel="noopener noreferrer" style="font-size:12px;font-weight:700;color:#f04a0a;text-decoration:none">Siteye git</a>
       </div>
       <div id="tb-latest-teknoblog-list" style="display:flex;flex-direction:column;gap:10px;font-size:14px;color:#334155">
@@ -43,7 +43,7 @@
       if (!response.ok) throw new Error(data?.error || `HTTP ${response.status}`);
       const items = Array.isArray(data?.items) ? data.items : [];
       if (!items.length) {
-        list.innerHTML = '<div>Henüz haber bulunamadı.</div>';
+        list.innerHTML = '<div>Bugün yayımlanmış haber bulunamadı.</div>';
         return;
       }
       list.innerHTML = items.map((item) => {
