@@ -13,7 +13,7 @@
 
   async function fetchJson(url, options = {}) {
     const controller = new AbortController();
-    const timeoutMs = options.timeoutMs || 240000;
+    const timeoutMs = options.timeoutMs || 300000;
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const fetchOptions = { cache: 'no-store', credentials: 'same-origin', ...options, signal: controller.signal };
@@ -46,27 +46,10 @@
 
     setLoading(true);
     try {
-      let offset = 0;
-      const sourceLimit = 4;
-      let totalIngested = 0;
-      let totalUpdated = 0;
-      let batches = 0;
-
-      while (batches < 6) {
-        if (status) status.textContent = `RSS içerikleri alınıyor, parti ${batches + 1}...`;
-        const qs = `?token=${encodeURIComponent(token)}&source_limit=${sourceLimit}&source_offset=${offset}&item_limit=10&t=${Date.now()}`;
-        const result = await fetchJson(`/api/ingest${qs}`, { timeoutMs: 70000 });
-        totalIngested += Number(result.ingested || 0);
-        totalUpdated += Number(result.updated || 0);
-        batches += 1;
-        if (!result.has_more || Number(result.processed_sources || 0) < sourceLimit) break;
-        offset += sourceLimit;
-      }
-
-      if (status) status.textContent = 'Puanlama ve aday listesi güncelleniyor...';
-      const scoreQs = `?token=${encodeURIComponent(token)}&t=${Date.now()}`;
-      const scoreData = await fetchJson(`/api/score${scoreQs}`, { timeoutMs: 240000 });
-      if (status) status.textContent = `İçerikler güncellendi. Alınan: ${totalIngested}, güncellenen: ${totalUpdated}, işlenen: ${Number(scoreData.processed || 0)}. Sayfa yenileniyor...`;
+      if (status) status.textContent = 'İçerik toplama ve puanlama arka uçta çalıştırılıyor...';
+      const qs = `?token=${encodeURIComponent(token)}&t=${Date.now()}`;
+      const result = await fetchJson(`/api/run-pipeline${qs}`, { timeoutMs: 300000 });
+      if (status) status.textContent = `İçerikler güncellendi. Alınan: ${Number(result.ingested || 0)}, güncellenen: ${Number(result.updated || 0)}, işlenen: ${Number(result.processed || 0)}. Sayfa yenileniyor...`;
       setTimeout(() => location.reload(), 900);
     } catch (error) {
       if (status) status.textContent = `Hata: ${String(error.message || error)}`;
