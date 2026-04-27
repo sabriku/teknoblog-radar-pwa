@@ -22,10 +22,11 @@
     section.style.boxShadow = '0 6px 18px rgba(9,30,66,.06)';
 
     section.innerHTML = `
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px">
         <div style="font:700 22px/1 'Fira Sans Condensed',sans-serif">Bugün Teknoblog.com'da yayımlananlar</div>
         <a href="https://www.teknoblog.com" target="_blank" rel="noopener noreferrer" style="font-size:12px;font-weight:700;color:#f04a0a;text-decoration:none">Siteye git</a>
       </div>
+      <div id="tb-latest-teknoblog-count" style="margin-bottom:12px;font-size:13px;color:#64748b;font-weight:700">Yayımlanan haber sayısı hesaplanıyor...</div>
       <div id="tb-latest-teknoblog-list" style="display:flex;flex-direction:column;gap:10px;font-size:14px;color:#334155">
         <div>Yükleniyor...</div>
       </div>
@@ -36,12 +37,14 @@
 
   async function loadLatest() {
     const list = document.getElementById('tb-latest-teknoblog-list');
+    const count = document.getElementById('tb-latest-teknoblog-count');
     if (!list) return;
     try {
       const response = await fetch(`/api/teknoblog-latest?t=${Date.now()}`, { cache: 'no-store' });
       const data = await response.json();
       if (!response.ok) throw new Error(data?.error || `HTTP ${response.status}`);
       const items = Array.isArray(data?.items) ? data.items : [];
+      if (count) count.textContent = `Yayımlanan haber sayısı: ${items.length}`;
       if (!items.length) {
         list.innerHTML = '<div>Bugün yayımlanmış haber bulunamadı.</div>';
         return;
@@ -56,6 +59,7 @@
         `;
       }).join('');
     } catch (error) {
+      if (count) count.textContent = 'Yayımlanan haber sayısı alınamadı.';
       list.innerHTML = `<div>Hata: ${String(error.message || error)}</div>`;
     }
   }
