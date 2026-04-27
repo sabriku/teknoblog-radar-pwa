@@ -13,7 +13,7 @@
 
   async function fetchJson(url, options = {}) {
     const controller = new AbortController();
-    const timeoutMs = options.timeoutMs || 300000;
+    const timeoutMs = options.timeoutMs || 120000;
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const fetchOptions = { cache: 'no-store', credentials: 'same-origin', ...options, signal: controller.signal };
@@ -46,10 +46,39 @@
 
     setLoading(true);
     try {
-      if (status) status.textContent = 'İçerik toplama ve puanlama arka uçta çalıştırılıyor...';
-      const qs = `?token=${encodeURIComponent(token)}&t=${Date.now()}`;
-      const result = await fetchJson(`/api/run-pipeline${qs}`, { timeoutMs: 300000 });
-      if (status) status.textContent = `İçerikler güncellendi. Alınan: ${Number(result.ingested || 0)}, güncellenen: ${Number(result.updated || 0)}, işlenen: ${Number(result.processed || 0)}. Sayfa yenileniyor...`;
+      let sourceOffset = 0;
+      const sourceLimit = 4;
+      let totalIngested = 0;
+      let totalUpdated = 0;
+      let ingestBatches = 0;
+
+      while (ingestBatches < 6) {
+        if (status) status.textContent = `RSS içerikleri alınıyor, parti ${ingestBatches + 1}...`;
+        const ingestQs = `?token=${encodeURIComponent(token)}&source_limit=${sourceLimit}&source_offset=${sourceOffset}&item_limit=10&t=${Date.now()}`;
+        const ingestResult = await fetchJson(`/api/ingest${ingestQs}`, { timeoutMs: 80000 });
+        totalIngested += Number(ingestResult.ingested || 0);
+        totalUpdated += Number(ingestResult.updated || 0);
+        ingestBatches += 1;
+        if (!ingestResult.has_more || Number(ingestResult.processed_sources || 0) < sourceLimit) break;
+        sourceOffset += sourceLimit;
+      }
+
+      let scoreOffset = 0;
+      const scoreLimit = 120;
+      let totalProcessed = 0;
+      let scoreBatches = 0;
+
+      while (scoreBatches < 12) {
+        if (status) status.textContent = `Puanlama yapılıyor, parti ${scoreBatches + 1}...`;
+        const scoreQs = `?token=${encodeURIComponent(token)}&offset=${scoreOffset}&limit=${scoreLimit}&t=${Date.now()}`;
+        const scoreResult = await fetchJson(`/api/score-batch${scoreQs}`, { timeoutMs: 80000 });
+        totalProcessed += Number(scoreResult.processed || 0);
+        scoreBatches += 1;
+        if (!scoreResult.has_more || scoreResult.stopped_early) break;
+        scoreOffset += scoreLimit;
+      }
+
+      if (status) status.textContent = `İçerikler güncellendi. Alınan: ${totalIngested}, güncellenen: ${totalUpdated}, işlenen: ${totalProcessed}. Sayfa yenileniyor...`;
       setTimeout(() => location.reload(), 900);
     } catch (error) {
       if (status) status.textContent = `Hata: ${String(error.message || error)}`;
