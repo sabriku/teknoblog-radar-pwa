@@ -38,37 +38,52 @@
     }
   }
 
+  function ensureStyle() {
+    if (document.getElementById('tb-source-manager-style')) return;
+    const style = document.createElement('style');
+    style.id = 'tb-source-manager-style';
+    style.textContent = `
+      #tb-source-tabs { display: none !important; }
+      #tb-source-select-wrap { display: block; margin-bottom: 16px; }
+    `;
+    document.head.appendChild(style);
+  }
+
   function ensureSourceSelect() {
+    ensureStyle();
     const bar = document.getElementById('tb-source-tabs');
     if (!bar || document.getElementById('tb-source-select-wrap')) return;
     const wrap = document.createElement('div');
     wrap.id = 'tb-source-select-wrap';
-    wrap.style.marginBottom = '16px';
     wrap.innerHTML = `
       <label for="tb-source-select" style="display:block;margin-bottom:8px;font-size:13px;font-weight:700;color:#475569">Kaynak filtresi</label>
       <select id="tb-source-select" style="width:100%;padding:11px 12px;border:1px solid #d1d5db;border-radius:12px;background:#fff;font-size:14px"></select>
     `;
     bar.parentNode.insertBefore(wrap, bar);
-    bar.style.display = 'none';
+  }
+
+  function buildOptionList() {
+    const buttonMap = new Map([...document.querySelectorAll('#tb-source-tabs [data-source-tab]')].map((btn) => [btn.getAttribute('data-source-tab') || 'all', btn.textContent || 'Tümü']));
+    const sourceNames = [...new Set(state.sources.map((s) => String(s.name || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'tr'));
+    const values = ['all', ...sourceNames];
+    return values.map((value) => ({ value, label: buttonMap.get(value) || (value === 'all' ? 'Tümü' : value) }));
   }
 
   function syncSourceDropdown() {
     ensureSourceSelect();
     const select = document.getElementById('tb-source-select');
     if (!select) return;
-    const buttons = [...document.querySelectorAll('#tb-source-tabs [data-source-tab]')];
     const current = select.value || 'all';
-    select.innerHTML = buttons.map((btn) => {
-      const value = btn.getAttribute('data-source-tab') || 'all';
-      return `<option value="${esc(value)}">${esc(btn.textContent || 'Tümü')}</option>`;
-    }).join('');
-    select.value = [...select.options].some((o) => o.value === current) ? current : 'all';
+    const options = buildOptionList();
+    select.innerHTML = options.map((item) => `<option value="${esc(item.value)}">${esc(item.label)}</option>`).join('');
+    select.value = options.some((item) => item.value === current) ? current : 'all';
   }
 
   async function loadSources() {
     const data = await fetchJson(`/api/sources?t=${Date.now()}`, { timeoutMs: 30000 });
     state.sources = Array.isArray(data?.items) ? data.items : [];
     renderSourceCards();
+    syncSourceDropdown();
   }
 
   function currentFormValues(source) {
@@ -233,7 +248,15 @@
       if (!select) return;
       const value = select.value || 'all';
       const tabBtn = document.querySelector(`#tb-source-tabs [data-source-tab="${CSS.escape(value)}"]`);
-      tabBtn?.click();
+      if (tabBtn) tabBtn.click();
+      else {
+        const allBtn = document.querySelector('#tb-source-tabs [data-source-tab="all"]');
+        allBtn?.click();
+        const status = statusEl();
+        if (value !== 'all' && status) {
+          status.textContent = `${value} için şu an görünür listede içerik yok. Limit artırıldıktan sonra daha fazla kaynak görünür olacaktır.`;
+        }
+      }
     });
 
     document.addEventListener('click', (event) => {
