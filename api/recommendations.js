@@ -24,7 +24,7 @@ export default async function handler(req, res) {
         .select('*')
         .eq('status', 'active')
         .order(sortKey, { ascending: false, nullsFirst: false })
-        .limit(200),
+        .limit(500),
       supabase
         .from('sources')
         .select('id,name'),
@@ -32,7 +32,7 @@ export default async function handler(req, res) {
         .from('raw_feed_items')
         .select('id,published_at,image_url,source_id')
         .order('created_at', { ascending: false })
-        .limit(2000)
+        .limit(5000)
     ]);
 
     if (itemsError) return json(res, 500, { error: itemsError.message });
