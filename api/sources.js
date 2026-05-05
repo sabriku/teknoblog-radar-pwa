@@ -8,6 +8,151 @@ function getCutoff(period = '') {
   return null;
 }
 
+function clamp(value) {
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function scoreTitle(title = '', publishedAt = null) {
+  const t = String(title).toLowerCase();
+  let traffic = 38;
+  let conversion = 24;
+  let discover = 34;
+  let social = 26;
+  let editorial = 36;
+  let contentType = 'analysis';
+
+  const strongBrands = ['apple', 'iphone', 'ipad', 'mac', 'samsung', 'galaxy', 'google', 'android', 'microsoft', 'windows', 'openai', 'chatgpt', 'meta', 'intel', 'qualcomm', 'xiaomi', 'huawei', 'oneplus', 'sony', 'nvidia', 'amd', 'tesla', 'gemini'];
+  const dealWords = ['discount', 'deal', 'sale', 'coupon', 'price', 'indirim', 'fiyat', 'kampanya', 'sepette', 'prime'];
+  const launchWords = ['launch', 'announced', 'introduces', 'unveils', 'reveals', 'tanıttı', 'duyurdu', 'çıktı'];
+  const updateWords = ['update', 'rollout', 'beta', 'one ui', 'ios', 'android 16', 'windows 11', 'patch', 'security'];
+  const aiWords = ['ai', 'yapay zeka', 'chatgpt', 'gemini', 'copilot', 'claude', 'openai'];
+  const urgencyWords = ['today', 'now', 'bugün', 'şimdi', 'son dakika', 'breaking'];
+
+  if (strongBrands.some((w) => t.includes(w))) {
+    traffic += 14;
+    discover += 12;
+    editorial += 10;
+  }
+  if (dealWords.some((w) => t.includes(w))) {
+    conversion += 30;
+    traffic += 14;
+    discover += 6;
+    contentType = 'deal';
+  }
+  if (launchWords.some((w) => t.includes(w))) {
+    traffic += 16;
+    social += 16;
+    discover += 12;
+    editorial += 6;
+    contentType = 'launch';
+  }
+  if (updateWords.some((w) => t.includes(w))) {
+    traffic += 12;
+    discover += 12;
+    social += 10;
+    editorial += 6;
+    contentType = 'update';
+  }
+  if (aiWords.some((w) => t.includes(w))) {
+    discover += 12;
+    social += 10;
+    traffic += 8;
+    editorial += 6;
+  }
+  if (urgencyWords.some((w) => t.includes(w))) {
+    discover += 8;
+    traffic += 8;
+    social += 6;
+  }
+
+  if (publishedAt) {
+    const publishedMs = new Date(publishedAt).getTime();
+    if (Number.isFinite(publishedMs)) {
+      const ageHours = (Date.now() - publishedMs) / 3600000;
+      if (ageHours <= 12) {
+        traffic += 10;
+        discover += 12;
+        social += 8;
+      } else if (ageHours <= 24) {
+        traffic += 8;
+        discover += 8;
+        social += 6;
+      } else if (ageHours <= 72) {
+        traffic += 4;
+        discover += 4;
+      } else if (ageHours > 720) {
+        traffic -= 18;
+        discover -= 18;
+        social -= 10;
+      }
+    }
+  }
+
+  traffic = clamp(traffic);
+  conversion = clamp(conversion);
+  discover = clamp(discover);
+  social = clamp(social);
+  editorial = clamp(editorial);
+
+  const total = clamp(traffic * 0.28 + conversion * 0.18 + discover * 0.24 + social * 0.10 + editorial * 0.20);
+  return {
+    traffic_score: traffic,
+    conversion_score: conversion,
+    discover_score: discover,
+    social_score: social,
+    editorial_score: editorial,
+    total_score: total,
+    content_type_hint: contentType
+  };
+}
+
+async function upsertTopicCandidate(supabase, source, row) {
+  const scores = scoreTitle(row.title || '', row.published_at || row.created_at || null);
+  const title = row.title || '';
+  const url = row.url || row.canonical_url || '';
+  const payload = {
+    raw_feed_item_id: row.id,
+    source_id: source.id || null,
+    source_name: source.name || '',
+    title,
+    summary: row.summary || '',
+    url,
+    image_url: row.image_url || null,
+    candidate_hash: hashValue(`${title}|${url}`),
+    content_type_hint: scores.content_type_hint,
+    total_score: scores.total_score,
+    traffic_score: scores.traffic_score,
+    conversion_score: scores.conversion_score,
+    discover_score: scores.discover_score,
+    social_score: scores.social_score,
+    editorial_score: scores.editorial_score,
+    status: 'active',
+    published_at: row.published_at || null,
+    updated_at: nowIso()
+  };
+
+  const { data: existing, error: existingError } = await supabase
+    .from('topic_candidates')
+    .select('id')
+    .eq('raw_feed_item_id', row.id)
+    .limit(1);
+
+  if (existingError) return false;
+
+  if (existing && existing.length > 0) {
+    const { error: updateError } = await supabase
+      .from('topic_candidates')
+      .update(payload)
+      .eq('raw_feed_item_id', row.id);
+    return !updateError;
+  }
+
+  const { error: insertError } = await supabase
+    .from('topic_candidates')
+    .insert({ ...payload, created_at: nowIso() });
+  return !insertError;
+}
+
 async function fetchSingleSource(supabase, source, itemLimit = 15) {
   const feedUrl = chooseFeedUrl(source);
   if (!feedUrl) return { ok: false, error: 'No feed URL' };
@@ -33,6 +178,7 @@ async function fetchSingleSource(supabase, source, itemLimit = 15) {
     const items = parseFeedItems(xml).slice(0, itemLimit);
     let ingested = 0;
     let updated = 0;
+    let scored = 0;
 
     for (const item of items) {
       const title = safeText(item.title);
@@ -47,7 +193,7 @@ async function fetchSingleSource(supabase, source, itemLimit = 15) {
 
       const { data: existing, error: existingError } = await supabase
         .from('raw_feed_items')
-        .select('id,image_url,summary,published_at')
+        .select('id,image_url,summary,published_at,title,url,canonical_url,created_at')
         .eq('content_hash', content_hash)
         .limit(1);
 
@@ -64,6 +210,14 @@ async function fetchSingleSource(supabase, source, itemLimit = 15) {
           const { error: updateError } = await supabase.from('raw_feed_items').update(patch).eq('id', current.id);
           if (!updateError) updated += 1;
         }
+        const scoredOk = await upsertTopicCandidate(supabase, source, {
+          ...current,
+          ...patch,
+          summary: patch.summary || current.summary || summary,
+          image_url: patch.image_url || current.image_url || image_url,
+          published_at: patch.published_at || current.published_at || published_at
+        });
+        if (scoredOk) scored += 1;
         continue;
       }
 
@@ -82,11 +236,15 @@ async function fetchSingleSource(supabase, source, itemLimit = 15) {
         created_at: nowIso()
       };
 
-      const { error: insertError } = await supabase.from('raw_feed_items').insert(payload);
-      if (!insertError) ingested += 1;
+      const { data: insertedRow, error: insertError } = await supabase.from('raw_feed_items').insert(payload).select('*').single();
+      if (!insertError && insertedRow) {
+        ingested += 1;
+        const scoredOk = await upsertTopicCandidate(supabase, source, insertedRow);
+        if (scoredOk) scored += 1;
+      }
     }
 
-    return { ok: true, ingested, updated, fetched: items.length };
+    return { ok: true, ingested, updated, scored, fetched: items.length };
   } catch (error) {
     return { ok: false, error: error?.message || String(error) };
   } finally {
