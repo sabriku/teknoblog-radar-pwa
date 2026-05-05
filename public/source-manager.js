@@ -212,6 +212,7 @@
       timeoutMs: 90000
     });
     if (status) status.textContent = `${source?.name || 'Kaynak'} güncellendi. Alınan: ${Number(result.ingested || 0)}, güncellenen: ${Number(result.updated || 0)}.`;
+    return result;
   }
 
   async function handleFormSubmit(event) {
@@ -243,19 +244,29 @@
   }
 
   function bindEvents() {
-    document.addEventListener('change', (event) => {
+    document.addEventListener('change', async (event) => {
       const select = event.target.closest('#tb-source-select');
       if (!select) return;
       const value = select.value || 'all';
       const tabBtn = document.querySelector(`#tb-source-tabs [data-source-tab="${CSS.escape(value)}"]`);
-      if (tabBtn) tabBtn.click();
-      else {
-        const allBtn = document.querySelector('#tb-source-tabs [data-source-tab="all"]');
-        allBtn?.click();
-        const status = statusEl();
-        if (value !== 'all' && status) {
-          status.textContent = `${value} için şu an görünür listede içerik yok. Limit artırıldıktan sonra daha fazla kaynak görünür olacaktır.`;
-        }
+      if (tabBtn) {
+        tabBtn.click();
+        return;
+      }
+
+      const allBtn = document.querySelector('#tb-source-tabs [data-source-tab="all"]');
+      allBtn?.click();
+      const status = statusEl();
+      const source = state.sources.find((item) => String(item.name || '').trim() === value);
+      if (!source || value === 'all') return;
+
+      try {
+        if (status) status.textContent = `${value} için içerik listede görünmüyor, kaynak özelinde haberler çekiliyor...`;
+        await handleFetch(source.id);
+        if (status) status.textContent = `${value} için haberler çekildi. Liste güncelleniyor...`;
+        setTimeout(() => location.reload(), 700);
+      } catch (error) {
+        if (status) status.textContent = `${value} için kaynak çekimi başarısız oldu: ${String(error.message || error)}`;
       }
     });
 
