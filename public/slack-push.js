@@ -1,11 +1,23 @@
 (() => {
   const STORAGE_KEY = 'tb_sent_to_slack_urls';
 
+  function normalizeUrl(value = '') {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    try {
+      const url = new URL(raw, window.location.origin);
+      url.hash = '';
+      return url.toString();
+    } catch {
+      return raw;
+    }
+  }
+
   function readSentUrls() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY) || '[]';
       const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : [];
+      return Array.isArray(parsed) ? parsed.map(normalizeUrl).filter(Boolean) : [];
     } catch {
       return [];
     }
@@ -13,7 +25,8 @@
 
   function writeSentUrls(urls) {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify([...new Set(urls.filter(Boolean))]));
+      const normalized = [...new Set(urls.map(normalizeUrl).filter(Boolean))];
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
     } catch {}
   }
 
@@ -53,11 +66,20 @@
     if (!sent.size) return;
     const inputs = [...document.querySelectorAll('input[data-select-url]')];
     inputs.forEach((input) => {
-      const url = input.getAttribute('data-select-url') || '';
+      const url = normalizeUrl(input.getAttribute('data-select-url') || '');
       if (!url || !sent.has(url)) return;
       const article = input.closest('article');
       markArticleAsSent(article);
     });
+  }
+
+  function watchForRerenders() {
+    const app = document.getElementById('app') || document.body;
+    const observer = new MutationObserver(() => {
+      restoreSentCardStyles();
+      insertSlackButton();
+    });
+    observer.observe(app, { childList: true, subtree: true });
   }
 
   function setSlackButtonState(isLoading) {
@@ -93,7 +115,7 @@
   function selectedItemsFromDom() {
     const selected = [...document.querySelectorAll('input[data-select-url]:checked')];
     return selected.map((input) => {
-      const url = input.getAttribute('data-select-url') || '';
+      const dataUrl = input.getAttribute('data-select-url') || '';
       const article = input.closest('article');
       const titleEl = article?.querySelector('h3');
       const metaEls = article ? [...article.querySelectorAll('div[style*="font-size:12px;color:#64748b"] > div')] : [];
@@ -103,7 +125,7 @@
       const source_name = metaEls[1]?.textContent?.trim() || '';
       return {
         title,
-        url: url || actionLink?.href || '',
+        url: normalizeUrl(dataUrl || actionLink?.href || ''),
         source_name,
         published_at,
         article
@@ -142,6 +164,7 @@
         markArticleAsSent(item.article);
       });
       writeSentUrls(sentUrls);
+      restoreSentCardStyles();
 
       if (status) {
         status.textContent = `Slack gönderimi tamamlandı. Gönderilen: ${data.sent ?? 0}, seçilen: ${data.requested ?? items.length}`;
@@ -169,5 +192,8 @@
   document.addEventListener('DOMContentLoaded', () => {
     insertSlackButton();
     restoreSentCardStyles();
+    watchForRerenders();
+    setTimeout(restoreSentCardStyles, 1000);
+    setTimeout(restoreSentCardStyles, 2500);
   });
 })();
