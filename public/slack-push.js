@@ -30,6 +30,20 @@
     } catch {}
   }
 
+  async function syncSharedSentUrls() {
+    try {
+      const res = await fetch('/api/push-to-slack', { cache: 'no-store', credentials: 'same-origin' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return readSentUrls();
+      const shared = Array.isArray(data?.items) ? data.items.map(normalizeUrl).filter(Boolean) : [];
+      const merged = [...readSentUrls(), ...shared];
+      writeSentUrls(merged);
+      return merged;
+    } catch {
+      return readSentUrls();
+    }
+  }
+
   function markArticleAsSent(article) {
     if (!article || article.getAttribute('data-slack-sent') === 'true') return;
     article.setAttribute('data-slack-sent', 'true');
@@ -158,12 +172,9 @@
         throw new Error(data?.error || `HTTP ${response.status}`);
       }
 
-      const sentUrls = readSentUrls();
-      items.forEach((item) => {
-        sentUrls.push(item.url);
-        markArticleAsSent(item.article);
-      });
-      writeSentUrls(sentUrls);
+      const merged = [...readSentUrls(), ...(Array.isArray(data?.shared_urls) ? data.shared_urls : items.map((item) => item.url))];
+      writeSentUrls(merged);
+      items.forEach((item) => markArticleAsSent(item.article));
       restoreSentCardStyles();
 
       if (status) {
@@ -189,11 +200,15 @@
     if (insertSlackButton() || tries > 30) clearInterval(timer);
   }, 300);
 
-  document.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('DOMContentLoaded', async () => {
     insertSlackButton();
+    await syncSharedSentUrls();
     restoreSentCardStyles();
     watchForRerenders();
     setTimeout(restoreSentCardStyles, 1000);
-    setTimeout(restoreSentCardStyles, 2500);
+    setTimeout(async () => {
+      await syncSharedSentUrls();
+      restoreSentCardStyles();
+    }, 2500);
   });
 })();
