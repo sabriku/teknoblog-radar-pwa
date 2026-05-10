@@ -32,6 +32,12 @@
     }
   }
 
+  function hardReload() {
+    const url = new URL(window.location.href);
+    url.searchParams.set('refresh', String(Date.now()));
+    window.location.replace(url.toString());
+  }
+
   async function runRefresh() {
     const status = statusEl();
     let token = localStorage.getItem('tb_radar_cron_token') || '';
@@ -78,8 +84,8 @@
         scoreOffset += scoreLimit;
       }
 
-      if (status) status.textContent = `İçerikler güncellendi. Alınan: ${totalIngested}, güncellenen: ${totalUpdated}, işlenen: ${totalProcessed}. Sayfa yenileniyor...`;
-      setTimeout(() => location.reload(), 900);
+      if (status) status.textContent = `İçerikler güncellendi. Alınan: ${totalIngested}, güncellenen: ${totalUpdated}, işlenen: ${totalProcessed}. Sayfa zorla yenileniyor...`;
+      setTimeout(hardReload, 700);
     } catch (error) {
       if (status) status.textContent = `Hata: ${String(error.message || error)}`;
       setLoading(false);
