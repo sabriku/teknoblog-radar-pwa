@@ -1,5 +1,29 @@
 import { getSupabaseAdmin, json, parseFeedItems, hashValue, chooseFeedUrl, safeText, nowIso } from './_lib.js';
 
+const PRIORITY_BOOSTS = {
+  'engadget': 35,
+  'digital trends': 35,
+  'log.com.tr': 35,
+  'log': 20
+};
+
+function boostedPriority(source = {}) {
+  const name = String(source?.name || '').toLowerCase().trim();
+  const base = Number(source?.priority_weight || 0);
+  for (const [key, boost] of Object.entries(PRIORITY_BOOSTS)) {
+    if (name === key || name.includes(key)) return base + boost;
+  }
+  return base;
+}
+
+function sortSourcesWithBoost(items = []) {
+  return [...items].sort((a, b) => {
+    const diff = boostedPriority(b) - boostedPriority(a);
+    if (diff !== 0) return diff;
+    return String(a?.name || '').localeCompare(String(b?.name || ''), 'tr');
+  });
+}
+
 function getCutoff(period = '') {
   const now = Date.now();
   if (period === '1d') return new Date(now - 24 * 60 * 60 * 1000).toISOString();
@@ -263,7 +287,7 @@ export default async function handler(req, res) {
       const { data, error } = await query;
       if (error) return json(res, 500, { error: error.message });
       if (id) return json(res, 200, { item: Array.isArray(data) ? (data[0] || null) : null });
-      return json(res, 200, { items: data || [] });
+      return json(res, 200, { items: sortSourcesWithBoost(data || []) });
     }
 
     if (req.method === 'POST') {
