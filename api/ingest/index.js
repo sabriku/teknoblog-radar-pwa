@@ -1,5 +1,29 @@
 import { json, getSupabaseAdmin, parseFeedItems, hashValue, chooseFeedUrl, safeText, nowIso } from '../_lib.js';
 
+const PRIORITY_BOOSTS = {
+  'engadget': 35,
+  'digital trends': 35,
+  'log.com.tr': 35,
+  'log': 20
+};
+
+function boostedPriority(source = {}) {
+  const name = String(source?.name || '').toLowerCase().trim();
+  const base = Number(source?.priority_weight || 0);
+  for (const [key, boost] of Object.entries(PRIORITY_BOOSTS)) {
+    if (name === key || name.includes(key)) return base + boost;
+  }
+  return base;
+}
+
+function sortSourcesWithBoost(items = []) {
+  return [...items].sort((a, b) => {
+    const diff = boostedPriority(b) - boostedPriority(a);
+    if (diff !== 0) return diff;
+    return String(a?.name || '').localeCompare(String(b?.name || ''), 'tr');
+  });
+}
+
 function toPositiveInt(value, fallback) {
   const n = Number.parseInt(String(value ?? ''), 10);
   return Number.isFinite(n) && n >= 0 ? n : fallback;
@@ -66,14 +90,17 @@ export default async function handler(req, res) {
 
     const supabase = getSupabaseAdmin();
 
-    const { data: sources, error: sourcesError } = await supabase
+    const { data: allSources, error: sourcesError } = await supabase
       .from('sources')
       .select('*')
       .eq('is_active', true)
       .order('priority_weight', { ascending: false })
-      .range(sourceOffset, sourceOffset + sourceLimit - 1);
+      .limit(200);
 
     if (sourcesError) return json(res, 500, { error: sourcesError.message });
+
+    const sortedSources = sortSourcesWithBoost(allSources || []);
+    const sources = sortedSources.slice(sourceOffset, sourceOffset + sourceLimit);
 
     let ingested = 0;
     let updated = 0;
@@ -233,7 +260,7 @@ export default async function handler(req, res) {
       processed_sources,
       source_limit: sourceLimit,
       source_offset: sourceOffset,
-      has_more: (sources || []).length === sourceLimit,
+      has_more: sortedSources.length > sourceOffset + sourceLimit,
       item_limit: itemLimit,
       debug,
       finished_at: nowIso()
