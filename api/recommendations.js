@@ -10,13 +10,39 @@ function timeValue(value) {
   return Number.isFinite(time) ? time : 0;
 }
 
+function ageHours(item) {
+  const published = timeValue(item?.published_at || item?.updated_at);
+  if (!published) return 999999;
+  return Math.max(0, (Date.now() - published) / 3600000);
+}
+
+function freshnessBoost(item) {
+  const hours = ageHours(item);
+  if (hours <= 6) return 24;
+  if (hours <= 12) return 20;
+  if (hours <= 24) return 16;
+  if (hours <= 48) return 12;
+  if (hours <= 72) return 8;
+  if (hours <= 168) return 4;
+  if (hours <= 336) return 0;
+  if (hours <= 720) return -8;
+  return -18;
+}
+
+function adjustedScore(item, sortKey) {
+  return scoreValue(item, sortKey) + freshnessBoost(item);
+}
+
 function compareItems(a, b, sortKey) {
   if (sortKey === 'published_at' || sortKey === 'updated_at') {
     return timeValue(b?.[sortKey]) - timeValue(a?.[sortKey]);
   }
 
-  const scoreDiff = scoreValue(b, sortKey) - scoreValue(a, sortKey);
-  if (scoreDiff !== 0) return scoreDiff;
+  const adjustedDiff = adjustedScore(b, sortKey) - adjustedScore(a, sortKey);
+  if (adjustedDiff !== 0) return adjustedDiff;
+
+  const rawScoreDiff = scoreValue(b, sortKey) - scoreValue(a, sortKey);
+  if (rawScoreDiff !== 0) return rawScoreDiff;
 
   const publishedDiff = timeValue(b?.published_at) - timeValue(a?.published_at);
   if (publishedDiff !== 0) return publishedDiff;
