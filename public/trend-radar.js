@@ -2,13 +2,6 @@
   const PREF_OPEN_KEY = 'tb_trend_radar_open';
   const PREF_TAB_KEY = 'tb_trend_radar_tab';
 
-  const state = {
-    items: [],
-    panel: localStorage.getItem(PREF_TAB_KEY) || 'trends',
-    ready: false,
-    isOpen: localStorage.getItem(PREF_OPEN_KEY) === '1'
-  };
-
   const COMPETITOR_SOURCES = [
     'Webrazzi',
     'ShiftDelete.Net',
@@ -19,15 +12,21 @@
     'MacRumors',
     'Windows Central',
     'SamMobile',
-    'GSMArena'
+    'GSMArena',
+    'LOG.com.tr',
+    'TechRadar',
+    'TechCrunch',
+    'Digital Trends',
+    'Ars Technica'
   ];
 
-  const BRAND_PATTERNS = [
-    'Apple', 'iPhone', 'iPad', 'Mac', 'Samsung', 'Galaxy', 'Google', 'Gemini', 'Android',
-    'OpenAI', 'ChatGPT', 'Microsoft', 'Windows', 'Copilot', 'Huawei', 'Xiaomi', 'Redmi',
-    'POCO', 'Sony', 'PlayStation', 'Steam', 'Nintendo', 'Tesla', 'Nvidia', 'AMD', 'Intel',
-    'Qualcomm', 'Snapdragon', 'MediaTek', 'One UI', 'iOS', 'WhatsApp', 'Meta'
-  ];
+  const state = {
+    clusters: [],
+    recommendations: [],
+    panel: localStorage.getItem(PREF_TAB_KEY) || 'trends',
+    ready: false,
+    isOpen: localStorage.getItem(PREF_OPEN_KEY) === '1'
+  };
 
   function esc(v) {
     return String(v ?? '')
@@ -51,195 +50,150 @@
     }).format(d);
   }
 
-  function hoursAgo(value) {
-    const t = new Date(value).getTime();
-    if (!Number.isFinite(t)) return 9999;
-    return Math.max(0, (Date.now() - t) / 3600000);
+  function recommendationLabel(value = '') {
+    const map = {
+      'satın_alma': 'Satın alma içeriği',
+      'karşılaştırma': 'Karşılaştırma',
+      'hızlı_haber': 'Hızlı haber',
+      'takip_dosyası': 'Takip dosyası',
+      'discover_hızlı_haber': 'Discover odaklı hızlı haber',
+      'detay_haber': 'Detay haber'
+    };
+    return map[String(value || '').trim()] || 'Detay haber';
   }
 
-  function score(item, key) {
-    const n = Number(item?.[key]);
-    return Number.isFinite(n) ? n : 0;
+  function normalizeCluster(item = {}) {
+    const linkedNews = Array.isArray(item?.linked_news) ? item.linked_news : [];
+    const sample = item?.summary?.sample_topics?.[0] || '';
+    return {
+      id: item?.id || '',
+      cluster_name: String(item?.cluster_name || item?.summary?.display_name || sample || 'Trend başlığı').trim(),
+      trend_score: Number(item?.trend_score || 0),
+      early_signal_score: Number(item?.early_signal_score || 0),
+      discover_potential_score: Number(item?.discover_potential_score || 0),
+      seo_potential_score: Number(item?.seo_potential_score || 0),
+      affiliate_potential_score: Number(item?.affiliate_potential_score || 0),
+      turkey_interest_score: Number(item?.turkey_interest_score || 0),
+      source_count: Number(item?.source_count || 0),
+      signal_count: Number(item?.signal_count || 0),
+      competitor_count: Number(item?.competitor_count || 0),
+      recommendation: recommendationLabel(item?.recommendation_type),
+      status: String(item?.status || ''),
+      first_seen_at: item?.first_seen_at || null,
+      last_seen_at: item?.last_seen_at || null,
+      linked_news: linkedNews.map((news) => ({
+        title: String(news?.candidate_title || '').trim(),
+        url: String(news?.candidate_url || '').trim(),
+        source_name: String(news?.source_name || '').trim(),
+        match_score: Number(news?.match_score || 0)
+      })),
+      avg_discover: Number(item?.summary?.avg_discover_score || 0),
+      avg_traffic: Number(item?.summary?.avg_traffic_score || 0),
+      avg_signal: Number(item?.summary?.avg_signal_score || 0)
+    };
   }
 
-  function getTitle(item) {
-    return String(item?.title || '').trim();
-  }
-
-  function getSource(item) {
-    return String(item?.source_name || 'Kaynak yok').trim();
-  }
-
-  function getUrl(item) {
-    return String(item?.url || item?.canonical_url || '').trim();
-  }
-
-  function getPublishedAt(item) {
-    return item?.published_at || item?.created_at || item?.updated_at || null;
-  }
-
-  function normalizeTopic(title) {
-    const raw = String(title || '');
-    const brandHit = BRAND_PATTERNS.find((brand) => new RegExp(`\\b${brand.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'i').test(raw));
-    if (brandHit) {
-      const rest = raw
-        .replace(new RegExp(`.*?\\b${brandHit.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'i'), brandHit)
-        .split(/[:|,-]/)[0]
-        .replace(/\b(launch|launched|announced|revealed|introduces|update|rollout|beta|test|price|pricing|fiyat|indirim|kampanya|duyurdu|tanıttı|sızıntı|leak|rumor|report)\b/gi, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-      return (rest || brandHit).slice(0, 80);
-    }
-
-    return raw
-      .toLowerCase()
-      .replace(/[^a-z0-9çğıöşü\s]/gi, ' ')
-      .replace(/\b(the|and|for|with|from|that|this|will|have|has|about|daha|için|ile|bir|ve|ile|son|new|yeni|güncelleme|update|launch|announced|duyurdu|tanıttı)\b/gi, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .split(' ')
-      .slice(0, 5)
-      .join(' ')
-      .slice(0, 80) || 'Diğer teknoloji başlıkları';
-  }
-
-  function classifyRecommendation(cluster) {
-    const t = cluster.cluster_name.toLowerCase();
-    if (/(fiyat|indirim|kampanya|price|deal|sale|coupon|sepette)/.test(t)) return 'Satın alma içeriği';
-    if (/(vs|karşılaştır|compare)/.test(t)) return 'Karşılaştırma';
-    if (/(beta|update|güncelle|rollout|patch|one ui|ios|android)/.test(t)) return 'Hızlı haber';
-    if (/(sızıntı|leak|rumor|report|iddia)/.test(t)) return 'Hızlı haber + takip';
-    if (/(nasıl|how to|rehber|guide|ipuçları|tips)/.test(t)) return 'Rehber';
-    return cluster.avg_discover >= 72 ? 'Discover odaklı hızlı haber' : 'Detay haber';
-  }
-
-  function clusterItems(items) {
-    const map = new Map();
-    items.forEach((item) => {
-      const key = normalizeTopic(getTitle(item));
-      if (!key) return;
-      if (!map.has(key)) {
-        map.set(key, {
-          cluster_name: key,
-          items: [],
-          sources: new Set(),
-          competitors: new Set(),
-          turkeySignals: 0,
-          earliest: null,
-          latest: null,
-          avg_discover: 0,
-          avg_total: 0,
-          avg_traffic: 0,
-          trend_score: 0,
-          early_signal_score: 0,
-          recommendation: '',
-          rival_count: 0
-        });
-      }
-      const cluster = map.get(key);
-      cluster.items.push(item);
-      const source = getSource(item);
-      cluster.sources.add(source);
-      if (COMPETITOR_SOURCES.includes(source)) cluster.competitors.add(source);
-      if (/(Türkiye|Turkish|TR|Hepsiburada|Trendyol|MediaMarkt|Vodafone|Turkcell|Türk Telekom|BİM|A101|Migros)/i.test(getTitle(item) + ' ' + source)) {
-        cluster.turkeySignals += 1;
-      }
-      const published = getPublishedAt(item);
-      if (published) {
-        const p = new Date(published).getTime();
-        if (!cluster.earliest || p < cluster.earliest) cluster.earliest = p;
-        if (!cluster.latest || p > cluster.latest) cluster.latest = p;
-      }
-    });
-
-    return [...map.values()].map((cluster) => {
-      const count = cluster.items.length;
-      cluster.avg_discover = Math.round(cluster.items.reduce((a, item) => a + score(item, 'discover_score'), 0) / Math.max(1, count));
-      cluster.avg_total = Math.round(cluster.items.reduce((a, item) => a + score(item, 'total_score'), 0) / Math.max(1, count));
-      cluster.avg_traffic = Math.round(cluster.items.reduce((a, item) => a + score(item, 'traffic_score'), 0) / Math.max(1, count));
-      cluster.rival_count = cluster.competitors.size;
-      const freshnessBoost = cluster.latest ? Math.max(0, 26 - hoursAgo(cluster.latest)) : 0;
-      const diversityBoost = Math.min(20, cluster.sources.size * 4);
-      const turkeyBoost = Math.min(12, cluster.turkeySignals * 3);
-      const discoverBoost = Math.round(cluster.avg_discover * 0.35);
-      const trafficBoost = Math.round(cluster.avg_traffic * 0.20);
-      cluster.trend_score = Math.max(0, Math.min(100, freshnessBoost + diversityBoost + turkeyBoost + discoverBoost + trafficBoost));
-      cluster.early_signal_score = Math.max(0, Math.min(100,
-        (cluster.sources.size <= 2 ? 35 : 10) +
-        (cluster.latest ? Math.max(0, 24 - hoursAgo(cluster.latest)) : 0) +
-        Math.round(cluster.avg_discover * 0.25)
-      ));
-      cluster.recommendation = classifyRecommendation(cluster);
-      return cluster;
-    }).sort((a, b) => b.trend_score - a.trend_score);
-  }
-
-  function sourcePerformance(items) {
-    const map = new Map();
-    items.forEach((item) => {
-      const source = getSource(item);
-      if (!map.has(source)) {
-        map.set(source, { source, count: 0, avgDiscover: 0, avgTraffic: 0, avgTotal: 0, lastPublished: null, highDiscover: 0 });
-      }
-      const row = map.get(source);
-      row.count += 1;
-      row.avgDiscover += score(item, 'discover_score');
-      row.avgTraffic += score(item, 'traffic_score');
-      row.avgTotal += score(item, 'total_score');
-      if (score(item, 'discover_score') >= 70) row.highDiscover += 1;
-      const p = getPublishedAt(item);
-      if (p) {
-        const ts = new Date(p).getTime();
-        if (!row.lastPublished || ts > row.lastPublished) row.lastPublished = ts;
-      }
-    });
-    return [...map.values()].map((row) => ({
-      ...row,
-      avgDiscover: Math.round(row.avgDiscover / Math.max(1, row.count)),
-      avgTraffic: Math.round(row.avgTraffic / Math.max(1, row.count)),
-      avgTotal: Math.round(row.avgTotal / Math.max(1, row.count)),
-      highDiscoverRatio: Math.round((row.highDiscover / Math.max(1, row.count)) * 100)
-    })).sort((a, b) => b.avgDiscover - a.avgDiscover);
-  }
-
-  function competitorOverview(items) {
-    return COMPETITOR_SOURCES.map((source) => {
-      const sourceItems = items.filter((item) => getSource(item) === source);
-      const lastItem = sourceItems.sort((a, b) => new Date(getPublishedAt(b) || 0) - new Date(getPublishedAt(a) || 0))[0] || null;
-      return {
-        source,
-        count: sourceItems.length,
-        avgDiscover: Math.round(sourceItems.reduce((a, item) => a + score(item, 'discover_score'), 0) / Math.max(1, sourceItems.length)),
-        latestTitle: lastItem ? getTitle(lastItem) : '',
-        latestPublishedAt: lastItem ? getPublishedAt(lastItem) : null,
-        latestUrl: lastItem ? getUrl(lastItem) : ''
-      };
-    }).sort((a, b) => b.count - a.count);
-  }
-
-  function recommendationCards(clusters) {
+  function buildRecommendations(clusters = []) {
     return clusters
-      .filter((cluster) => cluster.trend_score >= 45 || cluster.avg_discover >= 70)
+      .filter((cluster) => cluster.trend_score >= 45 || cluster.discover_potential_score >= 68)
       .slice(0, 12)
       .map((cluster) => ({
         title: cluster.cluster_name,
-        priority: Math.round((cluster.trend_score * 0.45) + (cluster.avg_discover * 0.35) + (cluster.avg_traffic * 0.20)),
+        priority: Math.round((cluster.trend_score * 0.45) + (cluster.discover_potential_score * 0.35) + (cluster.seo_potential_score * 0.20)),
         recommendation: cluster.recommendation,
         reason: [
-          cluster.avg_discover >= 70 ? 'Discover sinyali güçlü' : 'Discover sinyali orta seviyede',
-          cluster.sources.size >= 3 ? `${cluster.sources.size} farklı kaynakta görünür` : 'Henüz sınırlı kaynakta görünüyor',
-          cluster.turkeySignals > 0 ? 'Türkiye ilgisi yakalandı' : 'Türkiye ilgisi henüz zayıf'
+          cluster.discover_potential_score >= 70 ? 'Discover potansiyeli güçlü' : 'Discover potansiyeli orta seviyede',
+          cluster.source_count >= 3 ? `${cluster.source_count} farklı trend kaynağında görünür` : 'Henüz sınırlı trend kaynağında görünüyor',
+          cluster.turkey_interest_score >= 70 ? 'Türkiye ilgisi güçlü' : 'Türkiye ilgisi sınırlı'
         ].join(' • '),
-        examples: cluster.items.slice(0, 2)
+        examples: cluster.linked_news.slice(0, 2)
       }))
       .sort((a, b) => b.priority - a.priority);
   }
 
-  async function fetchRecommendations() {
-    const res = await fetch('/api/recommendations?sort=published_at', { cache: 'no-store' });
+  function sourcePerformance(clusters = []) {
+    const map = new Map();
+    clusters.forEach((cluster) => {
+      const linked = cluster.linked_news.length ? cluster.linked_news : [{ source_name: 'Trend feed', match_score: 0 }];
+      linked.forEach((news) => {
+        const source = String(news?.source_name || 'Trend feed').trim();
+        if (!map.has(source)) {
+          map.set(source, {
+            source,
+            count: 0,
+            avgDiscover: 0,
+            avgSeo: 0,
+            avgTrend: 0,
+            lastPublished: null,
+            highDiscover: 0
+          });
+        }
+        const row = map.get(source);
+        row.count += 1;
+        row.avgDiscover += cluster.discover_potential_score;
+        row.avgSeo += cluster.seo_potential_score;
+        row.avgTrend += cluster.trend_score;
+        if (cluster.discover_potential_score >= 70) row.highDiscover += 1;
+        const p = cluster.last_seen_at;
+        if (p) {
+          const ts = new Date(p).getTime();
+          if (!row.lastPublished || ts > row.lastPublished) row.lastPublished = ts;
+        }
+      });
+    });
+
+    return [...map.values()]
+      .map((row) => ({
+        ...row,
+        avgDiscover: Math.round(row.avgDiscover / Math.max(1, row.count)),
+        avgSeo: Math.round(row.avgSeo / Math.max(1, row.count)),
+        avgTrend: Math.round(row.avgTrend / Math.max(1, row.count)),
+        highDiscoverRatio: Math.round((row.highDiscover / Math.max(1, row.count)) * 100)
+      }))
+      .sort((a, b) => b.avgDiscover - a.avgDiscover)
+      .slice(0, 10);
+  }
+
+  function competitorOverview(clusters = []) {
+    const map = new Map(COMPETITOR_SOURCES.map((source) => [source, {
+      source,
+      count: 0,
+      avgDiscover: 0,
+      latestTitle: '',
+      latestPublishedAt: null,
+      latestUrl: ''
+    }]));
+
+    clusters.forEach((cluster) => {
+      cluster.linked_news.forEach((news) => {
+        if (!COMPETITOR_SOURCES.includes(news.source_name)) return;
+        const row = map.get(news.source_name);
+        row.count += 1;
+        row.avgDiscover += cluster.discover_potential_score;
+        const currentTs = new Date(cluster.last_seen_at || 0).getTime();
+        const existingTs = new Date(row.latestPublishedAt || 0).getTime();
+        if (!row.latestPublishedAt || currentTs > existingTs) {
+          row.latestPublishedAt = cluster.last_seen_at || null;
+          row.latestTitle = news.title || cluster.cluster_name;
+          row.latestUrl = news.url || '';
+        }
+      });
+    });
+
+    return [...map.values()]
+      .map((row) => ({
+        ...row,
+        avgDiscover: row.count ? Math.round(row.avgDiscover / row.count) : 0
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+  }
+
+  async function fetchTrendOverview() {
+    const res = await fetch('/api/trend-overview?limit=40', { cache: 'no-store' });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
-    return Array.isArray(data?.items) ? data.items : [];
+    return Array.isArray(data?.items) ? data.items.map(normalizeCluster) : [];
   }
 
   function ensureStyle() {
@@ -296,12 +250,12 @@
 
     wrap.setAttribute('data-open', state.isOpen ? '1' : '0');
 
-    const clusters = clusterItems(state.items);
+    const clusters = state.clusters;
     const hotTrends = clusters.slice(0, 8);
     const earlySignals = [...clusters].sort((a, b) => b.early_signal_score - a.early_signal_score).slice(0, 8);
-    const recommendations = recommendationCards(clusters);
-    const sources = sourcePerformance(state.items).slice(0, 10);
-    const rivals = competitorOverview(state.items).slice(0, 10);
+    const recommendations = state.recommendations;
+    const sources = sourcePerformance(clusters);
+    const rivals = competitorOverview(clusters);
 
     const tabs = [
       ['trends', 'Trend Radarı'],
@@ -329,16 +283,16 @@
               <div style="padding:6px 8px;border-radius:999px;background:${variant === 'signals' ? '#eff6ff' : '#fff7ed'};color:${variant === 'signals' ? '#1d4ed8' : '#c2410c'};font-size:12px;font-weight:700;white-space:nowrap">${variant === 'signals' ? `Erken ${cluster.early_signal_score}` : `Trend ${cluster.trend_score}`}</div>
             </div>
             <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;font-size:12px;color:#475569;font-weight:700">
-              <span>Discover ${cluster.avg_discover}</span>
-              <span>Trafik ${cluster.avg_traffic}</span>
-              <span>Kaynak ${cluster.sources.size}</span>
-              <span>TR ${cluster.turkeySignals}</span>
-              <span>Rakip ${cluster.rival_count}</span>
+              <span>Discover ${cluster.discover_potential_score}</span>
+              <span>SEO ${cluster.seo_potential_score}</span>
+              <span>Kaynak ${cluster.source_count}</span>
+              <span>TR ${cluster.turkey_interest_score}</span>
+              <span>Rakip ${cluster.competitor_count}</span>
             </div>
             <div style="margin-top:10px;font-size:14px;color:#334155;line-height:1.55">${esc(cluster.recommendation)}</div>
-            <div class="tb-trend-muted" style="margin-top:10px">Son görünme: ${esc(cluster.latest ? fmtDate(cluster.latest) : 'Bilinmiyor')}</div>
+            <div class="tb-trend-muted" style="margin-top:10px">Son görünme: ${esc(cluster.last_seen_at ? fmtDate(cluster.last_seen_at) : 'Bilinmiyor')}</div>
             <div style="margin-top:10px;display:flex;flex-direction:column;gap:6px">
-              ${cluster.items.slice(0, 2).map((item) => `<a href="${esc(getUrl(item) || '#')}" target="_blank" rel="noopener noreferrer" style="font-size:13px;color:#f04a0a;text-decoration:none;font-weight:700">${esc(getTitle(item))}</a>`).join('')}
+              ${cluster.linked_news.slice(0, 2).map((item) => `<a href="${esc(item.url || '#')}" target="_blank" rel="noopener noreferrer" style="font-size:13px;color:#f04a0a;text-decoration:none;font-weight:700">${esc(item.title || cluster.cluster_name)}</a>`).join('')}
             </div>
           </article>
         `).join('')}
@@ -355,7 +309,7 @@
             <div style="margin-top:10px;font-size:14px;color:#334155;font-weight:700">${esc(item.recommendation)}</div>
             <div class="tb-trend-muted" style="margin-top:8px;line-height:1.5">${esc(item.reason)}</div>
             <div style="margin-top:10px;display:flex;flex-direction:column;gap:6px">
-              ${item.examples.map((example) => `<a href="${esc(getUrl(example) || '#')}" target="_blank" rel="noopener noreferrer" style="font-size:13px;color:#f04a0a;text-decoration:none;font-weight:700">${esc(getTitle(example))}</a>`).join('')}
+              ${item.examples.map((example) => `<a href="${esc(example.url || '#')}" target="_blank" rel="noopener noreferrer" style="font-size:13px;color:#f04a0a;text-decoration:none;font-weight:700">${esc(example.title || item.title)}</a>`).join('')}
             </div>
           </article>
         `).join('')}
@@ -370,9 +324,9 @@
               <div style="padding:6px 8px;border-radius:999px;background:#eff6ff;color:#1d4ed8;font-size:12px;font-weight:700">Discover ${source.avgDiscover}</div>
             </div>
             <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;font-size:12px;color:#475569;font-weight:700">
-              <span>İçerik ${source.count}</span>
-              <span>Trafik ${source.avgTraffic}</span>
-              <span>Genel ${source.avgTotal}</span>
+              <span>Küme ${source.count}</span>
+              <span>Trend ${source.avgTrend}</span>
+              <span>SEO ${source.avgSeo}</span>
               <span>Yüksek Discover oranı %${source.highDiscoverRatio}</span>
             </div>
             <div class="tb-trend-muted" style="margin-top:8px">Son görünme: ${esc(source.lastPublished ? fmtDate(source.lastPublished) : 'Bilinmiyor')}</div>
@@ -386,7 +340,7 @@
           <article class="tb-trend-card" style="padding:12px 14px">
             <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
               <div style="font:700 20px/1.2 'Fira Sans Condensed',sans-serif;color:#111827">${esc(item.source)}</div>
-              <div style="padding:6px 8px;border-radius:999px;background:${item.count > 0 ? '#fff7ed' : '#f8fafc'};color:${item.count > 0 ? '#7c3aed' : '#64748b'};font-size:12px;font-weight:700">${item.count} içerik</div>
+              <div style="padding:6px 8px;border-radius:999px;background:${item.count > 0 ? '#fff7ed' : '#f8fafc'};color:${item.count > 0 ? '#7c3aed' : '#64748b'};font-size:12px;font-weight:700">${item.count} eşleşme</div>
             </div>
             <div class="tb-trend-muted" style="margin-top:8px">Ortalama Discover: ${item.avgDiscover}</div>
             ${item.latestTitle ? `<a href="${esc(item.latestUrl || '#')}" target="_blank" rel="noopener noreferrer" style="display:block;margin-top:10px;font-size:14px;color:#f04a0a;text-decoration:none;font-weight:700">${esc(item.latestTitle)}</a>` : `<div class="tb-trend-muted" style="margin-top:10px">Henüz görünür içerik yok.</div>`}
@@ -410,9 +364,9 @@
         <div style="display:flex;flex-direction:column;gap:10px;min-width:280px;flex:1 1 420px">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
             <div style="font:700 28px/1 'Fira Sans Condensed',sans-serif;color:#111827">Trend ve Karar Katmanı</div>
-            <div style="padding:7px 10px;border-radius:999px;background:#fff;color:#c2410c;font-size:12px;font-weight:700;border:1px solid #fdba74">İçerik üretim paneli kapalı</div>
+            <div style="padding:7px 10px;border-radius:999px;background:#fff;color:#c2410c;font-size:12px;font-weight:700;border:1px solid #fdba74">Backend trend verisi aktif</div>
           </div>
-          <div style="font-size:14px;color:#475569;line-height:1.55">Mevcut haber radarını bozmadan, konu kümeleri ve editoryal karar sinyalleri üstünden çalışan daha kompakt v2 görünümü.</div>
+          <div style="font-size:14px;color:#475569;line-height:1.55">Panel artık /api/trend-overview verisini kullanıyor. Trend kümeleri, öneriler ve bağlı haberler doğrudan backend tarafında üretiliyor.</div>
           ${summary}
         </div>
         <div style="display:flex;align-items:flex-start;justify-content:flex-end;flex:0 0 auto">
@@ -435,7 +389,8 @@
 
   async function boot() {
     try {
-      state.items = await fetchRecommendations();
+      state.clusters = await fetchTrendOverview();
+      state.recommendations = buildRecommendations(state.clusters);
       state.ready = true;
       renderPanel();
     } catch (error) {
