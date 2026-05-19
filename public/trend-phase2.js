@@ -14,7 +14,10 @@
   const state = {
     metaByUrl: new Map(),
     filter: localStorage.getItem(FILTER_KEY) || 'all',
-    ready: false
+    ready: false,
+    observer: null,
+    scheduled: null,
+    lastAnnotatedSignature: ''
   };
 
   function esc(v) {
@@ -216,7 +219,7 @@
 
   function renderToolbar() {
     const grid = document.getElementById('tb-grid');
-    if (!grid) return;
+    if (!grid || !grid.parentElement) return;
     let bar = document.getElementById('tb-phase2-bar');
     if (!bar) {
       bar = document.createElement('div');
@@ -230,13 +233,24 @@
       ['signal', 'Erken sinyal'],
       ['gap', 'Rakip boşluğu']
     ];
-    bar.innerHTML = filters.map(([key, label]) => `<button type="button" data-phase2-filter="${esc(key)}" class="tb-phase2-filter ${state.filter === key ? 'active' : ''}">${esc(label)}</button>`).join('');
+    const html = filters.map(([key, label]) => `<button type="button" data-phase2-filter="${esc(key)}" class="tb-phase2-filter ${state.filter === key ? 'active' : ''}">${esc(label)}</button>`).join('');
+    if (bar.innerHTML !== html) bar.innerHTML = html;
   }
 
-  function annotateCards() {
+  function currentSignature(inputs) {
+    return inputs
+      .map((input) => normalizeUrl(input.getAttribute('data-select-url') || ''))
+      .join('|') + `::${state.filter}`;
+  }
+
+  function annotateCards(force = false) {
     ensureStyle();
     renderToolbar();
     const inputs = [...document.querySelectorAll('input[data-select-url]')];
+    const signature = currentSignature(inputs);
+    if (!force && state.lastAnnotatedSignature === signature) return;
+    state.lastAnnotatedSignature = signature;
+
     inputs.forEach((input) => {
       const url = normalizeUrl(input.getAttribute('data-select-url') || '');
       const article = input.closest('article');
@@ -244,6 +258,17 @@
       const meta = state.metaByUrl.get(url);
       article.style.display = filterMatch(meta) ? '' : 'none';
       if (!meta) return;
+
+      const markup = `
+        <div class="tb-phase2-badges">
+          <span class="tb-phase2-badge" data-tone="trend">Trend ${esc(meta.trendScore)}</span>
+          <span class="tb-phase2-badge" data-tone="signal">${meta.isEarly ? 'Erken sinyal güçlü' : 'Erken sinyal orta'}</span>
+          <span class="tb-phase2-badge" data-tone="recommendation">${esc(meta.recommendation)}</span>
+          <span class="tb-phase2-badge" data-tone="competitor">${esc(meta.competitorState)}</span>
+        </div>
+        <div class="tb-phase2-cluster"><span>Trend kümesi:</span> ${esc(meta.clusterName)}</div>
+        <div class="tb-phase2-note">Kaynak ${esc(meta.sourceCount)} • Türkiye sinyali ${esc(meta.turkeySignals)} • Rakip görünürlüğü ${esc(meta.rivalCount)}</div>
+      `;
 
       let host = article.querySelector('[data-phase2-host]');
       if (!host) {
@@ -257,31 +282,35 @@
         }
       }
 
-      host.innerHTML = `
-        <div class="tb-phase2-badges">
-          <span class="tb-phase2-badge" data-tone="trend">Trend ${esc(meta.trendScore)}</span>
-          <span class="tb-phase2-badge" data-tone="signal">${meta.isEarly ? 'Erken sinyal güçlü' : 'Erken sinyal orta'}</span>
-          <span class="tb-phase2-badge" data-tone="recommendation">${esc(meta.recommendation)}</span>
-          <span class="tb-phase2-badge" data-tone="competitor">${esc(meta.competitorState)}</span>
-        </div>
-        <div class="tb-phase2-cluster"><span>Trend kümesi:</span> ${esc(meta.clusterName)}</div>
-        <div class="tb-phase2-note">Kaynak ${esc(meta.sourceCount)} • Türkiye sinyali ${esc(meta.turkeySignals)} • Rakip görünürlüğü ${esc(meta.rivalCount)}</div>
-      `;
+      if (host.innerHTML !== markup) host.innerHTML = markup;
     });
+  }
+
+  function scheduleAnnotate(force = false) {
+    if (state.scheduled) cancelAnimationFrame(state.scheduled);
+    state.scheduled = requestAnimationFrame(() => {
+      state.scheduled = null;
+      annotateCards(force);
+    });
+  }
+
+  function attachObserver() {
+    if (state.observer) state.observer.disconnect();
+    const grid = document.getElementById('tb-grid');
+    if (!grid) return;
+    state.observer = new MutationObserver((mutations) => {
+      const shouldRun = mutations.some((mutation) => mutation.addedNodes.length || mutation.removedNodes.length);
+      if (shouldRun) scheduleAnnotate(true);
+    });
+    state.observer.observe(grid, { childList: true, subtree: true });
   }
 
   async function boot() {
     try {
       await loadMeta();
-      annotateCards();
-      const root = document.getElementById('app') || document.body;
-      const observer = new MutationObserver(() => {
-        if (!state.ready) return;
-        annotateCards();
-      });
-      observer.observe(root, { childList: true, subtree: true });
-      setTimeout(annotateCards, 1200);
-      setTimeout(annotateCards, 2500);
+      annotateCards(true);
+      attachObserver();
+      setTimeout(() => scheduleAnnotate(true), 900);
     } catch {
       /* ignore phase 2 enhancer failures to avoid breaking the app */
     }
@@ -292,7 +321,8 @@
     if (!btn) return;
     state.filter = btn.getAttribute('data-phase2-filter') || 'all';
     localStorage.setItem(FILTER_KEY, state.filter);
-    annotateCards();
+    state.lastAnnotatedSignature = '';
+    scheduleAnnotate(true);
   });
 
   document.addEventListener('DOMContentLoaded', () => {
