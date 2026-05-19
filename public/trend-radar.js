@@ -1,8 +1,12 @@
 (() => {
+  const PREF_OPEN_KEY = 'tb_trend_radar_open';
+  const PREF_TAB_KEY = 'tb_trend_radar_tab';
+
   const state = {
     items: [],
-    panel: 'trends',
-    ready: false
+    panel: localStorage.getItem(PREF_TAB_KEY) || 'trends',
+    ready: false,
+    isOpen: localStorage.getItem(PREF_OPEN_KEY) === '1'
   };
 
   const COMPETITOR_SOURCES = [
@@ -243,14 +247,33 @@
     const style = document.createElement('style');
     style.id = 'tb-trend-radar-style';
     style.textContent = `
+      #tb-trend-radar-wrap { overflow:hidden; }
       #tb-trend-radar-wrap button[data-trend-tab].active { background:#f04a0a; color:#fff; border-color:#f04a0a; }
       #tb-trend-radar-wrap button[data-trend-tab] { background:#fff; color:#f04a0a; border:1px solid #f04a0a; }
-      #tb-trend-radar-wrap .tb-trend-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:12px; }
+      #tb-trend-radar-wrap .tb-trend-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; }
       #tb-trend-radar-wrap .tb-trend-card { border:1px solid #e2e8f0; border-radius:16px; background:#fff; padding:14px; box-shadow:0 6px 18px rgba(9,30,66,.05); }
       #tb-trend-radar-wrap .tb-trend-muted { color:#64748b; font-size:12px; }
+      #tb-trend-radar-wrap .tb-trend-header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; flex-wrap:wrap; padding:16px 18px; border-radius:18px; background:linear-gradient(180deg,#fff7ed 0%,#fff 100%); border:1px solid #fed7aa; }
+      #tb-trend-radar-wrap .tb-summary-pill { display:flex; flex-direction:column; gap:3px; min-width:88px; padding:8px 10px; border-radius:14px; background:#fff; border:1px solid #e5e7eb; }
+      #tb-trend-radar-wrap .tb-summary-pill strong { font:700 22px/1 'Fira Sans Condensed',sans-serif; color:#111827; }
+      #tb-trend-radar-wrap .tb-summary-pill span { font-size:11px; color:#64748b; font-weight:700; }
+      #tb-trend-radar-wrap .tb-summary-pill[data-tone='trend'] { border-color:#fdba74; }
+      #tb-trend-radar-wrap .tb-summary-pill[data-tone='signal'] { border-color:#93c5fd; }
+      #tb-trend-radar-wrap .tb-summary-pill[data-tone='recommendation'] { border-color:#86efac; }
+      #tb-trend-radar-wrap .tb-summary-pill[data-tone='competitor'] { border-color:#c4b5fd; }
+      #tb-trend-radar-wrap .tb-trend-body { margin-top:12px; padding:4px 2px 2px; }
+      #tb-trend-radar-wrap .tb-collapse-btn { display:inline-flex; align-items:center; gap:8px; padding:10px 12px; border-radius:999px; border:1px solid #f04a0a; background:#fff; color:#f04a0a; font-size:13px; font-weight:700; cursor:pointer; }
+      #tb-trend-radar-wrap .tb-chevron { transition:transform .2s ease; }
+      #tb-trend-radar-wrap[data-open='0'] .tb-chevron { transform:rotate(-90deg); }
+      #tb-trend-radar-wrap[data-open='0'] .tb-trend-body { display:none; }
       @media (max-width:980px){ #tb-trend-radar-wrap { margin-bottom:16px; } }
     `;
     document.head.appendChild(style);
+  }
+
+  function setPrefs() {
+    localStorage.setItem(PREF_OPEN_KEY, state.isOpen ? '1' : '0');
+    localStorage.setItem(PREF_TAB_KEY, state.panel);
   }
 
   function renderPanel() {
@@ -271,6 +294,8 @@
       main.prepend(wrap);
     }
 
+    wrap.setAttribute('data-open', state.isOpen ? '1' : '0');
+
     const clusters = clusterItems(state.items);
     const hotTrends = clusters.slice(0, 8);
     const earlySignals = [...clusters].sort((a, b) => b.early_signal_score - a.early_signal_score).slice(0, 8);
@@ -287,11 +312,11 @@
     ];
 
     const summary = `
-      <div class="tb-trend-grid" style="margin-bottom:14px">
-        <div class="tb-trend-card"><div class="tb-trend-muted">Sıcak trend</div><div style="font:700 30px/1 'Fira Sans Condensed',sans-serif;color:#111827;margin-top:6px">${hotTrends.length}</div><div class="tb-trend-muted" style="margin-top:6px">Şu an yükselen konu kümeleri</div></div>
-        <div class="tb-trend-card"><div class="tb-trend-muted">Erken sinyal</div><div style="font:700 30px/1 'Fira Sans Condensed',sans-serif;color:#111827;margin-top:6px">${earlySignals.filter((item) => item.early_signal_score >= 55).length}</div><div class="tb-trend-muted" style="margin-top:6px">Büyük siteler doymadan önce hareketlenen konular</div></div>
-        <div class="tb-trend-card"><div class="tb-trend-muted">Önerilen içerik</div><div style="font:700 30px/1 'Fira Sans Condensed',sans-serif;color:#111827;margin-top:6px">${recommendations.length}</div><div class="tb-trend-muted" style="margin-top:6px">Hemen işlenebilir editoryal fırsat</div></div>
-        <div class="tb-trend-card"><div class="tb-trend-muted">Rakip yoğunluğu</div><div style="font:700 30px/1 'Fira Sans Condensed',sans-serif;color:#111827;margin-top:6px">${rivals.filter((item) => item.count > 0).length}</div><div class="tb-trend-muted" style="margin-top:6px">Takip edilen rakiplerde son içerik sinyali</div></div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:stretch">
+        <div class="tb-summary-pill" data-tone="trend"><strong>${hotTrends.length}</strong><span>Sıcak Trend</span></div>
+        <div class="tb-summary-pill" data-tone="signal"><strong>${earlySignals.filter((item) => item.early_signal_score >= 55).length}</strong><span>Erken Sinyal</span></div>
+        <div class="tb-summary-pill" data-tone="recommendation"><strong>${recommendations.length}</strong><span>Önerilen İçerik</span></div>
+        <div class="tb-summary-pill" data-tone="competitor"><strong>${rivals.filter((item) => item.count > 0).length}</strong><span>Rakip Hareketi</span></div>
       </div>
     `;
 
@@ -361,7 +386,7 @@
           <article class="tb-trend-card" style="padding:12px 14px">
             <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
               <div style="font:700 20px/1.2 'Fira Sans Condensed',sans-serif;color:#111827">${esc(item.source)}</div>
-              <div style="padding:6px 8px;border-radius:999px;background:${item.count > 0 ? '#fff7ed' : '#f8fafc'};color:${item.count > 0 ? '#c2410c' : '#64748b'};font-size:12px;font-weight:700">${item.count} içerik</div>
+              <div style="padding:6px 8px;border-radius:999px;background:${item.count > 0 ? '#fff7ed' : '#f8fafc'};color:${item.count > 0 ? '#7c3aed' : '#64748b'};font-size:12px;font-weight:700">${item.count} içerik</div>
             </div>
             <div class="tb-trend-muted" style="margin-top:8px">Ortalama Discover: ${item.avgDiscover}</div>
             ${item.latestTitle ? `<a href="${esc(item.latestUrl || '#')}" target="_blank" rel="noopener noreferrer" style="display:block;margin-top:10px;font-size:14px;color:#f04a0a;text-decoration:none;font-weight:700">${esc(item.latestTitle)}</a>` : `<div class="tb-trend-muted" style="margin-top:10px">Henüz görünür içerik yok.</div>`}
@@ -381,18 +406,28 @@
       : renderCompetitors;
 
     wrap.innerHTML = `
-      <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:12px;flex-wrap:wrap">
-        <div>
-          <div style="font:700 28px/1 'Fira Sans Condensed',sans-serif;color:#111827">Trend ve Karar Katmanı</div>
-          <div style="margin-top:8px;font-size:14px;color:#475569">Mevcut haber radarını bozmadan, konu kümeleri ve editoryal karar sinyalleri üstünden çalışan v2 görünümü.</div>
+      <div class="tb-trend-header">
+        <div style="display:flex;flex-direction:column;gap:10px;min-width:280px;flex:1 1 420px">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <div style="font:700 28px/1 'Fira Sans Condensed',sans-serif;color:#111827">Trend ve Karar Katmanı</div>
+            <div style="padding:7px 10px;border-radius:999px;background:#fff;color:#c2410c;font-size:12px;font-weight:700;border:1px solid #fdba74">İçerik üretim paneli kapalı</div>
+          </div>
+          <div style="font-size:14px;color:#475569;line-height:1.55">Mevcut haber radarını bozmadan, konu kümeleri ve editoryal karar sinyalleri üstünden çalışan daha kompakt v2 görünümü.</div>
+          ${summary}
         </div>
-        <div style="padding:8px 10px;border-radius:999px;background:#fff7ed;color:#c2410c;font-size:12px;font-weight:700">İçerik üretim paneli kapalı</div>
+        <div style="display:flex;align-items:flex-start;justify-content:flex-end;flex:0 0 auto">
+          <button type="button" id="tb-trend-toggle" class="tb-collapse-btn">
+            <span class="tb-chevron">▾</span>
+            ${state.isOpen ? 'Daralt' : 'Göster'}
+          </button>
+        </div>
       </div>
-      ${summary}
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
-        ${tabs.map(([key, label]) => `<button type="button" data-trend-tab="${esc(key)}" class="${state.panel === key ? 'active' : ''}" style="padding:10px 12px;border-radius:999px;font-size:13px;font-weight:700;cursor:pointer">${esc(label)}</button>`).join('')}
+      <div class="tb-trend-body">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+          ${tabs.map(([key, label]) => `<button type="button" data-trend-tab="${esc(key)}" class="${state.panel === key ? 'active' : ''}" style="padding:9px 12px;border-radius:999px;font-size:13px;font-weight:700;cursor:pointer">${esc(label)}</button>`).join('')}
+        </div>
+        <div id="tb-trend-panel-body">${panelHtml}</div>
       </div>
-      <div id="tb-trend-panel-body">${panelHtml}</div>
     `;
 
     return true;
@@ -422,10 +457,20 @@
   }
 
   document.addEventListener('click', (event) => {
-    const btn = event.target.closest('[data-trend-tab]');
-    if (!btn) return;
-    state.panel = btn.getAttribute('data-trend-tab') || 'trends';
-    if (state.ready) renderPanel();
+    const tabBtn = event.target.closest('[data-trend-tab]');
+    if (tabBtn) {
+      state.panel = tabBtn.getAttribute('data-trend-tab') || 'trends';
+      setPrefs();
+      if (state.ready) renderPanel();
+      return;
+    }
+
+    const toggleBtn = event.target.closest('#tb-trend-toggle');
+    if (toggleBtn) {
+      state.isOpen = !state.isOpen;
+      setPrefs();
+      if (state.ready) renderPanel();
+    }
   });
 
   function waitForApp() {
