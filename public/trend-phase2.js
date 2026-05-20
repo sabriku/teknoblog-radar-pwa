@@ -2,17 +2,13 @@
   const FILTER_KEY = 'tb_phase2_filter';
   const COMPETITOR_SOURCES = [
     'Webrazzi', 'ShiftDelete.Net', 'DonanımHaber', 'Android Authority', 'The Verge',
-    '9to5Google', 'MacRumors', 'Windows Central', 'SamMobile', 'GSMArena'
-  ];
-  const BRAND_PATTERNS = [
-    'Apple', 'iPhone', 'iPad', 'Mac', 'Samsung', 'Galaxy', 'Google', 'Gemini', 'Android',
-    'OpenAI', 'ChatGPT', 'Microsoft', 'Windows', 'Copilot', 'Huawei', 'Xiaomi', 'Redmi',
-    'POCO', 'Sony', 'PlayStation', 'Steam', 'Nintendo', 'Tesla', 'Nvidia', 'AMD', 'Intel',
-    'Qualcomm', 'Snapdragon', 'MediaTek', 'One UI', 'iOS', 'WhatsApp', 'Meta'
+    '9to5Google', 'MacRumors', 'Windows Central', 'SamMobile', 'GSMArena',
+    'LOG.com.tr', 'TechRadar', 'TechCrunch', 'Digital Trends', 'Ars Technica', 'Google Blog'
   ];
 
   const state = {
     metaByUrl: new Map(),
+    metaByTitleKey: new Map(),
     filter: localStorage.getItem(FILTER_KEY) || 'all',
     ready: false,
     observer: null,
@@ -41,149 +37,80 @@
     }
   }
 
-  function getTitle(item) {
-    return String(item?.title || '').trim();
-  }
-
-  function getSource(item) {
-    return String(item?.source_name || '').trim();
-  }
-
-  function getUrl(item) {
-    return normalizeUrl(String(item?.url || item?.canonical_url || '').trim());
-  }
-
-  function getPublishedAt(item) {
-    return item?.published_at || item?.created_at || item?.updated_at || null;
-  }
-
-  function score(item, key) {
-    const n = Number(item?.[key]);
-    return Number.isFinite(n) ? n : 0;
-  }
-
-  function hoursAgo(value) {
-    const t = new Date(value).getTime();
-    if (!Number.isFinite(t)) return 9999;
-    return Math.max(0, (Date.now() - t) / 3600000);
-  }
-
-  function normalizeTopic(title) {
-    const raw = String(title || '');
-    const brandHit = BRAND_PATTERNS.find((brand) => new RegExp(`\\b${brand.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'i').test(raw));
-    if (brandHit) {
-      const rest = raw
-        .replace(new RegExp(`.*?\\b${brandHit.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'i'), brandHit)
-        .split(/[:|,-]/)[0]
-        .replace(/\b(launch|launched|announced|revealed|introduces|update|rollout|beta|test|price|pricing|fiyat|indirim|kampanya|duyurdu|tanıttı|sızıntı|leak|rumor|report)\b/gi, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-      return (rest || brandHit).slice(0, 80);
-    }
-
-    return raw
+  function normalizeTitleKey(value = '') {
+    return String(value || '')
       .toLowerCase()
+      .replace(/\s+-\s+[^-]+$/g, '')
       .replace(/[^a-z0-9çğıöşü\s]/gi, ' ')
-      .replace(/\b(the|and|for|with|from|that|this|will|have|has|about|daha|için|ile|bir|ve|ile|son|new|yeni|güncelleme|update|launch|announced|duyurdu|tanıttı)\b/gi, ' ')
+      .replace(/\b(the|and|for|with|from|that|this|will|have|has|about|daha|için|ile|bir|ve|son|new|yeni|güncelleme|update|launch|announced|duyurdu|tanıttı)\b/gi, ' ')
       .replace(/\s+/g, ' ')
       .trim()
       .split(' ')
-      .slice(0, 5)
-      .join(' ')
-      .slice(0, 80) || 'Diğer teknoloji başlıkları';
+      .slice(0, 8)
+      .join(' ');
   }
 
-  function classifyRecommendation(clusterName, avgDiscover) {
-    const t = String(clusterName || '').toLowerCase();
-    if (/(fiyat|indirim|kampanya|price|deal|sale|coupon|sepette)/.test(t)) return 'Satın alma içeriği';
-    if (/(vs|karşılaştır|compare)/.test(t)) return 'Karşılaştırma';
-    if (/(beta|update|güncelle|rollout|patch|one ui|ios|android)/.test(t)) return 'Hızlı haber';
-    if (/(sızıntı|leak|rumor|report|iddia)/.test(t)) return 'Hızlı haber + takip';
-    if (/(nasıl|how to|rehber|guide|ipuçları|tips)/.test(t)) return 'Rehber';
-    return avgDiscover >= 72 ? 'Discover odaklı hızlı haber' : 'Detay haber';
+  function recommendationLabel(value = '') {
+    const map = {
+      'satın_alma': 'Satın alma içeriği',
+      'karşılaştırma': 'Karşılaştırma',
+      'hızlı_haber': 'Hızlı haber',
+      'takip_dosyası': 'Takip dosyası',
+      'discover_hızlı_haber': 'Discover odaklı hızlı haber',
+      'detay_haber': 'Detay haber'
+    };
+    return map[String(value || '').trim()] || String(value || 'Detay haber');
   }
 
-  function buildMeta(items) {
-    const clusters = new Map();
-    items.forEach((item) => {
-      const key = normalizeTopic(getTitle(item));
-      if (!key) return;
-      if (!clusters.has(key)) {
-        clusters.set(key, {
-          clusterName: key,
-          items: [],
-          sources: new Set(),
-          competitors: new Set(),
-          turkeySignals: 0,
-          latest: null,
-          avgDiscover: 0,
-          avgTraffic: 0,
-          trendScore: 0,
-          earlySignalScore: 0,
-          recommendation: ''
-        });
-      }
-      const cluster = clusters.get(key);
-      cluster.items.push(item);
-      const source = getSource(item);
-      cluster.sources.add(source);
-      if (COMPETITOR_SOURCES.includes(source)) cluster.competitors.add(source);
-      if (/(Türkiye|Turkish|TR|Hepsiburada|Trendyol|MediaMarkt|Vodafone|Turkcell|Türk Telekom|BİM|A101|Migros)/i.test(getTitle(item) + ' ' + source)) {
-        cluster.turkeySignals += 1;
-      }
-      const published = getPublishedAt(item);
-      if (published) {
-        const ts = new Date(published).getTime();
-        if (!cluster.latest || ts > cluster.latest) cluster.latest = ts;
-      }
-    });
+  function competitorState(cluster = {}) {
+    return Number(cluster.competitor_count || 0) > 0 ? 'Rakipte var' : 'Rakip boşluğu';
+  }
 
-    const metaByUrl = new Map();
-    [...clusters.values()].forEach((cluster) => {
-      const count = cluster.items.length;
-      cluster.avgDiscover = Math.round(cluster.items.reduce((a, item) => a + score(item, 'discover_score'), 0) / Math.max(1, count));
-      cluster.avgTraffic = Math.round(cluster.items.reduce((a, item) => a + score(item, 'traffic_score'), 0) / Math.max(1, count));
-      const freshnessBoost = cluster.latest ? Math.max(0, 26 - hoursAgo(cluster.latest)) : 0;
-      const diversityBoost = Math.min(20, cluster.sources.size * 4);
-      const turkeyBoost = Math.min(12, cluster.turkeySignals * 3);
-      const discoverBoost = Math.round(cluster.avgDiscover * 0.35);
-      const trafficBoost = Math.round(cluster.avgTraffic * 0.2);
-      cluster.trendScore = Math.max(0, Math.min(100, freshnessBoost + diversityBoost + turkeyBoost + discoverBoost + trafficBoost));
-      cluster.earlySignalScore = Math.max(0, Math.min(100,
-        (cluster.sources.size <= 2 ? 35 : 10) +
-        (cluster.latest ? Math.max(0, 24 - hoursAgo(cluster.latest)) : 0) +
-        Math.round(cluster.avgDiscover * 0.25)
-      ));
-      cluster.recommendation = classifyRecommendation(cluster.clusterName, cluster.avgDiscover);
+  function buildClusterMeta(cluster = {}) {
+    return {
+      clusterName: String(cluster.cluster_name || '').trim(),
+      trendScore: Number(cluster.trend_score || 0),
+      earlySignalScore: Number(cluster.early_signal_score || 0),
+      recommendation: recommendationLabel(cluster.recommendation_type),
+      rivalCount: Number(cluster.competitor_count || 0),
+      competitorState: competitorState(cluster),
+      turkeySignals: Number(cluster.turkey_interest_score || 0),
+      sourceCount: Number(cluster.source_count || 0),
+      isEarly: Number(cluster.early_signal_score || 0) >= 55,
+      isCompetitorGap: Number(cluster.competitor_count || 0) === 0,
+      isTrendLinked: true
+    };
+  }
 
-      cluster.items.forEach((item) => {
-        const url = getUrl(item);
-        if (!url) return;
-        metaByUrl.set(url, {
-          clusterName: cluster.clusterName,
-          trendScore: cluster.trendScore,
-          earlySignalScore: cluster.earlySignalScore,
-          recommendation: cluster.recommendation,
-          rivalCount: cluster.competitors.size,
-          competitorState: cluster.competitors.size > 0 ? 'Rakipte var' : 'Rakip boşluğu',
-          turkeySignals: cluster.turkeySignals,
-          sourceCount: cluster.sources.size,
-          isEarly: cluster.earlySignalScore >= 55,
-          isCompetitorGap: cluster.competitors.size === 0,
-          isTrendLinked: true
-        });
+  function buildMetaMaps(clusters = []) {
+    const byUrl = new Map();
+    const byTitle = new Map();
+
+    clusters.forEach((cluster) => {
+      const meta = buildClusterMeta(cluster);
+      const titleKey = normalizeTitleKey(cluster.cluster_name || '');
+      if (titleKey && !byTitle.has(titleKey)) byTitle.set(titleKey, meta);
+
+      const linked = Array.isArray(cluster.linked_news) ? cluster.linked_news : [];
+      linked.forEach((news) => {
+        const url = normalizeUrl(news?.candidate_url || news?.url || '');
+        const newsTitleKey = normalizeTitleKey(news?.candidate_title || news?.title || '');
+        if (url) byUrl.set(url, meta);
+        if (newsTitleKey && !byTitle.has(newsTitleKey)) byTitle.set(newsTitleKey, meta);
       });
     });
 
-    return metaByUrl;
+    return { byUrl, byTitle };
   }
 
   async function loadMeta() {
-    const res = await fetch('/api/recommendations?sort=published_at', { cache: 'no-store', credentials: 'same-origin' });
+    const res = await fetch('/api/trend-overview?limit=80', { cache: 'no-store', credentials: 'same-origin' });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
     const items = Array.isArray(data?.items) ? data.items : [];
-    state.metaByUrl = buildMeta(items);
+    const { byUrl, byTitle } = buildMetaMaps(items);
+    state.metaByUrl = byUrl;
+    state.metaByTitleKey = byTitle;
     state.ready = true;
   }
 
@@ -243,6 +170,21 @@
       .join('|') + `::${state.filter}`;
   }
 
+  function findMetaForArticle(article, inputUrl) {
+    if (inputUrl && state.metaByUrl.has(inputUrl)) return state.metaByUrl.get(inputUrl);
+
+    const titleNode = article.querySelector('h3');
+    const titleText = titleNode ? titleNode.textContent || '' : '';
+    const titleKey = normalizeTitleKey(titleText);
+    if (titleKey && state.metaByTitleKey.has(titleKey)) return state.metaByTitleKey.get(titleKey);
+
+    const link = article.querySelector('a[href]');
+    const href = normalizeUrl(link?.getAttribute('href') || '');
+    if (href && state.metaByUrl.has(href)) return state.metaByUrl.get(href);
+
+    return null;
+  }
+
   function annotateCards(force = false) {
     ensureStyle();
     renderToolbar();
@@ -255,7 +197,7 @@
       const url = normalizeUrl(input.getAttribute('data-select-url') || '');
       const article = input.closest('article');
       if (!article) return;
-      const meta = state.metaByUrl.get(url);
+      const meta = findMetaForArticle(article, url);
       article.style.display = filterMatch(meta) ? '' : 'none';
       if (!meta) return;
 
