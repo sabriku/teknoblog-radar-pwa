@@ -30,7 +30,135 @@ function toSignalScore(item = {}, feed = {}) {
   if (/fiyat|price|kampanya|deal|indirim|discount/.test(text)) score += 10;
   if (/beta|update|güncelleme|rollout|ios|android|one ui/.test(text)) score += 8;
   if (/leak|rumor|sızıntı|report|iddia/.test(text)) score += 6;
+  if (/gemini|chatgpt|openai|android|iphone|samsung|google|xiaomi|huawei/.test(text)) score += 6;
+  if (Number(item.traffic_score || 0) > 0) score += Math.min(12, Math.round(Number(item.traffic_score || 0) / 10));
   return Math.max(0, Math.min(100, score));
+}
+
+function textFrom(value) {
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') return String(value);
+  if (Array.isArray(value)) return value.map(textFrom).filter(Boolean).join(' ');
+  if (typeof value === 'object') {
+    return [
+      value.title,
+      value.name,
+      value.query,
+      value.keyword,
+      value.formattedTraffic,
+      value.traffic,
+      value.snippet,
+      value.description
+    ].map(textFrom).filter(Boolean).join(' ');
+  }
+  return '';
+}
+
+function numberFromTraffic(value) {
+  const text = textFrom(value).toLowerCase();
+  if (!text) return 0;
+  const match = text.match(/([\d.,]+)\s*([kmmb]|bin|milyon)?/i);
+  if (!match) return 0;
+  const base = Number(match[1].replace(/,/g, '.')) || 0;
+  const unit = (match[2] || '').toLowerCase();
+  if (unit === 'k' || unit === 'bin') return Math.round(base * 1000);
+  if (unit === 'm' || unit === 'milyon') return Math.round(base * 1000000);
+  if (unit === 'b') return Math.round(base * 1000000000);
+  return Math.round(base);
+}
+
+function normalizeJsonTrendItem(item = {}, feed = {}) {
+  const title = safeText(
+    item.title || item.query || item.keyword || item.name || item.entityName || item.topic || ''
+  );
+  const published = item.published_at || item.pubDate || item.date || item.created_at || item.timestamp || new Date().toISOString();
+  const articles = Array.isArray(item.articles) ? item.articles : [];
+  const firstArticle = articles[0] || item.article || item.news || {};
+  const url = safeText(
+    item.url || item.link || item.exploreLink || item.articleUrl || firstArticle.url || firstArticle.link || ''
+  );
+  const imageUrl = safeText(item.image_url || item.imageUrl || firstArticle.image || firstArticle.imageUrl || '');
+  const trafficScore = numberFromTraffic(item.formattedTraffic || item.traffic || item.searchVolume || item.volume || '');
+  const summary = safeText(
+    item.summary || item.snippet || item.description || firstArticle.title || firstArticle.snippet || ''
+  );
+
+  return {
+    title,
+    url,
+    summary,
+    image_url: imageUrl,
+    published_at: published,
+    traffic_score: trafficScore,
+    raw_json: item,
+    feed_hint: feed.name || ''
+  };
+}
+
+function flattenJsonTrendItems(data, feed = {}) {
+  const buckets = [];
+  if (Array.isArray(data)) buckets.push(...data);
+  if (data && typeof data === 'object') {
+    const candidates = [
+      data.items,
+      data.stories,
+      data.trendingSearches,
+      data.default?.trendingSearchesDays,
+      data.default?.trendingSearches,
+      data.data,
+      data.results
+    ].filter(Boolean);
+    for (const entry of candidates) {
+      if (Array.isArray(entry)) buckets.push(...entry);
+    }
+  }
+
+  const expanded = [];
+  for (const entry of buckets) {
+    if (!entry) continue;
+    if (Array.isArray(entry.trendingSearches)) {
+      expanded.push(...entry.trendingSearches);
+      continue;
+    }
+    if (Array.isArray(entry.stories)) {
+      expanded.push(...entry.stories);
+      continue;
+    }
+    expanded.push(entry);
+  }
+
+  return expanded
+    .map((item) => normalizeJsonTrendItem(item, feed))
+    .filter((item) => item.title);
+}
+
+function detectJsonPayload(text = '') {
+  const trimmed = String(text || '').trim();
+  if (!trimmed) return null;
+  if (!(trimmed.startsWith('{') || trimmed.startsWith('[') || trimmed.startsWith(")]}'"))) return null;
+  const normalized = trimmed.startsWith(")]}'") ? trimmed.slice(4) : trimmed;
+  try {
+    return JSON.parse(normalized);
+  } catch {
+    return null;
+  }
+}
+
+function parseTrendItems(bodyText = '', contentType = '', feed = {}) {
+  const hintedJson = /json/i.test(contentType) || /google_trends/i.test(String(feed.source_type || ''));
+  if (hintedJson) {
+    const jsonPayload = detectJsonPayload(bodyText);
+    if (jsonPayload) return flattenJsonTrendItems(jsonPayload, feed);
+  }
+
+  if (/xml|rss|atom/i.test(contentType) || bodyText.trim().startsWith('<')) {
+    return parseFeedItems(bodyText).slice(0, Number(feed.limit || 25));
+  }
+
+  const jsonPayload = detectJsonPayload(bodyText);
+  if (jsonPayload) return flattenJsonTrendItems(jsonPayload, feed);
+  return [];
 }
 
 export default async function handler(req, res) {
@@ -62,7 +190,7 @@ export default async function handler(req, res) {
         const response = await fetch(url, {
           headers: {
             'user-agent': 'Mozilla/5.0 TeknoblogRadarBot/1.0',
-            'accept': 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8'
+            'accept': 'application/json, application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8'
           },
           cache: 'no-store'
         });
@@ -72,9 +200,10 @@ export default async function handler(req, res) {
           continue;
         }
 
-        const xml = await response.text();
-        const items = parseFeedItems(xml).slice(0, Number(feed.limit || 25));
-        debug.push({ feed: feed.name || url, status: 'fetched', count: items.length });
+        const contentType = response.headers.get('content-type') || '';
+        const bodyText = await response.text();
+        const items = parseTrendItems(bodyText, contentType, feed).slice(0, Number(feed.limit || 25));
+        debug.push({ feed: feed.name || url, status: 'fetched', count: items.length, source_type: feed.source_type || 'trend_feed' });
 
         for (const item of items) {
           const topicText = safeText(item.title || '');
@@ -90,7 +219,9 @@ export default async function handler(req, res) {
             summary: safeText(item.summary || item.description || ''),
             image_url: safeText(item.image_url || ''),
             raw_feed_name: feed.name || '',
-            feed_url: url
+            feed_url: url,
+            traffic_score: Number(item.traffic_score || 0),
+            raw_json: item.raw_json || null
           };
 
           const row = {
@@ -115,7 +246,7 @@ export default async function handler(req, res) {
           if (!error) inserted += 1;
         }
       } catch (error) {
-        debug.push({ feed: feed.name || url, status: 'error', error: error.message || String(error) });
+        debug.push({ feed: feed.name || url, status: 'error', error: error.message || String(error), source_type: feed.source_type || 'trend_feed' });
       }
     }
 
