@@ -305,14 +305,29 @@ export default async function handler(req, res) {
       }
       clusterUpserts += 1;
 
-      const { data: clusterRecord } = await supabase
+      const { data: clusterRecord, error: clusterLookupError } = await supabase
         .from('trend_clusters')
         .select('id')
         .eq('cluster_key', cluster.clusterKey)
         .limit(1)
         .maybeSingle();
 
-      if (!clusterRecord?.id) continue;
+      if (clusterLookupError || !clusterRecord?.id) {
+        if (clusterLookupError) {
+          debug.push({ cluster: cleanedClusterName, status: 'cluster_lookup_error', error: clusterLookupError.message });
+        }
+        continue;
+      }
+
+      const { error: deleteLinksError } = await supabase
+        .from('trend_news_links')
+        .delete()
+        .eq('cluster_id', clusterRecord.id);
+
+      if (deleteLinksError) {
+        debug.push({ cluster: cleanedClusterName, status: 'delete_links_error', error: deleteLinksError.message });
+        continue;
+      }
 
       for (const row of matchedCandidates) {
         const linkRow = {
@@ -326,8 +341,12 @@ export default async function handler(req, res) {
         };
         const { error: linkError } = await supabase
           .from('trend_news_links')
-          .upsert(linkRow, { onConflict: 'cluster_id,topic_candidate_id' });
-        if (!linkError) linkUpserts += 1;
+          .insert(linkRow);
+        if (!linkError) {
+          linkUpserts += 1;
+        } else {
+          debug.push({ cluster: cleanedClusterName, status: 'link_insert_error', error: linkError.message, title: row.candidate.title || '' });
+        }
       }
     }
 
