@@ -9,7 +9,57 @@ const SOURCE_SUFFIXES = [
   'Mashable', 'CNBC', 'blog.google', 'Google Blog', 'Webtekno', 'Tamindir', 'LOG.com.tr',
   'TechRadar', 'TechCrunch', 'Digital Trends', 'Ars Technica', 'Engadget', '9to5Google',
   'Android Authority', 'Windows Central', 'The Verge', 'GSMArena', 'SamMobile', 'MacRumors',
-  'DonanımHaber', 'ShiftDelete.Net', 'Webrazzi', 'Tom\'s Hardware'
+  'DonanımHaber', 'ShiftDelete.Net', 'Webrazzi', 'Tom\'s Hardware', 'Vietnam.vn', 'Yeni Asır',
+  'A Haber', 'Gizmochina'
+];
+
+const WEAK_TITLE_PATTERNS = [
+  /\blive\b/i,
+  /\bprimer\b/i,
+  /\bwhat to expect\b/i,
+  /\broundup\b/i,
+  /\bweekly\b/i,
+  /\bpodcast\b/i,
+  /\breview\b/i,
+  /\beverything (new|google announced|we know)\b/i,
+  /\bher şey\b/i,
+  /\bcanlı\b/i,
+  /\bözet\b/i,
+  /\bbeklenenler\b/i,
+  /\binceleme\b/i,
+  /\bprimer\b/i,
+  /\bthe sideload\b/i,
+  /\bthings to expect\b/i
+];
+
+const STRONG_TOPIC_PATTERNS = [
+  /\bgemini\b/i,
+  /\bchatgpt\b/i,
+  /\bopenai\b/i,
+  /\bgalaxy\b/i,
+  /\bone ui\b/i,
+  /\bandroid\b/i,
+  /\bios\b/i,
+  /\bxiaomi\b/i,
+  /\bhuawei\b/i,
+  /\bsamsung\b/i,
+  /\bgoogle\b/i,
+  /\bsmart glasses\b/i,
+  /\bakıllı gözlük\b/i,
+  /\bwatch\b/i,
+  /\bai\b/i,
+  /\byapay zeka\b/i,
+  /\bupdate\b/i,
+  /\bgüncelleme\b/i,
+  /\bfiyat\b/i,
+  /\bkampanya\b/i,
+  /\bindirim\b/i,
+  /\bplaystation\b/i,
+  /\bsteam\b/i,
+  /\bpixel\b/i,
+  /\biphone\b/i,
+  /\bipad\b/i,
+  /\bmac\b/i
 ];
 
 function normalizeTopic(value = '') {
@@ -47,32 +97,61 @@ function cleanupTitle(value = '') {
     .replace(/^Google debuts\s+/i, 'Google ')
     .replace(/^Google announces\s+/i, 'Google ')
     .replace(/^Google says\s+/i, 'Google ')
-    .replace(/^Introducing\s+/i, '')
     .replace(/^Everything new in our\s+/i, '')
     .replace(/^Everything new in\s+/i, '')
+    .replace(/^Everything Google announced at\s+/i, '')
+    .replace(/^Everything announced at\s+/i, '')
     .replace(/\s+/g, ' ')
     .trim();
 
   return text;
 }
 
+function isWeakTitle(value = '') {
+  const text = cleanupTitle(value);
+  if (!text) return true;
+  if (text.length < 8) return true;
+  return WEAK_TITLE_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+function strongTopicScore(value = '') {
+  const text = cleanupTitle(value);
+  if (!text) return -100;
+  let score = 0;
+  for (const pattern of STRONG_TOPIC_PATTERNS) {
+    if (pattern.test(text)) score += 8;
+  }
+  if (!isWeakTitle(text)) score += 20;
+  if (text.length >= 18 && text.length <= 90) score += 10;
+  if (/[:]/.test(text)) score -= 6;
+  if (/\b(live|primer|review|podcast|roundup|weekly)\b/i.test(text)) score -= 30;
+  return score;
+}
+
 function editorialClusterName(cluster = {}, matchedCandidates = []) {
   const candidateTitles = matchedCandidates
     .map((row) => cleanupTitle(row?.candidate?.title || ''))
     .filter(Boolean)
-    .sort((a, b) => a.length - b.length);
+    .map((title) => ({ title, score: strongTopicScore(title) + Math.max(0, Number(matchedCandidates.find((r) => cleanupTitle(r?.candidate?.title || '') === title)?.match || 0) - 50) }))
+    .filter((item) => item.score >= 15)
+    .sort((a, b) => b.score - a.score || a.title.length - b.title.length);
 
   const signalTitles = (cluster.signals || [])
     .map((signal) => cleanupTitle(signal?.topic_text || ''))
     .filter(Boolean)
-    .sort((a, b) => a.length - b.length);
+    .map((title) => ({ title, score: strongTopicScore(title) }))
+    .filter((item) => item.score >= 10)
+    .sort((a, b) => b.score - a.score || a.title.length - b.title.length);
 
-  const pick = candidateTitles[0] || signalTitles[0] || cleanupTitle(cluster.clusterName || '') || cluster.normalizedTopic;
+  const fallbackTitles = [
+    ...candidateTitles.map((item) => item.title),
+    ...signalTitles.map((item) => item.title),
+    cleanupTitle(cluster.clusterName || ''),
+    cluster.normalizedTopic
+  ].filter(Boolean);
 
-  return pick
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 140);
+  const pick = fallbackTitles[0] || cluster.normalizedTopic;
+  return pick.replace(/\s+/g, ' ').trim().slice(0, 140);
 }
 
 function recommendationType(clusterName = '', avgDiscover = 0) {
@@ -91,7 +170,11 @@ function matchScore(clusterTopic = '', candidate = {}) {
   const clusterWords = clusterTopic.split(' ').filter(Boolean);
   if (!clusterWords.length) return 0;
   const hitCount = clusterWords.filter((word) => title.includes(word)).length;
-  return Math.round((hitCount / clusterWords.length) * 100);
+  const ratio = hitCount / clusterWords.length;
+  const base = Math.round(ratio * 100);
+  if (clusterWords.length <= 2 && hitCount < clusterWords.length) return Math.min(base, 55);
+  if (ratio < 0.6) return Math.min(base, 54);
+  return base;
 }
 
 export default async function handler(req, res) {
@@ -162,9 +245,9 @@ export default async function handler(req, res) {
           candidate,
           match: matchScore(cluster.normalizedTopic, candidate)
         }))
-        .filter((row) => row.match >= 45)
+        .filter((row) => row.match >= 60)
         .sort((a, b) => b.match - a.match)
-        .slice(0, 15);
+        .slice(0, 12);
 
       const cleanedClusterName = editorialClusterName(cluster, matchedCandidates);
       const avgDiscover = matchedCandidates.length
