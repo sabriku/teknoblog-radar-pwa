@@ -20,6 +20,49 @@
     'Ars Technica'
   ];
 
+  const PANEL_META = {
+    trends: {
+      label: 'Gündemdekiler',
+      title: 'Şu anda öne çıkan trend kümeleri',
+      desc: 'En yüksek trend skoruna sahip başlıklar burada görünür.',
+      chip: 'Sıcak gündem',
+      tone: 'trend',
+      icon: '↗'
+    },
+    signals: {
+      label: 'Erken Fırsatlar',
+      title: 'Henüz büyümeden yakalanan sinyaller',
+      desc: 'Erken sinyal puanı yüksek başlıklar, hızlı içerik fırsatı sunar.',
+      chip: 'Erken sinyal',
+      tone: 'signal',
+      icon: '⚡'
+    },
+    recommendations: {
+      label: 'Editör Önerileri',
+      title: 'Yazıya dönüşmeye en yakın içerikler',
+      desc: 'Discover, SEO ve Türkiye ilgisine göre önceliklendirilmiş öneriler.',
+      chip: 'Öneri listesi',
+      tone: 'recommendation',
+      icon: '✦'
+    },
+    sources: {
+      label: 'Kaynak Analizi',
+      title: 'Hangi kaynaklar daha verimli sinyal üretiyor',
+      desc: 'Trend kümelerine en çok katkı veren kaynaklar ve kalite düzeyleri.',
+      chip: 'Kaynak görünümü',
+      tone: 'source',
+      icon: '◫'
+    },
+    competitors: {
+      label: 'Rakip Takibi',
+      title: 'Rakip yayınlarda hareket olan başlıklar',
+      desc: 'Rakip kaynakların hangi başlıklarda yoğunlaştığı burada izlenir.',
+      chip: 'Rakip görünümü',
+      tone: 'competitor',
+      icon: '◎'
+    }
+  };
+
   const state = {
     clusters: [],
     recommendations: [],
@@ -202,25 +245,77 @@
     style.id = 'tb-trend-radar-style';
     style.textContent = `
       #tb-trend-radar-wrap { overflow:hidden; }
-      #tb-trend-radar-wrap button[data-trend-tab].active { background:#f04a0a; color:#fff; border-color:#f04a0a; }
-      #tb-trend-radar-wrap button[data-trend-tab] { background:#fff; color:#f04a0a; border:1px solid #f04a0a; }
-      #tb-trend-radar-wrap .tb-trend-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; }
-      #tb-trend-radar-wrap .tb-trend-card { border:1px solid #e2e8f0; border-radius:16px; background:#fff; padding:14px; box-shadow:0 6px 18px rgba(9,30,66,.05); }
+      #tb-trend-radar-wrap .tb-trend-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:14px; }
+      #tb-trend-radar-wrap .tb-trend-card { border:1px solid #e2e8f0; border-radius:18px; background:#fff; padding:16px; box-shadow:0 8px 22px rgba(15,23,42,.05); }
       #tb-trend-radar-wrap .tb-trend-muted { color:#64748b; font-size:12px; }
-      #tb-trend-radar-wrap .tb-trend-header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; flex-wrap:wrap; padding:16px 18px; border-radius:18px; background:linear-gradient(180deg,#fff7ed 0%,#fff 100%); border:1px solid #fed7aa; }
-      #tb-trend-radar-wrap .tb-summary-pill { display:flex; flex-direction:column; gap:3px; min-width:88px; padding:8px 10px; border-radius:14px; background:#fff; border:1px solid #e5e7eb; }
-      #tb-trend-radar-wrap .tb-summary-pill strong { font:700 22px/1 'Fira Sans Condensed',sans-serif; color:#111827; }
-      #tb-trend-radar-wrap .tb-summary-pill span { font-size:11px; color:#64748b; font-weight:700; }
+      #tb-trend-radar-wrap .tb-trend-header { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap:wrap; padding:18px 20px; border-radius:20px; background:linear-gradient(180deg,#fff7ed 0%,#fff 100%); border:1px solid #fed7aa; }
+      #tb-trend-radar-wrap .tb-summary-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; width:100%; }
+      #tb-trend-radar-wrap .tb-summary-pill { display:flex; align-items:flex-start; gap:12px; padding:14px; border-radius:16px; background:#fff; border:1px solid #e5e7eb; }
+      #tb-trend-radar-wrap .tb-summary-icon { width:36px; height:36px; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:700; flex:0 0 36px; }
+      #tb-trend-radar-wrap .tb-summary-copy { display:flex; flex-direction:column; gap:3px; min-width:0; }
+      #tb-trend-radar-wrap .tb-summary-copy strong { font:700 24px/1 'Fira Sans Condensed',sans-serif; color:#111827; }
+      #tb-trend-radar-wrap .tb-summary-copy b { font-size:13px; color:#111827; }
+      #tb-trend-radar-wrap .tb-summary-copy span { font-size:11px; color:#64748b; line-height:1.35; }
       #tb-trend-radar-wrap .tb-summary-pill[data-tone='trend'] { border-color:#fdba74; }
+      #tb-trend-radar-wrap .tb-summary-pill[data-tone='trend'] .tb-summary-icon { background:#fff7ed; color:#c2410c; }
       #tb-trend-radar-wrap .tb-summary-pill[data-tone='signal'] { border-color:#93c5fd; }
+      #tb-trend-radar-wrap .tb-summary-pill[data-tone='signal'] .tb-summary-icon { background:#eff6ff; color:#1d4ed8; }
       #tb-trend-radar-wrap .tb-summary-pill[data-tone='recommendation'] { border-color:#86efac; }
+      #tb-trend-radar-wrap .tb-summary-pill[data-tone='recommendation'] .tb-summary-icon { background:#ecfdf5; color:#166534; }
       #tb-trend-radar-wrap .tb-summary-pill[data-tone='competitor'] { border-color:#c4b5fd; }
-      #tb-trend-radar-wrap .tb-trend-body { margin-top:12px; padding:4px 2px 2px; }
+      #tb-trend-radar-wrap .tb-summary-pill[data-tone='competitor'] .tb-summary-icon { background:#f5f3ff; color:#6d28d9; }
+      #tb-trend-radar-wrap .tb-trend-body { margin-top:14px; padding:4px 2px 2px; }
       #tb-trend-radar-wrap .tb-collapse-btn { display:inline-flex; align-items:center; gap:8px; padding:10px 12px; border-radius:999px; border:1px solid #f04a0a; background:#fff; color:#f04a0a; font-size:13px; font-weight:700; cursor:pointer; }
       #tb-trend-radar-wrap .tb-chevron { transition:transform .2s ease; }
       #tb-trend-radar-wrap[data-open='0'] .tb-chevron { transform:rotate(-90deg); }
       #tb-trend-radar-wrap[data-open='0'] .tb-trend-body { display:none; }
-      @media (max-width:980px){ #tb-trend-radar-wrap { margin-bottom:16px; } }
+      #tb-trend-radar-wrap .tb-tab-row { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px; }
+      #tb-trend-radar-wrap .tb-tab-btn { display:flex; align-items:flex-start; gap:10px; min-height:74px; min-width:190px; padding:12px 14px; border-radius:18px; border:1px solid #e2e8f0; background:#fff; cursor:pointer; text-align:left; transition:all .18s ease; }
+      #tb-trend-radar-wrap .tb-tab-btn:hover { transform:translateY(-1px); box-shadow:0 8px 20px rgba(15,23,42,.06); }
+      #tb-trend-radar-wrap .tb-tab-btn.active { box-shadow:0 10px 24px rgba(15,23,42,.08); }
+      #tb-trend-radar-wrap .tb-tab-icon { width:34px; height:34px; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:700; flex:0 0 34px; }
+      #tb-trend-radar-wrap .tb-tab-copy { display:flex; flex-direction:column; gap:3px; min-width:0; }
+      #tb-trend-radar-wrap .tb-tab-copy b { font-size:14px; color:#111827; }
+      #tb-trend-radar-wrap .tb-tab-copy span { font-size:11px; color:#64748b; line-height:1.35; }
+      #tb-trend-radar-wrap .tb-tab-btn[data-tone='trend'] { border-color:#fdba74; }
+      #tb-trend-radar-wrap .tb-tab-btn[data-tone='trend'] .tb-tab-icon { background:#fff7ed; color:#c2410c; }
+      #tb-trend-radar-wrap .tb-tab-btn[data-tone='trend'].active { background:#fff7ed; }
+      #tb-trend-radar-wrap .tb-tab-btn[data-tone='signal'] { border-color:#93c5fd; }
+      #tb-trend-radar-wrap .tb-tab-btn[data-tone='signal'] .tb-tab-icon { background:#eff6ff; color:#1d4ed8; }
+      #tb-trend-radar-wrap .tb-tab-btn[data-tone='signal'].active { background:#eff6ff; }
+      #tb-trend-radar-wrap .tb-tab-btn[data-tone='recommendation'] { border-color:#86efac; }
+      #tb-trend-radar-wrap .tb-tab-btn[data-tone='recommendation'] .tb-tab-icon { background:#ecfdf5; color:#166534; }
+      #tb-trend-radar-wrap .tb-tab-btn[data-tone='recommendation'].active { background:#ecfdf5; }
+      #tb-trend-radar-wrap .tb-tab-btn[data-tone='source'] { border-color:#7dd3fc; }
+      #tb-trend-radar-wrap .tb-tab-btn[data-tone='source'] .tb-tab-icon { background:#ecfeff; color:#0f766e; }
+      #tb-trend-radar-wrap .tb-tab-btn[data-tone='source'].active { background:#ecfeff; }
+      #tb-trend-radar-wrap .tb-tab-btn[data-tone='competitor'] { border-color:#c4b5fd; }
+      #tb-trend-radar-wrap .tb-tab-btn[data-tone='competitor'] .tb-tab-icon { background:#f5f3ff; color:#6d28d9; }
+      #tb-trend-radar-wrap .tb-tab-btn[data-tone='competitor'].active { background:#f5f3ff; }
+      #tb-trend-radar-wrap .tb-panel-note { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:14px; padding:12px 14px; border:1px dashed #dbe3ef; border-radius:16px; background:#f8fafc; }
+      #tb-trend-radar-wrap .tb-panel-note strong { display:block; font-size:14px; color:#111827; }
+      #tb-trend-radar-wrap .tb-panel-note span { display:block; margin-top:2px; font-size:12px; color:#64748b; }
+      #tb-trend-radar-wrap .tb-panel-chip { padding:7px 10px; border-radius:999px; font-size:12px; font-weight:700; }
+      #tb-trend-radar-wrap .tb-panel-chip[data-tone='trend'] { background:#fff7ed; color:#c2410c; }
+      #tb-trend-radar-wrap .tb-panel-chip[data-tone='signal'] { background:#eff6ff; color:#1d4ed8; }
+      #tb-trend-radar-wrap .tb-panel-chip[data-tone='recommendation'] { background:#ecfdf5; color:#166534; }
+      #tb-trend-radar-wrap .tb-panel-chip[data-tone='source'] { background:#ecfeff; color:#0f766e; }
+      #tb-trend-radar-wrap .tb-panel-chip[data-tone='competitor'] { background:#f5f3ff; color:#6d28d9; }
+      #tb-trend-radar-wrap .tb-card-head { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
+      #tb-trend-radar-wrap .tb-card-title { font:700 22px/1.18 'Fira Sans Condensed',sans-serif; color:#111827; }
+      #tb-trend-radar-wrap .tb-score-badge { padding:6px 9px; border-radius:999px; font-size:12px; font-weight:700; white-space:nowrap; }
+      #tb-trend-radar-wrap .tb-score-badge[data-tone='trend'] { background:#fff7ed; color:#c2410c; }
+      #tb-trend-radar-wrap .tb-score-badge[data-tone='signal'] { background:#eff6ff; color:#1d4ed8; }
+      #tb-trend-radar-wrap .tb-score-badge[data-tone='recommendation'] { background:#ecfdf5; color:#166534; }
+      #tb-trend-radar-wrap .tb-score-badge[data-tone='source'] { background:#ecfeff; color:#0f766e; }
+      #tb-trend-radar-wrap .tb-score-badge[data-tone='competitor'] { background:#f5f3ff; color:#6d28d9; }
+      #tb-trend-radar-wrap .tb-metric-row { margin-top:10px; display:flex; flex-wrap:wrap; gap:6px; }
+      #tb-trend-radar-wrap .tb-metric-chip { padding:4px 8px; border-radius:999px; background:#f8fafc; color:#475569; font-size:12px; font-weight:700; border:1px solid #e2e8f0; }
+      #tb-trend-radar-wrap .tb-recommendation-label { margin-top:10px; font-size:14px; color:#334155; line-height:1.55; font-weight:700; }
+      #tb-trend-radar-wrap .tb-links { margin-top:12px; display:flex; flex-direction:column; gap:8px; }
+      #tb-trend-radar-wrap .tb-links a { color:#f04a0a; text-decoration:none; font-size:13px; font-weight:700; line-height:1.4; }
+      #tb-trend-radar-wrap .tb-links a:hover { text-decoration:underline; }
+      @media (max-width:980px){ #tb-trend-radar-wrap { margin-bottom:16px; } #tb-trend-radar-wrap .tb-tab-btn { min-width:100%; } }
     `;
     document.head.appendChild(style);
   }
@@ -256,21 +351,34 @@
     const recommendations = state.recommendations;
     const sources = sourcePerformance(clusters);
     const rivals = competitorOverview(clusters);
+    const activePanel = PANEL_META[state.panel] || PANEL_META.trends;
 
     const tabs = [
-      ['trends', 'Trend Radarı'],
-      ['signals', 'Erken Sinyaller'],
-      ['recommendations', 'Önerilen İçerikler'],
-      ['sources', 'Kaynak Performansı'],
-      ['competitors', 'Rakip Takibi']
+      ['trends', PANEL_META.trends],
+      ['signals', PANEL_META.signals],
+      ['recommendations', PANEL_META.recommendations],
+      ['sources', PANEL_META.sources],
+      ['competitors', PANEL_META.competitors]
     ];
 
     const summary = `
-      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:stretch">
-        <div class="tb-summary-pill" data-tone="trend"><strong>${hotTrends.length}</strong><span>Sıcak Trend</span></div>
-        <div class="tb-summary-pill" data-tone="signal"><strong>${earlySignals.filter((item) => item.early_signal_score >= 55).length}</strong><span>Erken Sinyal</span></div>
-        <div class="tb-summary-pill" data-tone="recommendation"><strong>${recommendations.length}</strong><span>Önerilen İçerik</span></div>
-        <div class="tb-summary-pill" data-tone="competitor"><strong>${rivals.filter((item) => item.count > 0).length}</strong><span>Rakip Hareketi</span></div>
+      <div class="tb-summary-grid">
+        <div class="tb-summary-pill" data-tone="trend">
+          <div class="tb-summary-icon">↗</div>
+          <div class="tb-summary-copy"><strong>${hotTrends.length}</strong><b>Sıcak Trend</b><span>Genel trend puanı en yüksek başlık sayısı</span></div>
+        </div>
+        <div class="tb-summary-pill" data-tone="signal">
+          <div class="tb-summary-icon">⚡</div>
+          <div class="tb-summary-copy"><strong>${earlySignals.filter((item) => item.early_signal_score >= 55).length}</strong><b>Erken Sinyal</b><span>Henüz büyümeden yakalanan fırsat alanları</span></div>
+        </div>
+        <div class="tb-summary-pill" data-tone="recommendation">
+          <div class="tb-summary-icon">✦</div>
+          <div class="tb-summary-copy"><strong>${recommendations.length}</strong><b>Önerilen İçerik</b><span>Editöryal önceliği yüksek yazı fikirleri</span></div>
+        </div>
+        <div class="tb-summary-pill" data-tone="competitor">
+          <div class="tb-summary-icon">◎</div>
+          <div class="tb-summary-copy"><strong>${rivals.filter((item) => item.count > 0).length}</strong><b>Rakip Hareketi</b><span>Rakip kaynaklarda görünür hareket olan başlıklar</span></div>
+        </div>
       </div>
     `;
 
@@ -278,21 +386,21 @@
       <div class="tb-trend-grid">
         ${items.map((cluster) => `
           <article class="tb-trend-card">
-            <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
-              <div style="font:700 22px/1.2 'Fira Sans Condensed',sans-serif;color:#111827">${esc(cluster.cluster_name)}</div>
-              <div style="padding:6px 8px;border-radius:999px;background:${variant === 'signals' ? '#eff6ff' : '#fff7ed'};color:${variant === 'signals' ? '#1d4ed8' : '#c2410c'};font-size:12px;font-weight:700;white-space:nowrap">${variant === 'signals' ? `Erken ${cluster.early_signal_score}` : `Trend ${cluster.trend_score}`}</div>
+            <div class="tb-card-head">
+              <div class="tb-card-title">${esc(cluster.cluster_name)}</div>
+              <div class="tb-score-badge" data-tone="${variant === 'signals' ? 'signal' : 'trend'}">${variant === 'signals' ? `Erken ${cluster.early_signal_score}` : `Trend ${cluster.trend_score}`}</div>
             </div>
-            <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;font-size:12px;color:#475569;font-weight:700">
-              <span>Discover ${cluster.discover_potential_score}</span>
-              <span>SEO ${cluster.seo_potential_score}</span>
-              <span>Kaynak ${cluster.source_count}</span>
-              <span>TR ${cluster.turkey_interest_score}</span>
-              <span>Rakip ${cluster.competitor_count}</span>
+            <div class="tb-metric-row">
+              <span class="tb-metric-chip">Discover ${cluster.discover_potential_score}</span>
+              <span class="tb-metric-chip">SEO ${cluster.seo_potential_score}</span>
+              <span class="tb-metric-chip">Kaynak ${cluster.source_count}</span>
+              <span class="tb-metric-chip">Türkiye ${cluster.turkey_interest_score}</span>
+              <span class="tb-metric-chip">Rakip ${cluster.competitor_count}</span>
             </div>
-            <div style="margin-top:10px;font-size:14px;color:#334155;line-height:1.55">${esc(cluster.recommendation)}</div>
+            <div class="tb-recommendation-label">${esc(cluster.recommendation)}</div>
             <div class="tb-trend-muted" style="margin-top:10px">Son görünme: ${esc(cluster.last_seen_at ? fmtDate(cluster.last_seen_at) : 'Bilinmiyor')}</div>
-            <div style="margin-top:10px;display:flex;flex-direction:column;gap:6px">
-              ${cluster.linked_news.slice(0, 2).map((item) => `<a href="${esc(item.url || '#')}" target="_blank" rel="noopener noreferrer" style="font-size:13px;color:#f04a0a;text-decoration:none;font-weight:700">${esc(item.title || cluster.cluster_name)}</a>`).join('')}
+            <div class="tb-links">
+              ${cluster.linked_news.slice(0, 2).map((item) => `<a href="${esc(item.url || '#')}" target="_blank" rel="noopener noreferrer">${esc(item.title || cluster.cluster_name)}</a>`).join('') || '<div class="tb-trend-muted">Bu küme için bağlı haber henüz oluşmadı.</div>'}
             </div>
           </article>
         `).join('')}
@@ -302,14 +410,14 @@
       <div class="tb-trend-grid">
         ${recommendations.map((item) => `
           <article class="tb-trend-card">
-            <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
-              <div style="font:700 22px/1.2 'Fira Sans Condensed',sans-serif;color:#111827">${esc(item.title)}</div>
-              <div style="padding:6px 8px;border-radius:999px;background:#ecfdf5;color:#166534;font-size:12px;font-weight:700;white-space:nowrap">Öncelik ${item.priority}</div>
+            <div class="tb-card-head">
+              <div class="tb-card-title">${esc(item.title)}</div>
+              <div class="tb-score-badge" data-tone="recommendation">Öncelik ${item.priority}</div>
             </div>
-            <div style="margin-top:10px;font-size:14px;color:#334155;font-weight:700">${esc(item.recommendation)}</div>
+            <div class="tb-recommendation-label">${esc(item.recommendation)}</div>
             <div class="tb-trend-muted" style="margin-top:8px;line-height:1.5">${esc(item.reason)}</div>
-            <div style="margin-top:10px;display:flex;flex-direction:column;gap:6px">
-              ${item.examples.map((example) => `<a href="${esc(example.url || '#')}" target="_blank" rel="noopener noreferrer" style="font-size:13px;color:#f04a0a;text-decoration:none;font-weight:700">${esc(example.title || item.title)}</a>`).join('')}
+            <div class="tb-links">
+              ${item.examples.map((example) => `<a href="${esc(example.url || '#')}" target="_blank" rel="noopener noreferrer">${esc(example.title || item.title)}</a>`).join('') || '<div class="tb-trend-muted">Bu öneri için örnek haber henüz yok.</div>'}
             </div>
           </article>
         `).join('')}
@@ -319,15 +427,15 @@
       <div style="display:grid;gap:10px">
         ${sources.map((source) => `
           <article class="tb-trend-card" style="padding:12px 14px">
-            <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
-              <div style="font:700 20px/1.2 'Fira Sans Condensed',sans-serif;color:#111827">${esc(source.source)}</div>
-              <div style="padding:6px 8px;border-radius:999px;background:#eff6ff;color:#1d4ed8;font-size:12px;font-weight:700">Discover ${source.avgDiscover}</div>
+            <div class="tb-card-head">
+              <div class="tb-card-title" style="font-size:20px">${esc(source.source)}</div>
+              <div class="tb-score-badge" data-tone="source">Discover ${source.avgDiscover}</div>
             </div>
-            <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;font-size:12px;color:#475569;font-weight:700">
-              <span>Küme ${source.count}</span>
-              <span>Trend ${source.avgTrend}</span>
-              <span>SEO ${source.avgSeo}</span>
-              <span>Yüksek Discover oranı %${source.highDiscoverRatio}</span>
+            <div class="tb-metric-row">
+              <span class="tb-metric-chip">Küme ${source.count}</span>
+              <span class="tb-metric-chip">Trend ${source.avgTrend}</span>
+              <span class="tb-metric-chip">SEO ${source.avgSeo}</span>
+              <span class="tb-metric-chip">Yüksek Discover %${source.highDiscoverRatio}</span>
             </div>
             <div class="tb-trend-muted" style="margin-top:8px">Son görünme: ${esc(source.lastPublished ? fmtDate(source.lastPublished) : 'Bilinmiyor')}</div>
           </article>
@@ -338,12 +446,12 @@
       <div style="display:grid;gap:10px">
         ${rivals.map((item) => `
           <article class="tb-trend-card" style="padding:12px 14px">
-            <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
-              <div style="font:700 20px/1.2 'Fira Sans Condensed',sans-serif;color:#111827">${esc(item.source)}</div>
-              <div style="padding:6px 8px;border-radius:999px;background:${item.count > 0 ? '#fff7ed' : '#f8fafc'};color:${item.count > 0 ? '#7c3aed' : '#64748b'};font-size:12px;font-weight:700">${item.count} eşleşme</div>
+            <div class="tb-card-head">
+              <div class="tb-card-title" style="font-size:20px">${esc(item.source)}</div>
+              <div class="tb-score-badge" data-tone="competitor">${item.count} eşleşme</div>
             </div>
             <div class="tb-trend-muted" style="margin-top:8px">Ortalama Discover: ${item.avgDiscover}</div>
-            ${item.latestTitle ? `<a href="${esc(item.latestUrl || '#')}" target="_blank" rel="noopener noreferrer" style="display:block;margin-top:10px;font-size:14px;color:#f04a0a;text-decoration:none;font-weight:700">${esc(item.latestTitle)}</a>` : `<div class="tb-trend-muted" style="margin-top:10px">Henüz görünür içerik yok.</div>`}
+            ${item.latestTitle ? `<div class="tb-links"><a href="${esc(item.latestUrl || '#')}" target="_blank" rel="noopener noreferrer">${esc(item.latestTitle)}</a></div>` : `<div class="tb-trend-muted" style="margin-top:10px">Henüz görünür içerik yok.</div>`}
             ${item.latestPublishedAt ? `<div class="tb-trend-muted" style="margin-top:6px">Son yayın: ${esc(fmtDate(item.latestPublishedAt))}</div>` : ''}
           </article>
         `).join('')}
@@ -361,12 +469,12 @@
 
     wrap.innerHTML = `
       <div class="tb-trend-header">
-        <div style="display:flex;flex-direction:column;gap:10px;min-width:280px;flex:1 1 420px">
+        <div style="display:flex;flex-direction:column;gap:12px;min-width:280px;flex:1 1 520px">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
             <div style="font:700 28px/1 'Fira Sans Condensed',sans-serif;color:#111827">Trend ve Karar Katmanı</div>
             <div style="padding:7px 10px;border-radius:999px;background:#fff;color:#c2410c;font-size:12px;font-weight:700;border:1px solid #fdba74">Backend trend verisi aktif</div>
           </div>
-          <div style="font-size:14px;color:#475569;line-height:1.55">Panel artık /api/trend-overview verisini kullanıyor. Trend kümeleri, öneriler ve bağlı haberler doğrudan backend tarafında üretiliyor.</div>
+          <div style="font-size:14px;color:#475569;line-height:1.55">Bu alan, hangi başlığın hızlı haber, hangi başlığın erken fırsat, hangi başlığın rakip takibi için önemli olduğunu tek yerden göstermesi için hazırlandı.</div>
           ${summary}
         </div>
         <div style="display:flex;align-items:flex-start;justify-content:flex-end;flex:0 0 auto">
@@ -377,8 +485,12 @@
         </div>
       </div>
       <div class="tb-trend-body">
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
-          ${tabs.map(([key, label]) => `<button type="button" data-trend-tab="${esc(key)}" class="${state.panel === key ? 'active' : ''}" style="padding:9px 12px;border-radius:999px;font-size:13px;font-weight:700;cursor:pointer">${esc(label)}</button>`).join('')}
+        <div class="tb-tab-row">
+          ${tabs.map(([key, meta]) => `<button type="button" data-trend-tab="${esc(key)}" data-tone="${esc(meta.tone)}" class="tb-tab-btn ${state.panel === key ? 'active' : ''}"><div class="tb-tab-icon">${esc(meta.icon)}</div><div class="tb-tab-copy"><b>${esc(meta.label)}</b><span>${esc(meta.desc)}</span></div></button>`).join('')}
+        </div>
+        <div class="tb-panel-note">
+          <div><strong>${esc(activePanel.title)}</strong><span>${esc(activePanel.desc)}</span></div>
+          <div class="tb-panel-chip" data-tone="${esc(activePanel.tone)}">${esc(activePanel.chip)}</div>
         </div>
         <div id="tb-trend-panel-body">${panelHtml}</div>
       </div>
