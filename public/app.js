@@ -1,19 +1,19 @@
 (() => {
-  const BUILD_TAG = 'tb-final-deploy-2026-04-19-01';
-  const TB_LOGO = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAAAAXNSR0IArs4c6QAAAMBlWElmTU0AKgAAAAgABwESAAMAAAABAAEAAAEaAAUAAAABAAAAYgEbAAUAAAABAAAAagEoAAMAAAABAAIAAAExAAIAAAAPAAAAcgEyAAIAAAAUAAAAgodpAAQAAAABAAAAlgAAAAAAAAEgAAAAAQAAASAAAAABUGl4ZWxtYXRvciAzLjkAADIwMjA6MTE6MDIgMTU6MTE6OTMAAAOgAQADAAAAAQABAACgAgAEAAAAAQAAAgCgAwAEAAAAAQAAAgAAAAAAzyTkvgAAAAlwSFlzAAAsSwAALEsBpT2WqQAABCZpVFh0WE1MOmNvbS5hZG9iZS54bXAAAAAAADx4OnhtcG1ldGEgeG1sbnM6eD0iYWRvYmU6bnM6bWV0YS8iIHg6eG1wdGs9IlhNUCBDb3JlIDUuNC4wIj4KICAgPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4KICAgICAgPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIKICAgICAgICAgICAgeG1sbnM6ZGM9Imh0dHA6Ly9wdXJsLm9yZy9kYy9lbGVtZW50cy8xLjEvIgogICAgICAgICAgICB4bWxuczp4bXA9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC8iCiAgICAgICAgICAgIHhtbWxuczp4aWY9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGlmLzEuMC8iCiAgICAgICAgICAgIHhtbWxuczp0aWZmPSJodHRwOi8vbnMuYWRvYmUuY29tL3RpZmYvMS4wLyI+CiAgICAgICAgIDxkYzpzdWJqZWN0PgogICAgICAgICAgICA8cmRmOkJhZy8+CiAgICAgICAgIDwvZGM6c3ViamVjdD4KICAgICAgICAgPHhtcDpNb2RpZnlEYXRlPjIwMjAtMTEtMDJUMTU6MTE6OTM8L3htcDpNb2RpZnlEYXRlPgogICAgICAgICA8eG1wOkNyZWF0b3JUb29sPlBpeGVsbWF0b3IgMy45PC94bXA6Q3JlYXRvclRvb2w+CiAgICAgICAgIDxleGlmOlBpeGVsWERpbWVuc2lvbj41MTI8L2V4aWY6UGl4ZWxYRGltZW5zaW9uPgogICAgICAgICA8ZXhpZjpQaXhlbFlEaW1lbnNpb24+NTEyPC9leGlmOlBpeGVsWURpbWVuc2lvbj4KICAgICAgICAgPGV4aWY6Q29sb3JTcGFjZT4xPC9leGlmOkNvbG9yU3BhY2U+CiAgICAgICAgIDx0aWZmOkNvbXByZXNzaW9uPjA8L3RpZmY6Q29tcHJlc3Npb24+CiAgICAgICAgIDx0aWZmOlhSZXNvbHV0aW9uPjI4ODwvdGlmZjpYUmVzb2x1dGlvbj4KICAgICAgICAgPHRpZmY6T3JpZW50YXRpb24+MTwvdGlmZjpPcmllbnRhdGlvbj4KICAgICAgICAgPHRpZmY6UmVzb2x1dGlvblVuaXQ+MjwvdGlmZjpPcmllbnRhdGlvblVuaXQ+CiAgICAgICAgIDx0aWZmOllSZXNvbHV0aW9uPjI4ODwvdGlmZjpZUmVzb2x1dGlvbj4KICAgICAgPC9yZGY6RGVzY3JpcHRpb24+CiAgIDwvcmRmOlJERj4KPC94OnhtcG1ldGEKTr4V/wAAQABJRU5ErkJggg==';
-
   const state = {
     items: [],
+    trendItems: [],
     sources: [],
     sort: 'published_at',
     selected: new Set(),
     refreshing: false,
     cleaning: false,
+    trendLoading: false,
     page: 1,
     pageSize: 20,
     ingestDebug: [],
     viewMode: 'cards',
-    sourceFilter: 'all'
+    sourceFilter: 'all',
+    trendWindow: '24h'
   };
 
   const esc = (v) => String(v ?? '')
@@ -47,7 +47,7 @@
     }).format(new Date());
   }
 
-  function formatPublishedAt(value) {
+  function formatDateTime(value) {
     if (!value) return '';
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return '';
@@ -59,6 +59,18 @@
       minute: '2-digit',
       timeZone: 'Europe/Istanbul'
     }).format(date);
+  }
+
+  function timeAgo(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    const diffMs = Date.now() - date.getTime();
+    const diffHours = Math.max(0, Math.round(diffMs / 3600000));
+    if (diffHours < 1) return 'Az önce';
+    if (diffHours < 24) return `${diffHours} saat önce`;
+    const diffDays = Math.round(diffHours / 24);
+    return `${diffDays} gün önce`;
   }
 
   const getUrl = (item) => pick(
@@ -101,6 +113,11 @@
         high: { bg: '#dcfce7', fg: '#166534', border: '#86efac' },
         mid: { bg: '#f0fdf4', fg: '#15803d', border: '#bbf7d0' },
         low: { bg: '#f7fee7', fg: '#4d7c0f', border: '#d9f99d' }
+      },
+      trend: {
+        high: { bg: '#ede9fe', fg: '#6d28d9', border: '#c4b5fd' },
+        mid: { bg: '#f5f3ff', fg: '#7c3aed', border: '#ddd6fe' },
+        low: { bg: '#faf5ff', fg: '#9333ea', border: '#e9d5ff' }
       }
     };
 
@@ -108,6 +125,11 @@
     const level = value >= 75 ? 'high' : value >= 50 ? 'mid' : 'low';
     const label = value >= 75 ? 'Çok güçlü' : value >= 50 ? 'Güçlü' : value >= 35 ? 'Orta' : 'Düşük';
     return { ...palette[level], text: label };
+  }
+
+  function scoreBadge(label, value, kind) {
+    const tone = scoreTone(value, kind);
+    return `<span style="display:inline-flex;align-items:center;gap:5px;padding:4px 8px;border-radius:999px;background:${tone.bg};color:${tone.fg};border:1px solid ${tone.border};font-size:11px;font-weight:700">${esc(label)} ${esc(value)} · ${esc(tone.text)}</span>`;
   }
 
   function sourceFilterOptions() {
@@ -144,16 +166,11 @@
     if (el) return el;
 
     document.body.innerHTML = `
-      <div id="tb-radar-root" style="max-width:1380px;margin:0 auto;padding:16px;font-family:'Open Sans',sans-serif;color:#111827;background:#f8fafc;min-height:100vh">
+      <div id="tb-radar-root" style="max-width:1420px;margin:0 auto;padding:16px;font-family:'Open Sans',sans-serif;color:#111827;background:#f8fafc;min-height:100vh">
         <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;justify-content:space-between;margin-bottom:16px">
-          <div style="display:flex;align-items:center;gap:14px;min-width:0">
-            <div style="flex:0 0 auto;width:62px;height:62px;border-radius:18px;background:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 22px rgba(9,30,66,.10);border:1px solid #f1f5f9;overflow:hidden">
-              <img src="${TB_LOGO}" alt="Teknoblog logosu" style="width:46px;height:46px;object-fit:contain;display:block">
-            </div>
-            <div style="min-width:0">
-              <div style="font:700 34px/1 'Fira Sans Condensed',sans-serif;color:#f04a0a;letter-spacing:.2px">Teknoblog İçerik Radar</div>
-              <div style="margin-top:8px;font-size:14px;color:#475569">${esc(formatToday())}</div>
-            </div>
+          <div style="min-width:0">
+            <div style="font:700 34px/1 'Fira Sans Condensed',sans-serif;color:#f04a0a;letter-spacing:.2px">Teknoblog İçerik Radar</div>
+            <div style="margin-top:8px;font-size:14px;color:#475569">${esc(formatToday())}</div>
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
             <label for="tb-sort" style="font-size:13px;font-weight:700">Sıralama</label>
@@ -174,6 +191,19 @@
         </div>
 
         <div id="tb-status" style="margin-bottom:12px;font-size:14px;color:#475569"></div>
+
+        <section style="margin-bottom:18px;border:1px solid #dbe3ef;border-radius:22px;background:#fff;padding:16px;box-shadow:0 6px 18px rgba(9,30,66,.06)">
+          <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;justify-content:space-between;margin-bottom:14px">
+            <div>
+              <div style="font:700 24px/1 'Fira Sans Condensed',sans-serif;color:#111827">Google Trends Teknoloji Radarı</div>
+              <div style="margin-top:8px;font-size:14px;line-height:1.5;color:#475569">Teknolojiyle ilişkili trend kümeleri, ilgili haber bağlantıları ve ilgi yoğunluğu grafikleri burada listelenir.</div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap" id="tb-trend-window-tabs"></div>
+          </div>
+          <div id="tb-trend-status" style="margin-bottom:12px;font-size:13px;color:#64748b"></div>
+          <div id="tb-trend-grid"></div>
+        </section>
+
         <div id="tb-source-tabs" style="display:flex;gap:8px;overflow:auto;padding-bottom:8px;margin-bottom:16px"></div>
 
         <div style="display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:20px" id="tb-layout">
@@ -229,10 +259,32 @@
 
     const style = document.createElement('style');
     style.textContent = `
-      @media (max-width:980px){#tb-layout{grid-template-columns:1fr!important}}
-      @media (max-width:720px){#tb-radar-root{padding:14px} #tb-radar-root img[alt="Teknoblog logosu"]{width:40px!important;height:40px!important} }
-      #tb-grid.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:16px}
-      #tb-grid.list{display:flex;flex-direction:column;gap:12px}
+      @media (max-width: 1100px) {
+        #tb-layout { grid-template-columns: 1fr !important; }
+      }
+      @media (max-width: 720px) {
+        #tb-radar-root { padding: 14px; }
+      }
+      #tb-grid.cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+        gap: 16px;
+      }
+      #tb-grid.list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      #tb-trend-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+        gap: 14px;
+      }
+      @media (max-width: 860px) {
+        #tb-trend-grid {
+          grid-template-columns: 1fr;
+        }
+      }
     `;
     document.head.appendChild(style);
 
@@ -267,11 +319,6 @@
     list.style.cssText += state.viewMode === 'list' ? active : passive;
   }
 
-  function scoreBadge(label, value, kind) {
-    const tone = scoreTone(value, kind);
-    return `<span style="display:inline-flex;align-items:center;gap:5px;padding:4px 8px;border-radius:999px;background:${tone.bg};color:${tone.fg};border:1px solid ${tone.border};font-size:11px;font-weight:700">${esc(label)} ${esc(value)} · ${esc(tone.text)}</span>`;
-  }
-
   function renderSourceTabs() {
     const wrap = document.getElementById('tb-source-tabs');
     if (!wrap) return;
@@ -282,20 +329,40 @@
     }).join('');
   }
 
+  function renderTrendTabs() {
+    const wrap = document.getElementById('tb-trend-window-tabs');
+    if (!wrap) return;
+    const labels = {
+      '4h': '4 saat',
+      '24h': '24 saat',
+      '48h': '48 saat'
+    };
+    wrap.innerHTML = ['4h', '24h', '48h'].map((windowKey) => {
+      const active = state.trendWindow === windowKey;
+      return `<button type="button" data-trend-window="${windowKey}" style="padding:9px 12px;border-radius:999px;border:1px solid ${active ? '#111827' : '#cbd5e1'};background:${active ? '#111827' : '#fff'};color:${active ? '#fff' : '#334155'};font-weight:700;cursor:pointer">${labels[windowKey]}</button>`;
+    }).join('');
+  }
+
   function renderDebug() {
     root();
     const wrap = document.getElementById('tb-debug');
     if (!wrap) return;
     if (!state.ingestDebug.length) {
-      wrap.innerHTML = `<div>Henüz tanı kaydı yok.</div>`;
+      wrap.innerHTML = '<div>Henüz tanı kaydı yok.</div>';
       return;
     }
     wrap.innerHTML = state.ingestDebug.map((row) => {
-      const title = pick(row.source, 'Kaynak');
+      const title = pick(row.feed, row.source, 'Kaynak');
       const status = pick(row.status, 'bilgi');
-      const extra = [row.reason, row.error, row.feedUrl, row.code ? `HTTP ${row.code}` : '', row.count ? `Öğe ${row.count}` : '', Number.isFinite(row.inserted) ? `Alınan ${row.inserted}` : '', Number.isFinite(row.updated) ? `Güncellenen ${row.updated}` : '']
-        .filter(Boolean)
-        .join(' • ');
+      const extra = [
+        row.reason,
+        row.error,
+        row.feedUrl,
+        row.code ? `HTTP ${row.code}` : '',
+        row.count ? `Öğe ${row.count}` : '',
+        Number.isFinite(row.inserted) ? `Alınan ${row.inserted}` : '',
+        Number.isFinite(row.updated) ? `Güncellenen ${row.updated}` : ''
+      ].filter(Boolean).join(' • ');
       return `<div style="padding:10px;border:1px solid #e5e7eb;border-radius:12px"><div style="font-weight:700;color:#111827">${esc(title)}</div><div style="margin-top:4px"><strong>${esc(status)}</strong></div><div style="margin-top:4px">${esc(extra)}</div></div>`;
     }).join('');
   }
@@ -312,13 +379,112 @@
     `;
   }
 
+  function sparklineSvg(points = []) {
+    const width = 180;
+    const height = 54;
+    const values = points.map((item) => Number(item.count || 0));
+    const max = Math.max(1, ...values);
+    const step = points.length > 1 ? width / (points.length - 1) : width;
+    const coords = points.map((item, index) => {
+      const value = Number(item.count || 0);
+      const x = index * step;
+      const y = height - ((value / max) * (height - 8)) - 4;
+      return { x, y };
+    });
+    const polyline = coords.map((point) => `${point.x},${point.y}`).join(' ');
+    const area = coords.length
+      ? `0,${height} ${polyline} ${width},${height}`
+      : `0,${height} ${width},${height}`;
+    return `
+      <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" style="display:block;width:100%;height:54px">
+        <polyline fill="rgba(240,74,10,0.10)" stroke="none" points="${area}"></polyline>
+        <polyline fill="none" stroke="#f04a0a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" points="${polyline}"></polyline>
+      </svg>
+    `;
+  }
+
+  function renderTrendCard(item) {
+    const linkedNews = Array.isArray(item.linked_news) ? item.linked_news : [];
+    const latest = pick(item.latest_signal_at, item.last_seen_at, item.updated_at);
+    const trendScoreValue = score(item, 'trend_score');
+    const discoverValue = score(item, 'discover_potential_score');
+    const seoValue = score(item, 'seo_potential_score');
+    const sparkline = sparklineSvg(Array.isArray(item.sparkline) ? item.sparkline : []);
+    const sparklineLabels = (item.sparkline || []).filter((_, index, arr) => {
+      if (arr.length <= 3) return true;
+      return index === 0 || index === arr.length - 1 || index === Math.floor(arr.length / 2);
+    });
+
+    return `
+      <article style="border:1px solid #dbe3ef;border-radius:18px;background:#fff;padding:14px;box-shadow:0 6px 18px rgba(9,30,66,.06);display:flex;flex-direction:column;gap:12px">
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          ${scoreBadge('Trend', trendScoreValue, 'trend')}
+          ${scoreBadge('Discover', discoverValue, 'discover')}
+          ${scoreBadge('SEO', seoValue, 'traffic')}
+        </div>
+        <div>
+          <h3 style="margin:0;font:700 24px/1.15 'Fira Sans Condensed',sans-serif;color:#111827">${esc(item.cluster_name || item.summary?.display_name || 'Trend başlığı')}</h3>
+          <div style="margin-top:8px;font-size:13px;color:#64748b;display:flex;gap:10px;flex-wrap:wrap">
+            <span>${esc(item.window_signal_count || 0)} sinyal</span>
+            <span>${esc(timeAgo(latest))}</span>
+            <span>${esc(getSourceName({ source_name: linkedNews[0]?.source_name || item.market_scope || 'Trend' }))}</span>
+          </div>
+        </div>
+        <div style="border:1px solid #f1f5f9;border-radius:14px;background:#fff7ed;padding:10px">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">
+            <div style="font-size:12px;font-weight:700;color:#9a3412">İlgi grafiği</div>
+            <div style="font-size:12px;color:#b45309">${esc(state.trendWindow)}</div>
+          </div>
+          ${sparkline}
+          <div style="display:flex;justify-content:space-between;gap:8px;margin-top:6px;font-size:11px;color:#92400e">
+            ${sparklineLabels.map((entry) => `<span>${esc(entry.label || '')}</span>`).join('')}
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:13px;font-weight:700;color:#334155">İlgili haberler</div>
+          ${linkedNews.length ? linkedNews.map((news) => `
+            <a href="${esc(news.candidate_url || '#')}" target="_blank" rel="noopener noreferrer" style="display:block;text-decoration:none;border:1px solid #e5e7eb;border-radius:12px;padding:10px;background:#fff;color:#111827">
+              <div style="font-size:14px;font-weight:700;line-height:1.4">${esc(news.candidate_title || 'İlgili haber')}</div>
+              <div style="margin-top:6px;font-size:12px;color:#64748b;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
+                <span>${esc(news.source_name || 'Kaynak')}</span>
+                <span>Eşleşme ${esc(news.match_score || 0)}</span>
+              </div>
+            </a>
+          `).join('') : '<div style="font-size:13px;color:#64748b">Henüz ilişkilendirilmiş haber bulunmuyor.</div>'}
+        </div>
+      </article>
+    `;
+  }
+
+  function renderTrendOverview() {
+    const wrap = document.getElementById('tb-trend-grid');
+    const status = document.getElementById('tb-trend-status');
+    if (!wrap || !status) return;
+    renderTrendTabs();
+
+    if (state.trendLoading) {
+      status.textContent = 'Trend kümeleri güncelleniyor...';
+    } else {
+      status.textContent = state.trendItems.length
+        ? `${state.trendItems.length} teknoloji trend kümesi listeleniyor`
+        : 'Bu zaman aralığında listelenecek teknoloji trendi görünmüyor.';
+    }
+
+    if (!state.trendItems.length) {
+      wrap.innerHTML = '<div style="padding:18px;border:1px solid #e5e7eb;border-radius:16px;background:#fff">Trend verisi bekleniyor.</div>';
+      return;
+    }
+
+    wrap.innerHTML = state.trendItems.map(renderTrendCard).join('');
+  }
+
   function renderCardItem(item) {
     const url = getUrl(item);
     const image = getImage(item);
     const title = getTitle(item);
     const summary = getSummary(item);
     const sourceName = getSourceName(item);
-    const publishedAt = formatPublishedAt(getPublishedAt(item));
+    const publishedAt = formatDateTime(getPublishedAt(item));
     const checked = state.selected.has(url) ? 'checked' : '';
     return `
       <article style="display:flex;flex-direction:column;overflow:hidden;border:1px solid #dbe3ef;border-radius:18px;background:#fff;box-shadow:0 6px 18px rgba(9,30,66,.06)">
@@ -355,7 +521,7 @@
     const title = getTitle(item);
     const summary = getSummary(item);
     const sourceName = getSourceName(item);
-    const publishedAt = formatPublishedAt(getPublishedAt(item));
+    const publishedAt = formatDateTime(getPublishedAt(item));
     const checked = state.selected.has(url) ? 'checked' : '';
     return `
       <article style="display:grid;grid-template-columns:180px minmax(0,1fr);gap:14px;align-items:stretch;border:1px solid #dbe3ef;border-radius:18px;background:#fff;box-shadow:0 6px 18px rgba(9,30,66,.06);overflow:hidden">
@@ -404,7 +570,7 @@
     grid.className = state.viewMode;
 
     if (!items.length) {
-      grid.innerHTML = `<div style="padding:24px;border:1px solid #dbe3ef;border-radius:18px;background:#fff">Henüz içerik yok.</div>`;
+      grid.innerHTML = '<div style="padding:24px;border:1px solid #dbe3ef;border-radius:18px;background:#fff">Henüz içerik yok.</div>';
       renderPagination();
       return;
     }
@@ -418,13 +584,13 @@
     const wrap = document.getElementById('tb-sources-list');
     if (!wrap) return;
     if (!state.sources.length) {
-      wrap.innerHTML = `<div style="font-size:14px;color:#64748b">Henüz kaynak görünmüyor.</div>`;
+      wrap.innerHTML = '<div style="font-size:14px;color:#64748b">Henüz kaynak görünmüyor.</div>';
       return;
     }
-    wrap.innerHTML = state.sources.map((s) => {
-      const feed = pick(s.rss_url, s.feed_url);
-      const site = pick(s.site_url, s.url);
-      return `<div style="padding:12px;border:1px solid #e5e7eb;border-radius:12px"><div style="font-weight:700;color:#111827">${esc(s.name || 'İsimsiz kaynak')}</div><div style="margin-top:6px;font-size:12px;color:#64748b;word-break:break-all">${esc(feed || site)}</div></div>`;
+    wrap.innerHTML = state.sources.map((source) => {
+      const feed = pick(source.rss_url, source.feed_url);
+      const site = pick(source.site_url, source.url);
+      return `<div style="padding:12px;border:1px solid #e5e7eb;border-radius:12px"><div style="font-weight:700;color:#111827">${esc(source.name || 'İsimsiz kaynak')}</div><div style="margin-top:6px;font-size:12px;color:#64748b;word-break:break-all">${esc(feed || site)}</div></div>`;
     }).join('');
   }
 
@@ -435,11 +601,15 @@
     try {
       const fetchOptions = { cache: 'no-store', ...options, signal: controller.signal };
       delete fetchOptions.timeoutMs;
-      const res = await fetch(url, fetchOptions);
-      const text = await res.text();
+      const response = await fetch(url, fetchOptions);
+      const text = await response.text();
       let data = {};
-      try { data = text ? JSON.parse(text) : {}; } catch {}
-      if (!res.ok) throw new Error(data?.error || text || `HTTP ${res.status}`);
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = {};
+      }
+      if (!response.ok) throw new Error(data?.error || text || `HTTP ${response.status}`);
       return data;
     } catch (error) {
       if (error?.name === 'AbortError') throw new Error('İstek zaman aşımına uğradı.');
@@ -454,6 +624,22 @@
     state.items = Array.isArray(data?.items) ? data.items : [];
     state.page = 1;
     renderItems();
+  }
+
+  async function loadTrendOverview() {
+    state.trendLoading = true;
+    renderTrendOverview();
+    try {
+      const data = await fetchJson(`/api/trend-overview?window=${encodeURIComponent(state.trendWindow)}&limit=12&t=${Date.now()}`, { timeoutMs: 25000 });
+      state.trendItems = Array.isArray(data?.items) ? data.items : [];
+    } catch (error) {
+      state.trendItems = [];
+      const status = document.getElementById('tb-trend-status');
+      if (status) status.textContent = `Trend hatası: ${error.message}`;
+    } finally {
+      state.trendLoading = false;
+      renderTrendOverview();
+    }
   }
 
   async function loadSources() {
@@ -471,7 +657,9 @@
     if (button) {
       const old = button.textContent;
       button.textContent = 'Kopyalandı';
-      setTimeout(() => { button.textContent = old; }, 1200);
+      setTimeout(() => {
+        button.textContent = old;
+      }, 1200);
     }
   }
 
@@ -509,10 +697,12 @@
       }
       localStorage.setItem('tb_radar_cron_token', token);
     }
+
     state.refreshing = true;
     state.ingestDebug = [];
     renderDebug();
     setRefreshButtonState(true);
+
     try {
       const ingest = await runIngestBatches(token, status);
       status.textContent = 'Puanlama ve aday listesi güncelleniyor...';
@@ -520,7 +710,7 @@
       const scoreData = await fetchJson(`/api/score${qs}`, { timeoutMs: 90000 });
       state.page = 1;
       status.textContent = 'Kartlar yenileniyor...';
-      await Promise.allSettled([loadRecommendations(), loadSources()]);
+      await Promise.allSettled([loadRecommendations(), loadSources(), loadTrendOverview()]);
       status.textContent = `İçerikler güncellendi. Alınan: ${ingest.totalIngested}, güncellenen: ${ingest.totalUpdated}, işlenen: ${scoreData.processed ?? 0}`;
     } finally {
       state.refreshing = false;
@@ -541,28 +731,35 @@
       }
       localStorage.setItem('tb_radar_cron_token', token);
     }
+
     const confirmTextMap = {
       all: 'Tüm haberleri silmek üzeresiniz. Devam edilsin mi?',
       '1d': 'Son 1 günün haberleri silinecek. Devam edilsin mi?',
       '1w': 'Son 1 haftanın haberleri silinecek. Devam edilsin mi?',
       '1m': 'Son 1 ayın haberleri silinecek. Devam edilsin mi?'
     };
+
     if (!window.confirm(confirmTextMap[period] || 'Seçili haberler silinecek. Devam edilsin mi?')) {
       status.textContent = 'Temizleme iptal edildi.';
       return;
     }
+
     state.cleaning = true;
     setCleanupButtonState(true);
     status.textContent = 'Haberler siliniyor...';
+
     try {
       const result = await fetchJson(`/api/sources?token=${encodeURIComponent(token)}&t=${Date.now()}`, {
-        method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ period }), timeoutMs: 60000
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ period }),
+        timeoutMs: 60000
       });
       state.items = [];
       state.page = 1;
       state.ingestDebug = [];
       renderDebug();
-      await Promise.allSettled([loadRecommendations(), loadSources()]);
+      await Promise.allSettled([loadRecommendations(), loadSources(), loadTrendOverview()]);
       status.textContent = `Temizleme tamamlandı. Adaylar: ${result.deleted_topic_candidates ?? 0}, ham kayıtlar: ${result.deleted_raw_feed_items ?? 0}`;
     } finally {
       state.cleaning = false;
@@ -582,64 +779,95 @@
     status.textContent = 'Kaydediliyor...';
     try {
       await fetchJson('/api/sources', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), timeoutMs: 20000
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        timeoutMs: 20000
       });
       form.reset();
       status.textContent = 'Kaynak eklendi.';
       await loadSources();
-    } catch (err) {
-      status.textContent = `Hata: ${err.message}`;
+    } catch (error) {
+      status.textContent = `Hata: ${error.message}`;
     }
   }
 
-  document.addEventListener('change', (e) => {
-    const sort = e.target.closest('#tb-sort');
+  document.addEventListener('change', (event) => {
+    const sort = event.target.closest('#tb-sort');
     if (sort) {
       state.sort = sort.value || 'published_at';
       state.page = 1;
       renderItems();
       return;
     }
-    const cb = e.target.closest('[data-select-url]');
-    if (cb) {
-      const url = cb.getAttribute('data-select-url') || '';
+
+    const checkbox = event.target.closest('[data-select-url]');
+    if (checkbox) {
+      const url = checkbox.getAttribute('data-select-url') || '';
       if (!url) return;
-      if (cb.checked) state.selected.add(url);
+      if (checkbox.checked) state.selected.add(url);
       else state.selected.delete(url);
     }
   });
 
-  document.addEventListener('click', async (e) => {
-    const refreshBtn = e.target.closest('#tb-refresh');
+  document.addEventListener('click', async (event) => {
+    const refreshBtn = event.target.closest('#tb-refresh');
     if (refreshBtn) {
-      try { await triggerRefresh(); } catch (err) {
-        state.refreshing = false; setRefreshButtonState(false); document.getElementById('tb-status').textContent = `Hata: ${err.message}`;
+      try {
+        await triggerRefresh();
+      } catch (error) {
+        state.refreshing = false;
+        setRefreshButtonState(false);
+        document.getElementById('tb-status').textContent = `Hata: ${error.message}`;
       }
       return;
     }
-    const cleanupBtn = e.target.closest('#tb-cleanup');
+
+    const cleanupBtn = event.target.closest('#tb-cleanup');
     if (cleanupBtn) {
-      try { await triggerCleanup(); } catch (err) {
-        state.cleaning = false; setCleanupButtonState(false); document.getElementById('tb-cleanup-status').textContent = `Hata: ${err.message}`;
+      try {
+        await triggerCleanup();
+      } catch (error) {
+        state.cleaning = false;
+        setCleanupButtonState(false);
+        document.getElementById('tb-cleanup-status').textContent = `Hata: ${error.message}`;
       }
       return;
     }
-    const cardsBtn = e.target.closest('#tb-view-cards');
+
+    const cardsBtn = event.target.closest('#tb-view-cards');
     if (cardsBtn) {
-      state.viewMode = 'cards'; renderItems(); return;
+      state.viewMode = 'cards';
+      renderItems();
+      return;
     }
-    const listBtn = e.target.closest('#tb-view-list');
+
+    const listBtn = event.target.closest('#tb-view-list');
     if (listBtn) {
-      state.viewMode = 'list'; renderItems(); return;
+      state.viewMode = 'list';
+      renderItems();
+      return;
     }
-    const sourceTab = e.target.closest('[data-source-tab]');
+
+    const trendBtn = event.target.closest('[data-trend-window]');
+    if (trendBtn) {
+      const nextWindow = trendBtn.getAttribute('data-trend-window') || '24h';
+      if (nextWindow !== state.trendWindow) {
+        state.trendWindow = nextWindow;
+        await loadTrendOverview();
+      }
+      return;
+    }
+
+    const sourceTab = event.target.closest('[data-source-tab]');
     if (sourceTab) {
       state.sourceFilter = sourceTab.getAttribute('data-source-tab') || 'all';
       state.page = 1;
       renderItems();
       return;
     }
-    const pageBtn = e.target.closest('[data-page-action]');
+
+    const pageBtn = event.target.closest('[data-page-action]');
     if (pageBtn) {
       const action = pageBtn.getAttribute('data-page-action');
       if (action === 'prev' && state.page > 1) state.page -= 1;
@@ -647,7 +875,8 @@
       renderItems();
       return;
     }
-    const copySelected = e.target.closest('#tb-copy-selected');
+
+    const copySelected = event.target.closest('#tb-copy-selected');
     if (copySelected) {
       const urls = [...state.selected].filter(Boolean);
       if (!urls.length) {
@@ -657,29 +886,33 @@
       await copyText(urls.join('\n'));
       return;
     }
-    const copyBtn = e.target.closest('[data-copy-url]');
-    if (copyBtn) await copyText(copyBtn.getAttribute('data-copy-url') || '', copyBtn);
+
+    const copyBtn = event.target.closest('[data-copy-url]');
+    if (copyBtn) {
+      await copyText(copyBtn.getAttribute('data-copy-url') || '', copyBtn);
+    }
   });
 
-  document.addEventListener('submit', async (e) => {
-    const form = e.target.closest('#tb-source-form');
+  document.addEventListener('submit', async (event) => {
+    const form = event.target.closest('#tb-source-form');
     if (!form) return;
-    e.preventDefault();
+    event.preventDefault();
     await submitSourceForm(form);
   });
 
   document.addEventListener('DOMContentLoaded', async () => {
     root();
     try {
-      await Promise.allSettled([loadRecommendations(), loadSources()]);
+      await Promise.allSettled([loadRecommendations(), loadSources(), loadTrendOverview()]);
       renderDebug();
       setRefreshButtonState(false);
       setCleanupButtonState(false);
       setViewButtons();
       renderSourceTabs();
-    } catch (err) {
+      renderTrendTabs();
+    } catch (error) {
       const status = document.getElementById('tb-status');
-      if (status) status.textContent = `Hata: ${err.message}`;
+      if (status) status.textContent = `Hata: ${error.message}`;
     }
   });
 })();
