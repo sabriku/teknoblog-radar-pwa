@@ -219,6 +219,46 @@ function matchScore(clusterTopic = '', candidate = {}) {
   return base;
 }
 
+function clusterCoreTokens(clusterName = '') {
+  return normalizeTopic(clusterName)
+    .split(' ')
+    .filter(Boolean)
+    .filter((word) => word.length >= 3)
+    .filter((word) => !['google', 'samsung', 'openai', 'android', 'galaxy', 'gemini', 'chatgpt'].includes(word) || normalizeTopic(clusterName).split(' ').length <= 2);
+}
+
+function linkedNewsQuality(clusterName = '', candidateTitle = '', match = 0) {
+  const cleanedTitle = cleanupTitle(candidateTitle);
+  if (!cleanedTitle) return -100;
+  if (isWeakTitle(cleanedTitle)) return -40;
+
+  const topicLabel = extractTopicLabel(clusterName) || cleanupTitle(clusterName);
+  const clusterNorm = normalizeTopic(topicLabel);
+  const titleNorm = normalizeTopic(cleanedTitle);
+  const coreTokens = clusterCoreTokens(topicLabel);
+  const tokenHits = coreTokens.filter((token) => titleNorm.includes(token)).length;
+
+  let score = Number(match || 0);
+  score += strongTopicScore(cleanedTitle) * 0.5;
+
+  if (clusterNorm && titleNorm.includes(clusterNorm)) score += 20;
+  if (coreTokens.length) score += tokenHits * 8;
+  if (coreTokens.length >= 2 && tokenHits < 2) score -= 20;
+  if (coreTokens.length >= 3 && tokenHits < 2) score -= 25;
+  if (/\b(blockchain|vpn|eurovision|roland garros|iihf|hockey|streaming)\b/i.test(cleanedTitle)) score -= 35;
+  if (/\bhow to watch|things to expect|things you should know|live\b/i.test(cleanedTitle)) score -= 18;
+
+  return score;
+}
+
+function filterLinkedCandidates(clusterName = '', rows = []) {
+  return rows
+    .map((row) => ({ ...row, quality: linkedNewsQuality(clusterName, row?.candidate?.title || '', row?.match || 0) }))
+    .filter((row) => row.quality >= 55)
+    .sort((a, b) => b.quality - a.quality || b.match - a.match)
+    .slice(0, 5);
+}
+
 export default async function handler(req, res) {
   try {
     const token = req.query?.token || '';
@@ -292,11 +332,12 @@ export default async function handler(req, res) {
         .slice(0, 12);
 
       const cleanedClusterName = editorialClusterName(cluster, matchedCandidates);
-      const avgDiscover = matchedCandidates.length
-        ? Math.round(matchedCandidates.reduce((sum, row) => sum + Number(row.candidate.discover_score || 0), 0) / matchedCandidates.length)
+      const linkedCandidates = filterLinkedCandidates(cleanedClusterName, matchedCandidates);
+      const avgDiscover = linkedCandidates.length
+        ? Math.round(linkedCandidates.reduce((sum, row) => sum + Number(row.candidate.discover_score || 0), 0) / linkedCandidates.length)
         : 0;
-      const avgTraffic = matchedCandidates.length
-        ? Math.round(matchedCandidates.reduce((sum, row) => sum + Number(row.candidate.traffic_score || 0), 0) / matchedCandidates.length)
+      const avgTraffic = linkedCandidates.length
+        ? Math.round(linkedCandidates.reduce((sum, row) => sum + Number(row.candidate.traffic_score || 0), 0) / linkedCandidates.length)
         : 0;
       const freshnessHours = Math.max(0, (Date.now() - new Date(cluster.lastSeenAt || 0).getTime()) / 3600000);
       const freshnessBoost = Math.max(0, 24 - Math.round(freshnessHours));
@@ -371,7 +412,7 @@ export default async function handler(req, res) {
         continue;
       }
 
-      for (const row of matchedCandidates) {
+      for (const row of linkedCandidates) {
         const linkRow = {
           cluster_id: clusterRecord.id,
           topic_candidate_id: row.candidate.id,
