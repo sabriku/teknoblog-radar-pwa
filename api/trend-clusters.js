@@ -10,7 +10,7 @@ const SOURCE_SUFFIXES = [
   'TechRadar', 'TechCrunch', 'Digital Trends', 'Ars Technica', 'Engadget', '9to5Google',
   'Android Authority', 'Windows Central', 'The Verge', 'GSMArena', 'SamMobile', 'MacRumors',
   'DonanımHaber', 'ShiftDelete.Net', 'Webrazzi', 'Tom\'s Hardware', 'Vietnam.vn', 'Yeni Asır',
-  'A Haber', 'Gizmochina'
+  'A Haber', 'Gizmochina', 'Uşak Haber Gazetesi', 'samsung.com', 'OpenAI'
 ];
 
 const WEAK_TITLE_PATTERNS = [
@@ -21,45 +21,49 @@ const WEAK_TITLE_PATTERNS = [
   /\bweekly\b/i,
   /\bpodcast\b/i,
   /\breview\b/i,
+  /\bhow to watch\b/i,
+  /\bthings to expect\b/i,
+  /\bthings you should know\b/i,
   /\beverything (new|google announced|we know)\b/i,
   /\bher şey\b/i,
   /\bcanlı\b/i,
   /\bözet\b/i,
   /\bbeklenenler\b/i,
   /\binceleme\b/i,
-  /\bprimer\b/i,
   /\bthe sideload\b/i,
-  /\bthings to expect\b/i
+  /\bkeynote\b/i
 ];
 
 const STRONG_TOPIC_PATTERNS = [
-  /\bgemini\b/i,
+  /\bgemini spark\b/i,
+  /\bgemini omni\b/i,
+  /\bgemini 3\.5 flash\b/i,
   /\bchatgpt\b/i,
   /\bopenai\b/i,
-  /\bgalaxy\b/i,
-  /\bone ui\b/i,
-  /\bandroid\b/i,
-  /\bios\b/i,
-  /\bxiaomi\b/i,
-  /\bhuawei\b/i,
-  /\bsamsung\b/i,
-  /\bgoogle\b/i,
+  /\bgalaxy s\d+\b/i,
+  /\bone ui 8\.5\b/i,
+  /\bone ui 9\.0\b/i,
+  /\bandroid xr\b/i,
   /\bsmart glasses\b/i,
   /\bakıllı gözlük\b/i,
+  /\bhuawei watch fit 5 pro\b/i,
+  /\bios 27\b/i,
+  /\bios\b/i,
+  /\bandroid\b/i,
+  /\bsamsung\b/i,
+  /\bgoogle\b/i,
+  /\bhuawei\b/i,
+  /\bxiaomi\b/i,
+  /\biphone\b/i,
+  /\bpixel\b/i,
   /\bwatch\b/i,
   /\bai\b/i,
   /\byapay zeka\b/i,
-  /\bupdate\b/i,
   /\bgüncelleme\b/i,
+  /\bupdate\b/i,
   /\bfiyat\b/i,
-  /\bkampanya\b/i,
   /\bindirim\b/i,
-  /\bplaystation\b/i,
-  /\bsteam\b/i,
-  /\bpixel\b/i,
-  /\biphone\b/i,
-  /\bipad\b/i,
-  /\bmac\b/i
+  /\bkampanya\b/i
 ];
 
 function normalizeTopic(value = '') {
@@ -91,14 +95,15 @@ function cleanupTitle(value = '') {
     .replace(/^Introducing\s+/i, '')
     .replace(/^Everything new in\s+/i, '')
     .replace(/^New\s+/i, '')
+    .replace(/^How to watch\s+/i, '')
+    .replace(/^7 things you should know about\s+/i, '')
+    .replace(/^5 things to expect at\s+/i, '')
     .replace(/^I\/O\s?2026:\s*/i, '')
     .replace(/^Google I\/O\s?2026:\s*/i, '')
-    .replace(/^I O\s?2026\s*/i, '')
     .replace(/^Google debuts\s+/i, 'Google ')
     .replace(/^Google announces\s+/i, 'Google ')
     .replace(/^Google says\s+/i, 'Google ')
     .replace(/^Everything new in our\s+/i, '')
-    .replace(/^Everything new in\s+/i, '')
     .replace(/^Everything Google announced at\s+/i, '')
     .replace(/^Everything announced at\s+/i, '')
     .replace(/\s+/g, ' ')
@@ -122,36 +127,73 @@ function strongTopicScore(value = '') {
     if (pattern.test(text)) score += 8;
   }
   if (!isWeakTitle(text)) score += 20;
-  if (text.length >= 18 && text.length <= 90) score += 10;
+  if (text.length >= 12 && text.length <= 80) score += 10;
   if (/[:]/.test(text)) score -= 6;
-  if (/\b(live|primer|review|podcast|roundup|weekly)\b/i.test(text)) score -= 30;
+  if (/\b(live|primer|review|podcast|roundup|weekly|keynote)\b/i.test(text)) score -= 30;
   return score;
 }
 
+function titleCandidates(cluster = {}, matchedCandidates = []) {
+  const candidates = [];
+  for (const row of matchedCandidates) {
+    const title = cleanupTitle(row?.candidate?.title || '');
+    if (!title) continue;
+    candidates.push({ title, score: strongTopicScore(title) + Math.max(0, Number(row?.match || 0) - 50) });
+  }
+  for (const signal of cluster.signals || []) {
+    const title = cleanupTitle(signal?.topic_text || '');
+    if (!title) continue;
+    candidates.push({ title, score: strongTopicScore(title) });
+  }
+  return candidates.sort((a, b) => b.score - a.score || a.title.length - b.title.length);
+}
+
+function extractTopicLabel(title = '') {
+  const text = cleanupTitle(title);
+  if (!text) return '';
+
+  const patterns = [
+    [/gemini spark/i, 'Gemini Spark'],
+    [/gemini omni/i, 'Gemini Omni'],
+    [/gemini 3\.5 flash/i, 'Gemini 3.5 Flash'],
+    [/openai for singapore/i, 'OpenAI Singapore'],
+    [/chatgpt.*bank accounts|bank accounts.*chatgpt/i, 'ChatGPT banka hesabı erişimi'],
+    [/one ui 9\.0 beta/i, 'One UI 9.0 beta'],
+    [/one ui 8\.5/i, 'One UI 8.5 güncellemesi'],
+    [/android xr.*smart glasses|smart glasses.*android xr/i, 'Android XR akıllı gözlükler'],
+    [/samsung.*smart glasses|smart glasses.*samsung/i, 'Samsung ve Google akıllı gözlükleri'],
+    [/google i\/o 2026|i\/o 2026/i, 'Google I/O 2026 duyuruları'],
+    [/google ai studio/i, 'Google AI Studio'],
+    [/gmail inbox|gmail/i, 'Gemini ve Gmail entegrasyonu'],
+    [/huawei watch fit 5 pro/i, 'Huawei Watch Fit 5 Pro'],
+    [/ios 27/i, 'iOS 27 yapay zeka özellikleri'],
+    [/galaxy s26.*one ui 9/i, 'Galaxy S26 One UI 9 beta'],
+    [/galaxy.*one ui 8\.5|one ui 8\.5.*galaxy/i, 'Galaxy One UI 8.5 güncellemesi'],
+    [/xiaomi yu7/i, 'Xiaomi YU7 GT']
+  ];
+
+  for (const [pattern, label] of patterns) {
+    if (pattern.test(text)) return label;
+  }
+
+  return '';
+}
+
 function editorialClusterName(cluster = {}, matchedCandidates = []) {
-  const candidateTitles = matchedCandidates
-    .map((row) => cleanupTitle(row?.candidate?.title || ''))
-    .filter(Boolean)
-    .map((title) => ({ title, score: strongTopicScore(title) + Math.max(0, Number(matchedCandidates.find((r) => cleanupTitle(r?.candidate?.title || '') === title)?.match || 0) - 50) }))
-    .filter((item) => item.score >= 15)
-    .sort((a, b) => b.score - a.score || a.title.length - b.title.length);
-
-  const signalTitles = (cluster.signals || [])
-    .map((signal) => cleanupTitle(signal?.topic_text || ''))
-    .filter(Boolean)
-    .map((title) => ({ title, score: strongTopicScore(title) }))
+  const candidates = titleCandidates(cluster, matchedCandidates)
     .filter((item) => item.score >= 10)
-    .sort((a, b) => b.score - a.score || a.title.length - b.title.length);
+    .map((item) => item.title);
 
-  const fallbackTitles = [
-    ...candidateTitles.map((item) => item.title),
-    ...signalTitles.map((item) => item.title),
-    cleanupTitle(cluster.clusterName || ''),
-    cluster.normalizedTopic
-  ].filter(Boolean);
+  for (const candidate of candidates) {
+    const label = extractTopicLabel(candidate);
+    if (label) return label;
+  }
 
-  const pick = fallbackTitles[0] || cluster.normalizedTopic;
-  return pick.replace(/\s+/g, ' ').trim().slice(0, 140);
+  const firstStrong = candidates.find((title) => !isWeakTitle(title) && title.length <= 80);
+  if (firstStrong) return firstStrong.slice(0, 140);
+
+  const fallback = cleanupTitle(cluster.clusterName || '') || cluster.normalizedTopic;
+  return fallback.replace(/\s+/g, ' ').trim().slice(0, 140);
 }
 
 function recommendationType(clusterName = '', avgDiscover = 0) {
