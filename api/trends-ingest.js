@@ -70,7 +70,7 @@ function numberFromTraffic(value) {
 
 function normalizeJsonTrendItem(item = {}, feed = {}) {
   const title = safeText(
-    item.title || item.query || item.keyword || item.name || item.entityName || item.topic || ''
+    item.title || item.query || item.keyword || item.name || item.entityName || item.topic || item.searchTerm || ''
   );
   const published = item.published_at || item.pubDate || item.date || item.created_at || item.timestamp || new Date().toISOString();
   const articles = Array.isArray(item.articles) ? item.articles : [];
@@ -81,7 +81,7 @@ function normalizeJsonTrendItem(item = {}, feed = {}) {
   const imageUrl = safeText(item.image_url || item.imageUrl || firstArticle.image || firstArticle.imageUrl || '');
   const trafficScore = numberFromTraffic(item.formattedTraffic || item.traffic || item.searchVolume || item.volume || '');
   const summary = safeText(
-    item.summary || item.snippet || item.description || firstArticle.title || firstArticle.snippet || ''
+    item.summary || item.snippet || item.description || firstArticle.title || firstArticle.snippet || item.related || ''
   );
 
   return {
@@ -107,7 +107,9 @@ function flattenJsonTrendItems(data, feed = {}) {
       data.default?.trendingSearchesDays,
       data.default?.trendingSearches,
       data.data,
-      data.results
+      data.results,
+      data.searches,
+      data.topics
     ].filter(Boolean);
     for (const entry of candidates) {
       if (Array.isArray(entry)) buckets.push(...entry);
@@ -145,11 +147,116 @@ function detectJsonPayload(text = '') {
   }
 }
 
+function maybeJsonString(value) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!(trimmed.startsWith('{') || trimmed.startsWith('['))) return null;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+}
+
+function extractBatchexecutePayloads(bodyText = '') {
+  const lines = String(bodyText || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const payloads = [];
+  for (const line of lines) {
+    const parsed = maybeJsonString(line);
+    if (!parsed) continue;
+
+    const walk = (node) => {
+      if (node == null) return;
+      if (typeof node === 'string') {
+        const nested = maybeJsonString(node);
+        if (nested) {
+          payloads.push(nested);
+          walk(nested);
+        }
+        return;
+      }
+      if (Array.isArray(node)) {
+        for (const item of node) walk(item);
+        return;
+      }
+      if (typeof node === 'object') {
+        payloads.push(node);
+        for (const value of Object.values(node)) walk(value);
+      }
+    };
+
+    walk(parsed);
+  }
+
+  return payloads;
+}
+
+function flattenBatchexecuteItems(bodyText = '', feed = {}) {
+  const payloads = extractBatchexecutePayloads(bodyText);
+  const normalized = [];
+
+  const pushTopic = (value) => {
+    const title = safeText(value);
+    if (!title || title.length < 2) return;
+    normalized.push(normalizeJsonTrendItem({ title }, feed));
+  };
+
+  const walk = (node) => {
+    if (node == null) return;
+    if (typeof node === 'string') {
+      const trimmed = node.trim();
+      if (!trimmed) return;
+      const nested = maybeJsonString(trimmed);
+      if (nested) {
+        walk(nested);
+        return;
+      }
+      if (/^[A-Z]{2}$/.test(trimmed)) return;
+      if (/^(boq_|mpe|APse|null|true|false)$/i.test(trimmed)) return;
+      if (/^https?:\/\//i.test(trimmed)) return;
+      if (trimmed.length <= 120 && /[a-zçğıöşü]/i.test(trimmed)) pushTopic(trimmed);
+      return;
+    }
+    if (Array.isArray(node)) {
+      if (node.length >= 2 && typeof node[1] === 'string' && node[1].trim().length <= 120) {
+        pushTopic(node[1]);
+      }
+      for (const item of node) walk(item);
+      return;
+    }
+    if (typeof node === 'object') {
+      for (const key of ['title', 'query', 'keyword', 'name', 'topic', 'searchTerm']) {
+        if (node[key]) pushTopic(node[key]);
+      }
+      for (const value of Object.values(node)) walk(value);
+    }
+  };
+
+  payloads.forEach((payload) => walk(payload));
+
+  const seen = new Set();
+  return normalized.filter((item) => {
+    const key = normalizeTopic(item.title);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function parseTrendItems(bodyText = '', contentType = '', feed = {}) {
   const hintedJson = /json/i.test(contentType) || /google_trends/i.test(String(feed.source_type || ''));
   if (hintedJson) {
     const jsonPayload = detectJsonPayload(bodyText);
     if (jsonPayload) return flattenJsonTrendItems(jsonPayload, feed);
+  }
+
+  if (/batchexecute/i.test(String(feed.source_type || '')) || /wrb\.fr|\[\[\[/.test(bodyText)) {
+    const batchItems = flattenBatchexecuteItems(bodyText, feed);
+    if (batchItems.length) return batchItems;
   }
 
   if (/xml|rss|atom/i.test(contentType) || bodyText.trim().startsWith('<')) {
@@ -159,6 +266,21 @@ function parseTrendItems(bodyText = '', contentType = '', feed = {}) {
   const jsonPayload = detectJsonPayload(bodyText);
   if (jsonPayload) return flattenJsonTrendItems(jsonPayload, feed);
   return [];
+}
+
+function buildRequestInit(feed = {}) {
+  const method = String(feed.method || 'GET').toUpperCase();
+  const headers = {
+    'user-agent': 'Mozilla/5.0 TeknoblogRadarBot/1.0',
+    'accept': 'application/json, application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8',
+    ...(feed.headers && typeof feed.headers === 'object' ? feed.headers : {})
+  };
+
+  const init = { method, headers, cache: 'no-store' };
+  if (method !== 'GET' && method !== 'HEAD' && typeof feed.body === 'string') {
+    init.body = feed.body;
+  }
+  return init;
 }
 
 export default async function handler(req, res) {
@@ -187,13 +309,7 @@ export default async function handler(req, res) {
       if (!url) continue;
 
       try {
-        const response = await fetch(url, {
-          headers: {
-            'user-agent': 'Mozilla/5.0 TeknoblogRadarBot/1.0',
-            'accept': 'application/json, application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8'
-          },
-          cache: 'no-store'
-        });
+        const response = await fetch(url, buildRequestInit(feed));
 
         if (!response.ok) {
           debug.push({ feed: feed.name || url, status: 'http_error', code: response.status });
@@ -203,7 +319,7 @@ export default async function handler(req, res) {
         const contentType = response.headers.get('content-type') || '';
         const bodyText = await response.text();
         const items = parseTrendItems(bodyText, contentType, feed).slice(0, Number(feed.limit || 25));
-        debug.push({ feed: feed.name || url, status: 'fetched', count: items.length, source_type: feed.source_type || 'trend_feed' });
+        debug.push({ feed: feed.name || url, status: 'fetched', count: items.length, source_type: feed.source_type || 'trend_feed', method: feed.method || 'GET' });
 
         for (const item of items) {
           const topicText = safeText(item.title || '');
