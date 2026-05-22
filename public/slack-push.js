@@ -55,6 +55,15 @@
     const title = article.querySelector('h3');
     if (title) title.style.opacity = '0.92';
 
+    const cardButton = article.querySelector('[data-card-slack-button]');
+    if (cardButton) {
+      cardButton.disabled = true;
+      cardButton.textContent = '✓';
+      cardButton.title = 'Slack\'e gönderildi';
+      cardButton.style.opacity = '0.72';
+      cardButton.style.cursor = 'default';
+    }
+
     let badge = article.querySelector('[data-slack-sent-badge]');
     if (!badge) {
       badge = document.createElement('div');
@@ -92,6 +101,7 @@
     const observer = new MutationObserver(() => {
       restoreSentCardStyles();
       insertSlackButton();
+      insertCardSlackButtons();
     });
     observer.observe(app, { childList: true, subtree: true });
   }
@@ -126,25 +136,95 @@
     return true;
   }
 
+  function itemFromArticle(article) {
+    if (!article) return null;
+    const input = article.querySelector('input[data-select-url]');
+    const dataUrl = input?.getAttribute('data-select-url') || '';
+    const titleEl = article.querySelector('h3');
+    const metaEls = [...article.querySelectorAll('div[style*="font-size:12px;color:#64748b"] > div')];
+    const actionLink = article.querySelector('a[href]');
+    const title = titleEl?.textContent?.trim() || '';
+    const published_at = metaEls[0]?.textContent?.trim() || '';
+    const source_name = metaEls[1]?.textContent?.trim() || '';
+    const url = normalizeUrl(dataUrl || actionLink?.href || '');
+    if (!title || !url) return null;
+    return { title, url, source_name, published_at, article };
+  }
+
   function selectedItemsFromDom() {
     const selected = [...document.querySelectorAll('input[data-select-url]:checked')];
-    return selected.map((input) => {
-      const dataUrl = input.getAttribute('data-select-url') || '';
-      const article = input.closest('article');
-      const titleEl = article?.querySelector('h3');
-      const metaEls = article ? [...article.querySelectorAll('div[style*="font-size:12px;color:#64748b"] > div')] : [];
-      const actionLink = article?.querySelector('a[href]');
-      const title = titleEl?.textContent?.trim() || '';
-      const published_at = metaEls[0]?.textContent?.trim() || '';
-      const source_name = metaEls[1]?.textContent?.trim() || '';
-      return {
-        title,
-        url: normalizeUrl(dataUrl || actionLink?.href || ''),
-        source_name,
-        published_at,
-        article
-      };
-    }).filter((item) => item.title && item.url);
+    return selected.map((input) => itemFromArticle(input.closest('article'))).filter(Boolean);
+  }
+
+  function buildCardSlackButton() {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.setAttribute('data-card-slack-button', 'true');
+    btn.textContent = 'S';
+    btn.title = 'Slack\'e gönder';
+    btn.style.position = 'absolute';
+    btn.style.top = '12px';
+    btn.style.right = '12px';
+    btn.style.width = '30px';
+    btn.style.height = '30px';
+    btn.style.borderRadius = '999px';
+    btn.style.border = '1px solid #4a154b';
+    btn.style.background = '#fff';
+    btn.style.color = '#4a154b';
+    btn.style.fontWeight = '800';
+    btn.style.fontSize = '13px';
+    btn.style.lineHeight = '1';
+    btn.style.cursor = 'pointer';
+    btn.style.zIndex = '3';
+    btn.style.boxShadow = '0 4px 12px rgba(74,21,75,.12)';
+    return btn;
+  }
+
+  function insertCardSlackButtons() {
+    const articles = [...document.querySelectorAll('article')].filter((article) => article.querySelector('input[data-select-url]'));
+    const sent = new Set(readSentUrls());
+    articles.forEach((article) => {
+      article.style.position = article.style.position || 'relative';
+      if (!article.querySelector('[data-card-slack-button]')) {
+        article.appendChild(buildCardSlackButton());
+      }
+      const item = itemFromArticle(article);
+      if (item?.url && sent.has(item.url)) {
+        markArticleAsSent(article);
+      }
+    });
+  }
+
+  async function postItemsToSlack(items = []) {
+    const response = await fetch('/api/push-to-slack', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8'
+      },
+      body: JSON.stringify({ items: items.map(({ article, ...rest }) => rest) })
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data?.error || `HTTP ${response.status}`);
+    }
+    return data;
+  }
+
+  async function pushItemsToSlack(items, statusText = 'Seçili haberler Slack kanalına gönderiliyor...') {
+    const status = document.getElementById('tb-status');
+    if (status) status.textContent = statusText;
+
+    const data = await postItemsToSlack(items);
+    const merged = [...readSentUrls(), ...(Array.isArray(data?.shared_urls) ? data.shared_urls : items.map((item) => item.url))];
+    writeSentUrls(merged);
+    items.forEach((item) => markArticleAsSent(item.article));
+    restoreSentCardStyles();
+
+    if (status) {
+      status.textContent = `Slack gönderimi tamamlandı. Gönderilen: ${data.sent ?? 0}, seçilen: ${data.requested ?? items.length}`;
+    }
+    return data;
   }
 
   async function pushSelectedToSlack() {
@@ -156,30 +236,9 @@
     }
 
     setSlackButtonState(true);
-    if (status) status.textContent = 'Seçili haberler Slack kanalına gönderiliyor...';
 
     try {
-      const response = await fetch('/api/push-to-slack', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json; charset=utf-8'
-        },
-        body: JSON.stringify({ items: items.map(({ article, ...rest }) => rest) })
-      });
-
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(data?.error || `HTTP ${response.status}`);
-      }
-
-      const merged = [...readSentUrls(), ...(Array.isArray(data?.shared_urls) ? data.shared_urls : items.map((item) => item.url))];
-      writeSentUrls(merged);
-      items.forEach((item) => markArticleAsSent(item.article));
-      restoreSentCardStyles();
-
-      if (status) {
-        status.textContent = `Slack gönderimi tamamlandı. Gönderilen: ${data.sent ?? 0}, seçilen: ${data.requested ?? items.length}`;
-      }
+      await pushItemsToSlack(items);
     } catch (error) {
       if (status) status.textContent = `Slack hatası: ${String(error.message || error)}`;
     } finally {
@@ -187,7 +246,40 @@
     }
   }
 
+  async function pushSingleArticleToSlack(button) {
+    const status = document.getElementById('tb-status');
+    const article = button.closest('article');
+    const item = itemFromArticle(article);
+    if (!item) return;
+
+    const original = button.textContent;
+    button.disabled = true;
+    button.textContent = '…';
+    button.style.cursor = 'wait';
+    button.style.opacity = '0.7';
+
+    try {
+      await pushItemsToSlack([item], 'Haber Slack kanalına gönderiliyor...');
+      button.textContent = '✓';
+      button.title = 'Slack\'e gönderildi';
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = original;
+      button.style.cursor = 'pointer';
+      button.style.opacity = '1';
+      if (status) status.textContent = `Slack hatası: ${String(error.message || error)}`;
+    }
+  }
+
   document.addEventListener('click', async (event) => {
+    const cardBtn = event.target.closest('[data-card-slack-button]');
+    if (cardBtn) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!cardBtn.disabled) await pushSingleArticleToSlack(cardBtn);
+      return;
+    }
+
     const btn = event.target.closest('#tb-push-slack');
     if (!btn) return;
     await pushSelectedToSlack();
@@ -197,18 +289,25 @@
   const timer = setInterval(() => {
     tries += 1;
     restoreSentCardStyles();
+    insertCardSlackButtons();
     if (insertSlackButton() || tries > 30) clearInterval(timer);
   }, 300);
 
   document.addEventListener('DOMContentLoaded', async () => {
     insertSlackButton();
+    insertCardSlackButtons();
     await syncSharedSentUrls();
     restoreSentCardStyles();
+    insertCardSlackButtons();
     watchForRerenders();
-    setTimeout(restoreSentCardStyles, 1000);
+    setTimeout(() => {
+      restoreSentCardStyles();
+      insertCardSlackButtons();
+    }, 1000);
     setTimeout(async () => {
       await syncSharedSentUrls();
       restoreSentCardStyles();
+      insertCardSlackButtons();
     }, 2500);
   });
 })();
