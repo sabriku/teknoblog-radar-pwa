@@ -14,8 +14,18 @@
   let refreshTimer = null;
   let started = false;
 
-  function esc(v) {
+  function cleanText(v) {
     return String(v ?? '')
+      .normalize('NFKC')
+      .replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ')
+      .replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/g, '')
+      .replace(/[\ufffd\u25a0-\u25ff]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function esc(v) {
+    return cleanText(v)
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
@@ -36,6 +46,11 @@
     }).format(d);
   }
 
+  function fallbackImage(item = {}) {
+    const source = encodeURIComponent(cleanText(item.source_name || 'Google News').slice(0, 28));
+    return `https://placehold.co/640x360/f8fafc/334155?text=${source}`;
+  }
+
   function ensureStyle() {
     if (document.getElementById('tb-google-news-style')) return;
     const style = document.createElement('style');
@@ -50,8 +65,10 @@
       #tb-google-news-wrap .tb-google-chevron{transition:transform .2s ease}
       #tb-google-news-wrap .tb-google-news-refresh{border:1px solid #2563eb;background:#fff;color:#2563eb;padding:9px 12px;border-radius:12px;font-weight:700;cursor:pointer}
       #tb-google-news-wrap .tb-google-news-refresh:disabled{opacity:.7;cursor:wait}
-      #tb-google-news-wrap .tb-google-news-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:16px}
-      #tb-google-news-wrap article{position:relative;border:1px solid #e5e7eb;border-radius:16px;padding:12px;background:#fff;box-shadow:0 4px 12px rgba(15,23,42,.04)}
+      #tb-google-news-wrap .tb-google-news-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-top:16px}
+      #tb-google-news-wrap article{position:relative;border:1px solid #e5e7eb;border-radius:16px;background:#fff;box-shadow:0 4px 12px rgba(15,23,42,.04);overflow:hidden}
+      #tb-google-news-wrap .tb-google-image{width:100%;aspect-ratio:16/9;background:#f1f5f9;object-fit:cover;display:block;border-bottom:1px solid #e5e7eb}
+      #tb-google-news-wrap .tb-google-card-inner{padding:12px}
       #tb-google-news-wrap h3{font:700 17px/1.35 'Fira Sans Condensed',sans-serif;color:#111827;margin:0 0 8px;padding-right:34px}
       #tb-google-news-wrap .tb-google-meta{display:flex;flex-wrap:wrap;gap:6px;font-size:11px;color:#64748b;margin-bottom:8px}
       #tb-google-news-wrap .tb-google-summary{font-size:12px;line-height:1.55;color:#475569;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
@@ -94,21 +111,27 @@
 
     wrap.setAttribute('data-open', state.open ? '1' : '0');
 
-    const cards = state.items.map((item, index) => `
-      <article>
-        <input type="checkbox" data-select-url="${esc(item.url)}" style="position:absolute;left:12px;top:12px;z-index:2">
-        <h3>${esc(item.title)}</h3>
-        <div class="tb-google-meta">
-          <div>${esc(item.source_name || 'Google News')}</div>
-          <div>${esc(fmtDate(item.published_at))}</div>
-        </div>
-        <div class="tb-google-summary">${esc(item.summary || '')}</div>
-        <div class="tb-google-actions">
-          <a class="tb-google-link" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">Haberi aç</a>
-          <span style="font-size:11px;color:#94a3b8">#${index + 1}</span>
-        </div>
-      </article>
-    `).join('');
+    const cards = state.items.map((item, index) => {
+      const image = cleanText(item.image_url || '') || fallbackImage(item);
+      return `
+        <article>
+          <img class="tb-google-image" src="${esc(image)}" alt="${esc(item.title || 'Google News teknoloji haberi')}" loading="lazy" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='${esc(fallbackImage(item))}'">
+          <div class="tb-google-card-inner">
+            <input type="checkbox" data-select-url="${esc(item.url)}" style="position:absolute;right:12px;top:12px;z-index:2">
+            <h3>${esc(item.title)}</h3>
+            <div class="tb-google-meta">
+              <div>${esc(item.source_name || 'Google News')}</div>
+              <div>${esc(fmtDate(item.published_at))}</div>
+            </div>
+            <div class="tb-google-summary">${esc(item.summary || '')}</div>
+            <div class="tb-google-actions">
+              <a class="tb-google-link" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">Haberi aç</a>
+              <span style="font-size:11px;color:#94a3b8">#${index + 1}</span>
+            </div>
+          </div>
+        </article>
+      `;
+    }).join('');
 
     wrap.innerHTML = `
       <div class="tb-google-news-head">
