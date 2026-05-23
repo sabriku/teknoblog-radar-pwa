@@ -1,4 +1,7 @@
-import { getSupabaseAdmin, json, hashValue } from './_lib.js';
+import { getSupabaseAdmin, json, hashValue, parseFeedItems, safeText } from './_lib.js';
+
+const GOOGLE_NEWS_TECH_RSS = 'https://news.google.com/rss/topics/CAAqKAgKIiJDQkFTRXdvSkwyMHZNR1ptZHpWbUVnSjBjaG9DVkZJb0FBUAE?hl=tr&gl=TR&ceid=TR:tr';
+const GOOGLE_NEWS_TIMEOUT_MS = 12000;
 
 const STRONG_TECH_INCLUDE_PATTERNS = [
   /\byapay zeka\b/i, /\bartificial intelligence\b/i, /\bai\b/i, /\bgemini\b/i,
@@ -59,8 +62,17 @@ function filterLinkedNews(cluster = {}) { return (Array.isArray(cluster.linked_n
 function isTechCluster(cluster = {}) { const linkedNews = filterLinkedNews(cluster); const signalTopics = Array.isArray(cluster.signal_topics) ? cluster.signal_topics : []; if (signalTopics.length && signalTopics.every(isShortNoiseTopic)) return false; const text = [cluster.cluster_name, cluster.summary?.display_name, ...(Array.isArray(cluster.summary?.sample_topics) ? cluster.summary.sample_topics : []), ...signalTopics, ...linkedNews.map((item) => item.candidate_title)].filter(Boolean).join(' \n '); if (!text.trim()) return false; if (looksExcluded(text) && !hasStrongTech(text)) return false; if (!hasTurkeyTechSignal({ ...cluster, linked_news: linkedNews })) return false; if (hasStrongTech(text)) return true; return hasWeakTech(text) && linkedNews.length >= 1; }
 function decorateCluster(cluster = {}, signalGroup = {}, selectedWindow = '24h') { const signals = Array.isArray(signalGroup.signals) ? signalGroup.signals : []; const sparkline = buildSparkline(signals, selectedWindow); const latestSignalAt = signals.length ? signals.reduce((latest, item) => { const current = new Date(item.detected_at || 0).toISOString(); return !latest || current > latest ? current : latest; }, '') : null; return { ...cluster, selected_window: selectedWindow, window_signal_count: signals.length, sparkline, latest_signal_at: latestSignalAt, signal_sources: [...new Set(signals.map((item) => item.source_name).filter(Boolean))], signal_topics: [...new Set(signals.map((item) => item.topic_text).filter(Boolean))], linked_news: filterLinkedNews(cluster) }; }
 
+function googleNewsSourceFromTitle(title = '') { const parts = String(title || '').trim().split(' - '); return parts.length > 1 ? parts[parts.length - 1].trim() : 'Google News'; }
+function googleNewsCleanTitle(title = '') { const parts = String(title || '').trim().split(' - '); return parts.length > 1 ? parts.slice(0, -1).join(' - ').trim() : String(title || '').trim(); }
+function normalizeGoogleNewsLimit(value) { const limit = Number(value || 24); return Math.min(40, Math.max(1, Number.isFinite(limit) ? Math.round(limit) : 24)); }
+function normalizeGoogleNewsDate(value = '') { const date = new Date(String(value || '').trim()); return Number.isNaN(date.getTime()) ? String(value || '').trim() : date.toISOString(); }
+async function fetchGoogleNewsTech(limit = 24) { const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), GOOGLE_NEWS_TIMEOUT_MS); try { const response = await fetch(GOOGLE_NEWS_TECH_RSS, { cache: 'no-store', signal: controller.signal, headers: { 'user-agent': 'Mozilla/5.0 TeknoblogRadarBot/1.0 (+https://www.teknoblog.com/)', accept: 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8' } }); if (!response.ok) throw new Error(`Google News RSS alınamadı: HTTP ${response.status}`); const xml = await response.text(); const seen = new Set(); const items = []; for (const raw of parseFeedItems(xml)) { const title = safeText(raw.title || ''); const cleanTitle = googleNewsCleanTitle(title); const item = { title: cleanTitle, url: raw.url || '', source_name: googleNewsSourceFromTitle(title), published_at: normalizeGoogleNewsDate(raw.published_at || ''), summary: safeText(raw.summary || ''), image_url: raw.image_url || '' }; const key = `${item.title}::${item.url}`; if (!item.title || !item.url || seen.has(key)) continue; seen.add(key); items.push(item); if (items.length >= limit) break; } return items; } finally { clearTimeout(timeout); } }
+async function respondGoogleNewsTech(req, res) { const limit = normalizeGoogleNewsLimit(req.query?.limit); const items = await fetchGoogleNewsTech(limit); return json(res, 200, { items, count: items.length, refreshed_at: new Date().toISOString(), source: 'Google News Bilim ve Teknoloji', source_url: GOOGLE_NEWS_TECH_RSS, via: 'trend-overview' }); }
+
 export default async function handler(req, res) {
   try {
+    if (String(req.query?.google_news || '') === '1') return await respondGoogleNewsTech(req, res);
+
     const supabase = getSupabaseAdmin();
     const selectedWindow = parseWindow(req.query?.window || '24h');
     const limit = clamp(Number(req.query?.limit || 12), 1, 24);
