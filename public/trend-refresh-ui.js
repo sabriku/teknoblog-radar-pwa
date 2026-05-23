@@ -1,5 +1,13 @@
 (() => {
   const DEFAULT_MARKER = 'tb_trend_radar_default_closed_v3';
+  const API_TOKEN = window.TB_RADAR_TOKEN || 'tb-radar-2026-X7p9K2mQ4vL8cR1nZ5sT';
+
+  function endpoint(path) {
+    const url = new URL(path, window.location.origin);
+    url.searchParams.set('token', API_TOKEN);
+    url.searchParams.set('_', Date.now().toString());
+    return url.toString();
+  }
 
   function setButtonStatus(button, text, disabled = false) {
     button.textContent = text;
@@ -8,35 +16,48 @@
     button.style.cursor = disabled ? 'wait' : 'pointer';
   }
 
+  async function fetchJson(path) {
+    const res = await fetch(endpoint(path), {
+      method: 'GET',
+      cache: 'no-store',
+      headers: {
+        accept: 'application/json'
+      }
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data?.ok === false || data?.error) {
+      throw new Error(data?.error || `HTTP ${res.status}`);
+    }
+
+    return data;
+  }
+
   async function refreshTrends(button) {
     const original = button.textContent;
 
     try {
-      setButtonStatus(button, 'Yenileniyor...', true);
+      setButtonStatus(button, 'Trendler çekiliyor...', true);
+      const ingest = await fetchJson('/api/trends-ingest');
 
-      const res = await fetch('/api/trends-refresh', {
-        method: 'GET',
-        cache: 'no-store'
-      });
-      const data = await res.json().catch(() => ({}));
+      setButtonStatus(button, 'Kümeler oluşturuluyor...', true);
+      const clusters = await fetchJson('/api/trend-clusters');
 
-      if (!res.ok || data?.ok === false) {
-        throw new Error(data?.error || 'Trend yenileme başarısız oldu');
-      }
+      const inserted = Number(ingest?.inserted || ingest?.count || 0);
+      const clusterCount = Number(clusters?.clusters || clusters?.count || clusters?.inserted || 0);
+      const feeds = Number(ingest?.feeds || 0);
 
-      const inserted = Number(data?.ingest?.inserted || 0);
-      const clusters = Number(data?.clusters?.clusters || 0);
       setButtonStatus(button, `Yenilendi, ${inserted} sinyal`, true);
-      button.title = `Küme sayısı: ${clusters}`;
+      button.title = `Feed: ${feeds || '-'} | Küme: ${clusterCount || '-'}`;
 
       setTimeout(() => {
         window.location.reload();
       }, 900);
     } catch (error) {
-      console.error(error);
+      console.error('Google Trends refresh error:', error);
       setButtonStatus(button, 'Yenileme başarısız', false);
       button.title = error?.message || 'Bilinmeyen hata';
-      setTimeout(() => setButtonStatus(button, original, false), 2600);
+      setTimeout(() => setButtonStatus(button, original, false), 3200);
     }
   }
 
@@ -111,6 +132,9 @@
     }, 300);
   }
 
-  document.addEventListener('DOMContentLoaded', start);
-  start();
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start, { once: true });
+  } else {
+    start();
+  }
 })();
