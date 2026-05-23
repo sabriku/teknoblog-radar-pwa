@@ -148,7 +148,8 @@
     render();
 
     try {
-      const url = new URL('/api/google-news-tech', window.location.origin);
+      const url = new URL('/api/trend-overview', window.location.origin);
+      url.searchParams.set('google_news', '1');
       url.searchParams.set('limit', '24');
       url.searchParams.set('_', Date.now().toString());
 
