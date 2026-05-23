@@ -1,10 +1,17 @@
 (() => {
-  const DEFAULT_MARKER = 'tb_trend_radar_default_closed_v3';
-  const API_TOKEN = window.TB_RADAR_TOKEN || 'tb-radar-2026-X7p9K2mQ4vL8cR1nZ5sT';
+  const FALLBACK_TOKEN = 'tb-radar-2026-X7p9K2mQ4vL8cR1nZ5sT';
 
-  function endpoint(path) {
+  function getToken() {
+    return window.TB_RADAR_TOKEN || localStorage.getItem('tb_radar_cron_token') || FALLBACK_TOKEN;
+  }
+
+  function saveToken(token) {
+    if (token) localStorage.setItem('tb_radar_cron_token', token);
+  }
+
+  function endpoint(path, token = getToken()) {
     const url = new URL(path, window.location.origin);
-    url.searchParams.set('token', API_TOKEN);
+    url.searchParams.set('token', token);
     url.searchParams.set('_', Date.now().toString());
     return url.toString();
   }
@@ -16,8 +23,8 @@
     button.style.cursor = disabled ? 'wait' : 'pointer';
   }
 
-  async function fetchJson(path) {
-    const res = await fetch(endpoint(path), {
+  async function fetchJson(path, token = getToken()) {
+    const res = await fetch(endpoint(path, token), {
       method: 'GET',
       cache: 'no-store',
       headers: {
@@ -27,33 +34,52 @@
 
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data?.ok === false || data?.error) {
-      throw new Error(data?.error || `HTTP ${res.status}`);
+      const err = new Error(data?.error || `HTTP ${res.status}`);
+      err.status = res.status;
+      throw err;
     }
 
     return data;
+  }
+
+  async function runRefreshWithToken(button, token) {
+    setButtonStatus(button, 'Trendler çekiliyor...', true);
+    const ingest = await fetchJson('/api/trends-ingest', token);
+
+    setButtonStatus(button, 'Kümeler oluşturuluyor...', true);
+    const clusters = await fetchJson('/api/trend-clusters', token);
+
+    const inserted = Number(ingest?.inserted || ingest?.count || 0);
+    const clusterCount = Number(clusters?.clusters || clusters?.count || clusters?.inserted || 0);
+    const feeds = Number(ingest?.feeds || 0);
+
+    setButtonStatus(button, `Yenilendi, ${inserted} sinyal`, true);
+    button.title = `Feed: ${feeds || '-'} | Küme: ${clusterCount || '-'}`;
+
+    setTimeout(() => {
+      window.location.reload();
+    }, 900);
   }
 
   async function refreshTrends(button) {
     const original = button.textContent;
 
     try {
-      setButtonStatus(button, 'Trendler çekiliyor...', true);
-      const ingest = await fetchJson('/api/trends-ingest');
-
-      setButtonStatus(button, 'Kümeler oluşturuluyor...', true);
-      const clusters = await fetchJson('/api/trend-clusters');
-
-      const inserted = Number(ingest?.inserted || ingest?.count || 0);
-      const clusterCount = Number(clusters?.clusters || clusters?.count || clusters?.inserted || 0);
-      const feeds = Number(ingest?.feeds || 0);
-
-      setButtonStatus(button, `Yenilendi, ${inserted} sinyal`, true);
-      button.title = `Feed: ${feeds || '-'} | Küme: ${clusterCount || '-'}`;
-
-      setTimeout(() => {
-        window.location.reload();
-      }, 900);
+      await runRefreshWithToken(button, getToken());
     } catch (error) {
+      if (error?.status === 401) {
+        const entered = window.prompt('CRON_TOKEN değerini girin', localStorage.getItem('tb_radar_cron_token') || '');
+        if (entered) {
+          saveToken(entered.trim());
+          try {
+            await runRefreshWithToken(button, entered.trim());
+            return;
+          } catch (retryError) {
+            error = retryError;
+          }
+        }
+      }
+
       console.error('Google Trends refresh error:', error);
       setButtonStatus(button, 'Yenileme başarısız', false);
       button.title = error?.message || 'Bilinmeyen hata';
@@ -62,15 +88,15 @@
   }
 
   function forceDefaultClosed(wrap) {
-    if (!wrap || localStorage.getItem(DEFAULT_MARKER) === '1') return;
+    if (!wrap) return;
 
     wrap.setAttribute('data-open', '0');
     localStorage.setItem('tb_trend_radar_open', '0');
-    localStorage.setItem(DEFAULT_MARKER, '1');
 
     const toggle = wrap.querySelector('#tb-trend-toggle');
     if (toggle) {
       toggle.innerHTML = '<span class="tb-chevron">▾</span>Göster';
+      toggle.setAttribute('aria-expanded', 'false');
     }
   }
 
