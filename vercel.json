@@ -7,6 +7,12 @@
     },
     "api/access.js": {
       "maxDuration": 30
+    },
+    "api/google-news-tech.js": {
+      "maxDuration": 30
+    },
+    "api/google-news-tech/index.js": {
+      "maxDuration": 30
     }
   }
 }
