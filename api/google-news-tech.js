@@ -1,6 +1,7 @@
 import { json, parseFeedItems, safeText } from './_lib.js';
 
 const GOOGLE_NEWS_TECH_RSS = 'https://news.google.com/rss/topics/CAAqKAgKIiJDQkFTRXdvSkwyMHZNR1ptZHpWbUVnSjBjaG9DVkZJb0FBUAE?hl=tr&gl=TR&ceid=TR:tr';
+const REQUEST_TIMEOUT_MS = 12000;
 
 function sourceFromTitle(title = '') {
   const text = String(title || '').trim();
@@ -15,6 +16,20 @@ function cleanTitle(title = '') {
   return parts.slice(0, -1).join(' - ').trim() || text;
 }
 
+function normalizeLimit(value) {
+  const limit = Number(value || 24);
+  if (!Number.isFinite(limit)) return 24;
+  return Math.min(40, Math.max(1, Math.round(limit)));
+}
+
+function normalizePublishedAt(value = '') {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return raw;
+  return date.toISOString();
+}
+
 function normalizeItem(item = {}) {
   const title = safeText(item.title || '');
   const clean = cleanTitle(title);
@@ -23,31 +38,57 @@ function normalizeItem(item = {}) {
     title: clean,
     url: item.url || '',
     source_name: source,
-    published_at: item.published_at || '',
+    published_at: normalizePublishedAt(item.published_at || ''),
     summary: safeText(item.summary || ''),
     image_url: item.image_url || ''
   };
 }
 
-export default async function handler(req, res) {
+async function fetchWithTimeout(url) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
   try {
-    const response = await fetch(GOOGLE_NEWS_TECH_RSS, {
+    return await fetch(url, {
       cache: 'no-store',
+      signal: controller.signal,
       headers: {
-        'user-agent': 'Mozilla/5.0 TeknoblogRadarBot/1.0',
-        'accept': 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8'
+        'user-agent': 'Mozilla/5.0 TeknoblogRadarBot/1.0 (+https://www.teknoblog.com/)',
+        accept: 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8'
       }
     });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export default async function handler(req, res) {
+  try {
+    const response = await fetchWithTimeout(GOOGLE_NEWS_TECH_RSS);
 
     if (!response.ok) {
-      return json(res, 502, { error: `Google News RSS alınamadı: HTTP ${response.status}` });
+      return json(res, 502, {
+        error: `Google News RSS alınamadı: HTTP ${response.status}`,
+        items: [],
+        count: 0,
+        refreshed_at: new Date().toISOString(),
+        source: 'Google News Bilim ve Teknoloji',
+        source_url: GOOGLE_NEWS_TECH_RSS
+      });
     }
 
     const xml = await response.text();
-    const items = parseFeedItems(xml)
-      .map(normalizeItem)
-      .filter((item) => item.title && item.url)
-      .slice(0, Math.min(40, Math.max(1, Number(req.query?.limit || 24))));
+    const limit = normalizeLimit(req.query?.limit);
+    const seen = new Set();
+    const items = [];
+
+    for (const item of parseFeedItems(xml).map(normalizeItem)) {
+      const key = `${item.title}::${item.url}`;
+      if (!item.title || !item.url || seen.has(key)) continue;
+      seen.add(key);
+      items.push(item);
+      if (items.length >= limit) break;
+    }
 
     return json(res, 200, {
       items,
@@ -57,6 +98,14 @@ export default async function handler(req, res) {
       source_url: GOOGLE_NEWS_TECH_RSS
     });
   } catch (error) {
-    return json(res, 500, { error: error?.message || String(error) });
+    const isAbort = error?.name === 'AbortError';
+    return json(res, 504, {
+      error: isAbort ? 'Google News RSS isteği zaman aşımına uğradı' : (error?.message || String(error)),
+      items: [],
+      count: 0,
+      refreshed_at: new Date().toISOString(),
+      source: 'Google News Bilim ve Teknoloji',
+      source_url: GOOGLE_NEWS_TECH_RSS
+    });
   }
 }
