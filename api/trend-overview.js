@@ -28,7 +28,8 @@ const WEAK_TECH_INCLUDE_PATTERNS = [
 
 const TECH_EXCLUDE_PATTERNS = [
   /\bhull city\b/i, /\bchampionship\b/i, /\bpremier league\b/i, /\buefa\b/i,
-  /\buel\b/i, /\bfutbol\b/i, /\bfootball\b/i, /\bmaç\b/i, /\bspor\b/i,
+  /\buel\b/i, /\bfutbol\b/i, /\bfootball\b/i, /\bmaç\b/i, /\bmacı\b/i, /\bmaçı\b/i,
+  /\bhangi kanalda\b/i, /\bkupa\b/i, /\bvoleybol\b/i, /\bspor\b/i,
   /\btransfer\b/i, /\bteknik direktör\b/i, /\bfenerbahçe\b/i, /\bgalatasaray\b/i,
   /\bbeşiktaş\b/i, /\btrabzonspor\b/i, /\bbasketbol\b/i, /\bfinal\b/i,
   /\blive\b/i, /\bdeprem\b/i, /\bhava durumu\b/i, /\bmeteoroloji\b/i,
@@ -42,15 +43,15 @@ const TECH_EXCLUDE_PATTERNS = [
 ];
 
 const SHORT_NOISE_TOPICS = new Set(['tr', 'fr', 'uel']);
-const TURKEY_TECH_SOURCE_PATTERNS = [/shiftdelete/i, /donanımhaber/i, /webtekno/i, /tamindir/i, /log\.com\.tr/i, /teknoblog/i, /webrazzi/i, /chip online/i, /hardware plus/i, /google trends tr/i, /tr 4s teknoloji/i, /tr 24s teknoloji/i, /tr 48s teknoloji/i];
+const TURKEY_TECH_SOURCE_PATTERNS = [/shiftdelete/i, /donanımhaber/i, /webtekno/i, /tamindir/i, /log\.com\.tr/i, /teknoblog/i, /webrazzi/i, /chip online/i, /hardware plus/i, /google trends tr/i, /tr 4s teknoloji/i, /tr 24s teknoloji/i, /tr 48s teknoloji/i, /tr 168s teknoloji/i, /tr 7g teknoloji/i];
 
 function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }
 function normalizeTopic(value = '') { return String(value || '').toLowerCase().replace(/[^a-z0-9çğıöşü\s]/gi, ' ').replace(/\s+/g, ' ').trim(); }
-function parseWindow(value = '') { const n = String(value || '').trim().toLowerCase(); return ['4h', '24h', '48h'].includes(n) ? n : '24h'; }
+function parseWindow(value = '') { const n = String(value || '').trim().toLowerCase(); return ['4h', '24h', '48h', '168h'].includes(n) ? n : '24h'; }
 function windowHours(w = '24h') { return Number(String(w).replace(/[^0-9]/g, '')) || 24; }
 function hoursAgoIso(hours) { return new Date(Date.now() - (hours * 3600 * 1000)).toISOString(); }
 function sortByTurkeyTechAndTrend(a, b) { return Number(b.window_signal_count || 0) - Number(a.window_signal_count || 0) || Number(b.trend_score || 0) - Number(a.trend_score || 0) || new Date(b.last_seen_at || 0).getTime() - new Date(a.last_seen_at || 0).getTime(); }
-function bucketSizeHours(w = '24h') { if (w === '4h') return 1; if (w === '48h') return 4; return 2; }
+function bucketSizeHours(w = '24h') { if (w === '4h') return 1; if (w === '48h') return 4; if (w === '168h') return 24; return 2; }
 function formatBucketLabel(date, bucketHours) { const pad = (n) => String(n).padStart(2, '0'); const hour = date.getUTCHours(); return bucketHours >= 24 ? `${pad(date.getUTCDate())}.${pad(date.getUTCMonth() + 1)}` : `${pad(hour)}:00`; }
 function buildSparkline(signals = [], selectedWindow = '24h') { const hours = windowHours(selectedWindow); const bucketHours = bucketSizeHours(selectedWindow); const bucketCount = Math.max(1, Math.ceil(hours / bucketHours)); const now = Date.now(); const bucketMs = bucketHours * 3600 * 1000; const startMs = now - (bucketCount * bucketMs); const buckets = Array.from({ length: bucketCount }, (_, i) => { const ts = startMs + (i * bucketMs); return { ts: new Date(ts).toISOString(), label: formatBucketLabel(new Date(ts), bucketHours), count: 0 }; }); for (const signal of signals) { const detectedAt = new Date(signal.detected_at || 0).getTime(); if (!Number.isFinite(detectedAt) || detectedAt < startMs) continue; const index = Math.floor((detectedAt - startMs) / bucketMs); if (index >= 0 && index < buckets.length) buckets[index].count += 1; } return buckets; }
 function hasStrongTech(text = '') { return STRONG_TECH_INCLUDE_PATTERNS.some((p) => p.test(String(text || ''))); }
@@ -82,7 +83,7 @@ export default async function handler(req, res) {
     const signalGroups = new Map();
     for (const signal of signals || []) { const normalizedTopic = normalizeTopic(signal.normalized_topic || signal.topic_text || ''); if (!normalizedTopic || isShortNoiseTopic(normalizedTopic)) continue; const clusterKey = hashValue(normalizedTopic); if (!signalGroups.has(clusterKey)) signalGroups.set(clusterKey, { cluster_key: clusterKey, normalized_topic: normalizedTopic, signals: [] }); signalGroups.get(clusterKey).signals.push(signal); }
     const clusterKeys = [...signalGroups.keys()];
-    if (!clusterKeys.length) return json(res, 200, { items: [], window: selectedWindow, available_windows: ['4h', '24h', '48h'] });
+    if (!clusterKeys.length) return json(res, 200, { items: [], window: selectedWindow, available_windows: ['4h', '24h', '48h', '168h'] });
     const { data: clusters, error: clustersError } = await supabase.from('trend_clusters').select('*').in('cluster_key', clusterKeys).neq('status', 'archived').limit(150);
     if (clustersError) return json(res, 500, { error: clustersError.message });
     const clusterIds = (clusters || []).map((item) => item.id).filter(Boolean);
@@ -91,6 +92,6 @@ export default async function handler(req, res) {
     const linksByCluster = new Map();
     for (const link of links) { const key = String(link.cluster_id || ''); if (!linksByCluster.has(key)) linksByCluster.set(key, []); if (linksByCluster.get(key).length < 8) linksByCluster.get(key).push(link); }
     const decorated = (clusters || []).map((cluster) => decorateCluster({ ...cluster, linked_news: linksByCluster.get(String(cluster.id || '')) || [] }, signalGroups.get(String(cluster.cluster_key || '')) || { signals: [] }, selectedWindow)).filter((cluster) => Number(cluster.window_signal_count || 0) > 0).filter(isTechCluster).sort(sortByTurkeyTechAndTrend).slice(0, limit);
-    return json(res, 200, { items: decorated, window: selectedWindow, available_windows: ['4h', '24h', '48h'] });
+    return json(res, 200, { items: decorated, window: selectedWindow, available_windows: ['4h', '24h', '48h', '168h'] });
   } catch (error) { return json(res, 500, { error: error?.message || String(error) }); }
 }
