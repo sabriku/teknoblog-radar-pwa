@@ -1,5 +1,7 @@
 (() => {
-  const ORDER_APPLIED = 'tbSectionOrderApplied';
+  let observer = null;
+  let scheduled = false;
+  let lastSignature = '';
 
   function qs(selector, root = document) {
     return root.querySelector(selector);
@@ -49,54 +51,43 @@
     const sourceTabs = qs('#tb-source-tabs');
     const pagination = qs('#tb-pagination');
 
-    main.insertBefore(anchor, grid);
     if (sourceTabs) anchor.appendChild(sourceTabs);
     anchor.appendChild(grid);
     if (pagination) anchor.appendChild(pagination);
     return anchor;
   }
 
-  function addToggleToGoogleNews(section) {
-    if (!section || section.dataset.tbCollapsible === '1') return;
-    section.dataset.tbCollapsible = '1';
-    section.setAttribute('data-open', section.getAttribute('data-open') || '0');
-    section.classList.add('tb-ordered-section');
+  function setButtonLabel(button, open) {
+    button.innerHTML = open
+      ? '<span class="tb-section-chevron">▾</span><span>Daralt</span>'
+      : '<span class="tb-section-chevron">▾</span><span>Göster</span>';
   }
 
-  function ensureTrendRadarToggle(section) {
+  function makeCollapsible(section, buttonId, bodySelector) {
     if (!section) return;
     section.dataset.tbCollapsible = '1';
     section.classList.add('tb-ordered-section');
     if (!section.getAttribute('data-open')) section.setAttribute('data-open', '0');
 
-    const existing = qs('#tb-trend-toggle', section);
-    if (existing) return;
+    if (qs(`#${buttonId}`, section)) return;
 
     const header = qs('.tb-trend-header', section) || section.firstElementChild || section;
     const button = document.createElement('button');
-    button.id = 'tb-trend-toggle';
+    button.id = buttonId;
     button.type = 'button';
     button.className = 'tb-section-toggle';
-    button.innerHTML = '<span class="tb-section-chevron">▾</span><span>Göster</span>';
+    setButtonLabel(button, section.getAttribute('data-open') === '1');
     button.addEventListener('click', () => {
-      const open = section.getAttribute('data-open') === '1';
-      section.setAttribute('data-open', open ? '0' : '1');
-      button.innerHTML = open
-        ? '<span class="tb-section-chevron">▾</span><span>Göster</span>'
-        : '<span class="tb-section-chevron">▾</span><span>Daralt</span>';
+      const nextOpen = section.getAttribute('data-open') !== '1';
+      section.setAttribute('data-open', nextOpen ? '1' : '0');
+      setButtonLabel(button, nextOpen);
+      if (bodySelector) {
+        section.querySelectorAll(bodySelector).forEach((el) => {
+          el.style.display = nextOpen ? '' : 'none';
+        });
+      }
     });
-    header.appendChild(button);
-  }
 
-  function ensureGoogleTrendsToggle(section) {
-    if (!section) return;
-    section.dataset.tbCollapsible = '1';
-    section.classList.add('tb-ordered-section');
-    section.setAttribute('data-open', section.getAttribute('data-open') || '0');
-
-    if (qs('#tb-google-trends-toggle', section)) return;
-
-    const header = section.firstElementChild || section;
     if (header && header.style) {
       header.style.display = 'flex';
       header.style.justifyContent = 'space-between';
@@ -105,20 +96,21 @@
       header.style.flexWrap = 'wrap';
     }
 
-    const button = document.createElement('button');
-    button.id = 'tb-google-trends-toggle';
-    button.type = 'button';
-    button.className = 'tb-section-toggle';
-    button.innerHTML = '<span class="tb-section-chevron">▾</span><span>Göster</span>';
-    button.addEventListener('click', () => {
-      const open = section.getAttribute('data-open') === '1';
-      section.setAttribute('data-open', open ? '0' : '1');
-      button.innerHTML = open
-        ? '<span class="tb-section-chevron">▾</span><span>Göster</span>'
-        : '<span class="tb-section-chevron">▾</span><span>Daralt</span>';
-    });
-
     header.appendChild(button);
+  }
+
+  function appendIfNeeded(parent, child) {
+    if (!parent || !child) return false;
+    if (child.parentElement === parent && parent.lastElementChild === child) return false;
+    parent.appendChild(child);
+    return true;
+  }
+
+  function signature(main, sections) {
+    return sections
+      .filter(Boolean)
+      .map((el) => `${el.id || el.dataset.sectionLabel || el.tagName}:${el.parentElement === main ? 'main' : 'other'}:${Array.prototype.indexOf.call(main.children, el)}`)
+      .join('|');
   }
 
   function orderSections() {
@@ -130,34 +122,48 @@
     const googleNews = qs('#tb-google-news-wrap');
     const trendRadar = qs('#tb-trend-radar-wrap');
     const googleTrends = findGoogleTrendsSection();
+    const sections = [cards, googleNews, trendRadar, googleTrends].filter(Boolean);
 
-    if (cards && cards.parentElement !== main) main.appendChild(cards);
-    if (cards) main.appendChild(cards);
+    const currentSignature = signature(main, sections);
+    if (currentSignature === lastSignature && sections.length >= 2) return true;
 
+    if (observer) observer.disconnect();
+
+    if (cards) appendIfNeeded(main, cards);
     if (googleNews) {
-      addToggleToGoogleNews(googleNews);
-      main.appendChild(googleNews);
+      makeCollapsible(googleNews, 'tb-google-news-section-toggle', '.tb-google-news-body');
+      appendIfNeeded(main, googleNews);
     }
-
     if (trendRadar) {
-      ensureTrendRadarToggle(trendRadar);
-      main.appendChild(trendRadar);
+      makeCollapsible(trendRadar, 'tb-trend-toggle', '.tb-trend-body');
+      appendIfNeeded(main, trendRadar);
     }
-
     if (googleTrends) {
-      ensureGoogleTrendsToggle(googleTrends);
-      main.appendChild(googleTrends);
+      makeCollapsible(googleTrends, 'tb-google-trends-toggle', '#tb-trend-status,#tb-trend-grid,#tb-trend-window-tabs');
+      appendIfNeeded(main, googleTrends);
     }
 
-    document.body.dataset[ORDER_APPLIED] = '1';
+    lastSignature = signature(main, sections);
+
+    if (observer) observer.observe(document.body, { childList: true, subtree: true });
     return true;
+  }
+
+  function scheduleOrder() {
+    if (scheduled) return;
+    scheduled = true;
+    window.requestAnimationFrame(() => {
+      scheduled = false;
+      orderSections();
+    });
   }
 
   function start() {
     orderSections();
-    const observer = new MutationObserver(() => orderSections());
+    observer = new MutationObserver(scheduleOrder);
     observer.observe(document.body, { childList: true, subtree: true });
-    setInterval(orderSections, 1200);
+    setTimeout(orderSections, 800);
+    setTimeout(orderSections, 2500);
   }
 
   if (document.readyState === 'loading') {
