@@ -19,6 +19,15 @@
     return section;
   }
 
+  function loadFlowGuard() {
+    if (document.getElementById('tb-news-card-flow-guard-loader')) return;
+    const script = document.createElement('script');
+    script.id = 'tb-news-card-flow-guard-loader';
+    script.src = '/news-card-flow-guard.js?v=20260524-1';
+    script.defer = true;
+    document.head.appendChild(script);
+  }
+
   function ensureStyle() {
     if (qs('#tb-section-order-style')) return;
     const style = document.createElement('style');
@@ -115,6 +124,7 @@
 
   function orderSections() {
     ensureStyle();
+    loadFlowGuard();
     const main = findMain();
     if (!main) return false;
 
