@@ -1,6 +1,6 @@
 (() => {
   const STORAGE_KEY = 'tb_google_news_open';
-  const REFRESH_MS = 30 * 60 * 1000;
+  const REFRESH_MS = 60 * 60 * 1000;
   const MAX_LAYOUT_TRIES = 80;
 
   const state = {
@@ -46,9 +46,56 @@
     }).format(d);
   }
 
+  function ageHours(value) {
+    const d = new Date(value || 0);
+    if (Number.isNaN(d.getTime())) return 9999;
+    return Math.max(0, (Date.now() - d.getTime()) / 3600000);
+  }
+
   function fallbackImage(item = {}) {
     const source = encodeURIComponent(cleanText(item.source_name || 'Google News').slice(0, 28));
     return `https://placehold.co/640x360/f8fafc/334155?text=${source}`;
+  }
+
+  function guidanceFor(item = {}) {
+    const text = `${item.title || ''} ${item.summary || ''} ${item.source_name || ''}`.toLowerCase();
+    const hours = ageHours(item.published_at);
+    let score = 0;
+    const reasons = [];
+
+    if (hours <= 2) { score += 30; reasons.push('çok yeni'); }
+    else if (hours <= 6) { score += 24; reasons.push('güncel'); }
+    else if (hours <= 12) { score += 16; reasons.push('aynı gün içinde'); }
+    else if (hours <= 24) { score += 8; reasons.push('son 24 saat içinde'); }
+    else { score -= 18; reasons.push('tazelik zayıf'); }
+
+    if (/yapay\s*zeka|openai|chatgpt|gemini|claude|ai\b|android|iphone|ios|samsung|galaxy|google|apple|windows|nvidia|amd|intel|snapdragon|xiaomi|huawei|whatsapp|youtube|chrome/.test(text)) {
+      score += 32;
+      reasons.push('Teknoblog ana odağıyla uyumlu');
+    }
+
+    if (/güncelleme|update|beta|özellik|feature|sızıntı|leak|iddia|rapor|report|fiyat|indirim|kampanya|yasak|güvenlik|açık|hack|veri/.test(text)) {
+      score += 18;
+      reasons.push('haberleştirilebilir açı var');
+    }
+
+    if (/türkiye|tr\b|tl|turkcell|vodafone|türk telekom|bṫk|btk|rekabet kurumu/.test(text)) {
+      score += 16;
+      reasons.push('Türkiye ilgisi var');
+    }
+
+    if (/maç|macı|maçı|futbol|voleybol|basketbol|hangi kanalda|kupa/.test(text)) {
+      score -= 60;
+      reasons.push('teknoloji dışı sinyal');
+    }
+
+    if (score >= 56) return { label: 'Mutlaka gir', tone: 'hot', score, reason: reasons.slice(0, 3).join(', ') };
+    if (score >= 32) return { label: 'Takip et', tone: 'watch', score, reason: reasons.slice(0, 3).join(', ') };
+    return { label: 'Düşük öncelik', tone: 'low', score, reason: reasons.slice(0, 3).join(', ') || 'editoryal sinyal zayıf' };
+  }
+
+  function sortItems(items = []) {
+    return [...items].sort((a, b) => guidanceFor(b).score - guidanceFor(a).score || new Date(b.published_at || 0) - new Date(a.published_at || 0));
   }
 
   function ensureStyle() {
@@ -78,6 +125,11 @@
       #tb-google-news-wrap .tb-google-status{font-size:12px;color:#64748b;margin-top:10px}
       #tb-google-news-wrap .tb-google-status[data-error='1']{color:#b91c1c}
       #tb-google-news-wrap .tb-google-empty{border:1px dashed #cbd5e1;border-radius:14px;color:#64748b;font-size:13px;margin-top:14px;padding:14px;text-align:center}
+      #tb-google-news-wrap .tb-guidance{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:6px 9px;font-size:11px;font-weight:800;margin-bottom:8px}
+      #tb-google-news-wrap .tb-guidance.hot{background:#fff1eb;color:#c2410c;border:1px solid #fdba74}
+      #tb-google-news-wrap .tb-guidance.watch{background:#eff6ff;color:#1d4ed8;border:1px solid #93c5fd}
+      #tb-google-news-wrap .tb-guidance.low{background:#f8fafc;color:#64748b;border:1px solid #cbd5e1}
+      #tb-google-news-wrap .tb-guidance-reason{font-size:11px;line-height:1.45;color:#64748b;margin-bottom:8px}
     `;
     document.head.appendChild(style);
   }
@@ -91,9 +143,10 @@
   }
 
   function statusText() {
-    if (state.loading) return 'Google News verileri yenileniyor...';
+    if (state.loading) return 'Google News Bilim ve Teknoloji akışı kontrol ediliyor...';
     if (state.error) return state.error;
-    return `Son yenileme: ${esc(fmtDate(state.refreshedAt) || 'Henüz yüklenmedi')}`;
+    const must = state.items.filter((item) => guidanceFor(item).tone === 'hot').length;
+    return `Saatlik kontrol: ${esc(fmtDate(state.refreshedAt) || 'Henüz yüklenmedi')} · Mutlaka girilecek konu: ${must}`;
   }
 
   function render() {
@@ -111,13 +164,16 @@
 
     wrap.setAttribute('data-open', state.open ? '1' : '0');
 
-    const cards = state.items.map((item, index) => {
+    const cards = sortItems(state.items).map((item, index) => {
       const image = cleanText(item.image_url || '') || fallbackImage(item);
+      const guidance = guidanceFor(item);
       return `
-        <article>
+        <article data-guidance="${esc(guidance.tone)}">
           <img class="tb-google-image" src="${esc(image)}" alt="${esc(item.title || 'Google News teknoloji haberi')}" loading="lazy" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='${esc(fallbackImage(item))}'">
           <div class="tb-google-card-inner">
             <input type="checkbox" data-select-url="${esc(item.url)}" style="position:absolute;right:12px;top:12px;z-index:2">
+            <div class="tb-guidance ${esc(guidance.tone)}">${esc(guidance.label)} · ${esc(guidance.score)}</div>
+            <div class="tb-guidance-reason">${esc(guidance.reason)}</div>
             <h3>${esc(item.title)}</h3>
             <div class="tb-google-meta">
               <div>${esc(item.source_name || 'Google News')}</div>
@@ -173,7 +229,7 @@
     try {
       const url = new URL('/api/trend-overview', window.location.origin);
       url.searchParams.set('google_news', '1');
-      url.searchParams.set('limit', '24');
+      url.searchParams.set('limit', '40');
       url.searchParams.set('_', Date.now().toString());
 
       const res = await fetch(url.toString(), {
