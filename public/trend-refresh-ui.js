@@ -43,18 +43,16 @@
   }
 
   async function runRefreshWithToken(button, token) {
-    setButtonStatus(button, 'Trendler çekiliyor...', true);
-    const ingest = await fetchJson('/api/trends-ingest', token);
+    setButtonStatus(button, 'Google Trends eşzamanlanıyor...', true);
+    const sync = await fetchJson('/api/trends-sync', token);
 
-    setButtonStatus(button, 'Kümeler oluşturuluyor...', true);
-    const clusters = await fetchJson('/api/trend-clusters', token);
-
-    const inserted = Number(ingest?.inserted || ingest?.count || 0);
-    const clusterCount = Number(clusters?.clusters || clusters?.count || clusters?.inserted || 0);
-    const feeds = Number(ingest?.feeds || 0);
+    const inserted = Number(sync?.ingest?.inserted || 0);
+    const deleted = Number(sync?.cleanup?.deleted_signals || 0);
+    const archived = Number(sync?.cleanup?.archived_clusters || 0);
+    const clusterCount = Number(sync?.clusters?.clusters || 0);
 
     setButtonStatus(button, `Yenilendi, ${inserted} sinyal`, true);
-    button.title = `Feed: ${feeds || '-'} | Küme: ${clusterCount || '-'}`;
+    button.title = `Temizlenen: ${deleted} | Arşivlenen: ${archived} | Küme: ${clusterCount}`;
 
     setTimeout(() => {
       window.location.reload();
@@ -80,7 +78,7 @@
         }
       }
 
-      console.error('Google Trends refresh error:', error);
+      console.error('Google Trends sync error:', error);
       setButtonStatus(button, 'Yenileme başarısız', false);
       button.title = error?.message || 'Bilinmeyen hata';
       setTimeout(() => setButtonStatus(button, original, false), 3200);
@@ -104,7 +102,7 @@
     const button = document.createElement('button');
     button.id = 'tb-manual-refresh';
     button.type = 'button';
-    button.textContent = 'Google Trends verilerini yenile';
+    button.textContent = 'Google Trends verilerini eşzamanla';
     button.style.display = 'inline-flex';
     button.style.alignItems = 'center';
     button.style.justifyContent = 'center';
