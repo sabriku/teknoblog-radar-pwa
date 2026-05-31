@@ -153,7 +153,8 @@
     state.error = '';
     render();
     try {
-      const url = new URL('/api/opportunity-radar', window.location.origin);
+      const url = new URL('/api/recommendations', window.location.origin);
+      url.searchParams.set('opportunity', '1');
       url.searchParams.set('limit', '36');
       url.searchParams.set('_', Date.now().toString());
       const response = await fetch(url.toString(), { cache: 'no-store', headers: { accept: 'application/json' } });
