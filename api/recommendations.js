@@ -1,4 +1,5 @@
 import { getSupabaseAdmin, json } from './_lib.js';
+import opportunityRadar from './opportunity-radar.js';
 
 function scoreValue(item, key) {
   const value = Number(item?.[key]);
@@ -126,6 +127,10 @@ function compareItems(a, b, sortKey) {
 
 export default async function handler(req, res) {
   try {
+    if (String(req.query?.opportunity || '') === '1') {
+      return await opportunityRadar(req, res);
+    }
+
     const supabase = getSupabaseAdmin();
     const sort = req.query?.sort || 'published_at';
 
