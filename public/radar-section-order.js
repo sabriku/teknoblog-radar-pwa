@@ -19,13 +19,18 @@
     return section;
   }
 
-  function loadFlowGuard() {
-    if (document.getElementById('tb-news-card-flow-guard-loader')) return;
+  function loadScriptOnce(id, src) {
+    if (document.getElementById(id)) return;
     const script = document.createElement('script');
-    script.id = 'tb-news-card-flow-guard-loader';
-    script.src = '/news-card-flow-guard.js?v=20260524-1';
+    script.id = id;
+    script.src = src;
     script.defer = true;
     document.head.appendChild(script);
+  }
+
+  function loadFlowGuard() {
+    loadScriptOnce('tb-news-card-flow-guard-loader', '/news-card-flow-guard.js?v=20260524-1');
+    loadScriptOnce('tb-opportunity-radar-loader', '/opportunity-radar-panel.js?v=20260524-1');
   }
 
   function ensureStyle() {
@@ -42,6 +47,7 @@
       #tb-google-trends-radar-section[data-open='0'] #tb-trend-window-tabs{display:none!important}
       #tb-trend-radar-wrap[data-open='0'] .tb-trend-body{display:none!important}
       #tb-google-news-wrap[data-open='0'] .tb-google-news-body{display:none!important}
+      #tb-opportunity-radar-wrap[data-open='0'] .tb-opportunity-body{display:none!important}
     `;
     document.head.appendChild(style);
   }
@@ -129,10 +135,11 @@
     if (!main) return false;
 
     const cards = ensureCardAnchor(main);
+    const opportunity = qs('#tb-opportunity-radar-wrap');
     const googleNews = qs('#tb-google-news-wrap');
     const trendRadar = qs('#tb-trend-radar-wrap');
     const googleTrends = findGoogleTrendsSection();
-    const sections = [cards, googleNews, trendRadar, googleTrends].filter(Boolean);
+    const sections = [cards, opportunity, googleNews, trendRadar, googleTrends].filter(Boolean);
 
     const currentSignature = signature(main, sections);
     if (currentSignature === lastSignature && sections.length >= 2) return true;
@@ -140,6 +147,10 @@
     if (observer) observer.disconnect();
 
     if (cards) appendIfNeeded(main, cards);
+    if (opportunity) {
+      makeCollapsible(opportunity, 'tb-opportunity-section-toggle', '.tb-opportunity-body');
+      appendIfNeeded(main, opportunity);
+    }
     if (googleNews) {
       makeCollapsible(googleNews, 'tb-google-news-section-toggle', '.tb-google-news-body');
       appendIfNeeded(main, googleNews);
