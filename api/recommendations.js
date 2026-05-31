@@ -69,6 +69,10 @@ function ageHours(item) {
   return Math.max(0, (Date.now() - published) / 3600000);
 }
 
+function isLast24Hours(item) {
+  return ageHours(item) <= 24;
+}
+
 function freshnessScore(item) {
   const hours = ageHours(item);
   if (hours <= 2) return 34;
@@ -146,6 +150,7 @@ export default async function handler(req, res) {
     ];
 
     const sortKey = allowedSorts.includes(sort) ? sort : 'published_at';
+    const discoverOnlyFresh = sortKey === 'discover_score';
 
     const [{ data: items, error: itemsError }, { data: sources, error: sourcesError }, { data: rawItems, error: rawItemsError }] = await Promise.all([
       supabase
@@ -178,11 +183,16 @@ export default async function handler(req, res) {
         published_at: item.published_at || raw?.published_at || null,
         image_url: item.image_url || raw?.image_url || null
       };
-    }).filter((item) => !isHardNoise(item));
+    })
+      .filter((item) => !isHardNoise(item))
+      .filter((item) => !discoverOnlyFresh || isLast24Hours(item));
 
     enriched.sort((a, b) => compareItems(a, b, sortKey));
 
-    return json(res, 200, { items: enriched.slice(0, 500) });
+    return json(res, 200, {
+      items: enriched.slice(0, 500),
+      filters: discoverOnlyFresh ? { sort: sortKey, max_age_hours: 24 } : { sort: sortKey }
+    });
   } catch (error) {
     return json(res, 500, { error: error?.message || String(error) });
   }
