@@ -7,7 +7,7 @@ const STRONG_TECH_INCLUDE_PATTERNS = [
   /\byapay zeka\b/i, /\bartificial intelligence\b/i, /\bai\b/i, /\bgemini\b/i,
   /\bopenai\b/i, /\bchatgpt\b/i, /\bcodex\b/i, /\bclaude\b/i,
   /\bandroid\b/i, /\bone ui\b/i, /\bios\b/i, /\biphone\b/i, /\bipad\b/i,
-  /\bmacbook\b/i, /\bmac\b/i, /\bwindows\b/i, /\bchromebook\b/i,
+  /\bmacbook\b/i, /\bimac\b/i, /\bmacos\b/i, /\bmac mini\b/i, /\bmac studio\b/i, /\bapple mac\b/i, /\bm\d\s*mac\b/i, /\bwindows\b/i, /\bchromebook\b/i,
   /\bpixel\b/i, /\bgalaxy\b/i, /\bsamsung\b/i, /\bgoogle\b/i, /\bapple\b/i,
   /\bhuawei\b/i, /\bxiaomi\b/i, /\boppo\b/i, /\bvivo\b/i, /\bhonor\b/i,
   /\bmeta\b/i, /\byoutube\b/i, /\bchrome\b/i, /\bwhatsapp\b/i, /\btelegram\b/i,
@@ -28,10 +28,10 @@ const WEAK_TECH_INCLUDE_PATTERNS = [
 
 const TECH_EXCLUDE_PATTERNS = [
   /\bhull city\b/i, /\bchampionship\b/i, /\bpremier league\b/i, /\buefa\b/i,
-  /\buel\b/i, /\bfutbol\b/i, /\bfootball\b/i, /\bmaç\b/i, /\bmacı\b/i, /\bmaçı\b/i,
-  /\bhangi kanalda\b/i, /\bkupa\b/i, /\bvoleybol\b/i, /\bspor\b/i,
-  /\btransfer\b/i, /\bteknik direktör\b/i, /\bfenerbahçe\b/i, /\bgalatasaray\b/i,
-  /\bbeşiktaş\b/i, /\btrabzonspor\b/i, /\bbasketbol\b/i, /\bfinal\b/i,
+  /\buel\b/i, /\bfutbol\b/i, /\bfootball\b/i, /\bmaç\b/i, /\bmac\b/i, /\bmacı\b/i, /\bmaci\b/i, /\bmaçı\b/i,
+  /\bhangi kanalda\b/i, /\bne zaman\b/i, /\bsaat kaçta\b/i, /\bsaat kacta\b/i, /\bcanlı izle\b/i, /\bcanli izle\b/i, /\bcanlı skor\b/i, /\bcanli skor\b/i, /\bkupa\b/i, /\bvoleybol\b/i, /\bspor\b/i,
+  /\btransfer\b/i, /\bteknik direktör\b/i, /\bfenerbahçe\b/i, /\bfenerbahce\b/i, /\bgalatasaray\b/i,
+  /\bbeşiktaş\b/i, /\bbesiktas\b/i, /\btrabzonspor\b/i, /\bbasketbol\b/i, /\bfinal\b/i,
   /\blive\b/i, /\bdeprem\b/i, /\bhava durumu\b/i, /\bmeteoroloji\b/i,
   /\bkonser\b/i, /\bbelediye\b/i, /\bsiyaset\b/i, /\bparti\b/i, /\bseçim\b/i,
   /\bemekli\b/i, /\bmaaş\b/i, /\baltın\b/i, /\bdolar\b/i, /\bfaiz\b/i,
@@ -59,7 +59,7 @@ function hasWeakTech(text = '') { return WEAK_TECH_INCLUDE_PATTERNS.some((p) => 
 function looksExcluded(text = '') { return TECH_EXCLUDE_PATTERNS.some((p) => p.test(String(text || ''))); }
 function isShortNoiseTopic(topic = '') { const n = normalizeTopic(topic); return SHORT_NOISE_TOPICS.has(n) || n.length < 3; }
 function hasTurkeyTechSignal(cluster = {}) { const sourceText = [cluster.country_code, cluster.market_scope, ...(Array.isArray(cluster.signal_sources) ? cluster.signal_sources : []), ...(Array.isArray(cluster.linked_news) ? cluster.linked_news.map((i) => i.source_name) : []), ...(Array.isArray(cluster.summary?.sample_topics) ? cluster.summary.sample_topics : [])].filter(Boolean).join(' \n '); return Number(cluster.turkey_interest_score || 0) >= 50 || /\bTR\b/i.test(sourceText) || /turkey|türkiye/i.test(sourceText) || TURKEY_TECH_SOURCE_PATTERNS.some((p) => p.test(sourceText)); }
-function filterLinkedNews(cluster = {}) { return (Array.isArray(cluster.linked_news) ? cluster.linked_news : []).filter((item) => { const text = [item.candidate_title, item.source_name, item.candidate_url].filter(Boolean).join(' \n '); if (looksExcluded(text)) return false; return hasStrongTech(text) || hasWeakTech(text); }).slice(0, 5); }
+function filterLinkedNews(cluster = {}) { return (Array.isArray(cluster.linked_news) ? cluster.linked_news : []).filter((item) => { const text = [item.candidate_title, item.source_name, item.candidate_url].filter(Boolean).join(' \n '); if (looksExcluded(text) && !hasStrongTech(text)) return false; return hasStrongTech(text) || hasWeakTech(text); }).slice(0, 5); }
 function isTechCluster(cluster = {}) { const linkedNews = filterLinkedNews(cluster); const signalTopics = Array.isArray(cluster.signal_topics) ? cluster.signal_topics : []; if (signalTopics.length && signalTopics.every(isShortNoiseTopic)) return false; const text = [cluster.cluster_name, cluster.summary?.display_name, ...(Array.isArray(cluster.summary?.sample_topics) ? cluster.summary.sample_topics : []), ...signalTopics, ...linkedNews.map((item) => item.candidate_title)].filter(Boolean).join(' \n '); if (!text.trim()) return false; if (looksExcluded(text) && !hasStrongTech(text)) return false; if (!hasTurkeyTechSignal({ ...cluster, linked_news: linkedNews })) return false; if (hasStrongTech(text)) return true; return hasWeakTech(text) && linkedNews.length >= 1; }
 function decorateCluster(cluster = {}, signalGroup = {}, selectedWindow = '24h') { const signals = Array.isArray(signalGroup.signals) ? signalGroup.signals : []; const sparkline = buildSparkline(signals, selectedWindow); const latestSignalAt = signals.length ? signals.reduce((latest, item) => { const current = new Date(item.detected_at || 0).toISOString(); return !latest || current > latest ? current : latest; }, '') : null; return { ...cluster, selected_window: selectedWindow, window_signal_count: signals.length, sparkline, latest_signal_at: latestSignalAt, signal_sources: [...new Set(signals.map((item) => item.source_name).filter(Boolean))], signal_topics: [...new Set(signals.map((item) => item.topic_text).filter(Boolean))], linked_news: filterLinkedNews(cluster) }; }
 
@@ -81,7 +81,7 @@ export default async function handler(req, res) {
     const { data: signals, error: signalsError } = await supabase.from('trend_signals').select('normalized_topic,topic_text,detected_at,time_window,market_scope,country_code,source_name,signal_score').eq('time_window', selectedWindow).gte('detected_at', sinceIso).order('detected_at', { ascending: false }).limit(2000);
     if (signalsError) return json(res, 500, { error: signalsError.message });
     const signalGroups = new Map();
-    for (const signal of signals || []) { const normalizedTopic = normalizeTopic(signal.normalized_topic || signal.topic_text || ''); if (!normalizedTopic || isShortNoiseTopic(normalizedTopic)) continue; const clusterKey = hashValue(normalizedTopic); if (!signalGroups.has(clusterKey)) signalGroups.set(clusterKey, { cluster_key: clusterKey, normalized_topic: normalizedTopic, signals: [] }); signalGroups.get(clusterKey).signals.push(signal); }
+    for (const signal of signals || []) { const normalizedTopic = normalizeTopic(signal.normalized_topic || signal.topic_text || ''); if (!normalizedTopic || isShortNoiseTopic(normalizedTopic) || (looksExcluded(normalizedTopic) && !hasStrongTech(normalizedTopic))) continue; const clusterKey = hashValue(normalizedTopic); if (!signalGroups.has(clusterKey)) signalGroups.set(clusterKey, { cluster_key: clusterKey, normalized_topic: normalizedTopic, signals: [] }); signalGroups.get(clusterKey).signals.push(signal); }
     const clusterKeys = [...signalGroups.keys()];
     if (!clusterKeys.length) return json(res, 200, { items: [], window: selectedWindow, available_windows: ['4h', '24h', '48h', '168h'] });
     const { data: clusters, error: clustersError } = await supabase.from('trend_clusters').select('*').in('cluster_key', clusterKeys).neq('status', 'archived').limit(150);
