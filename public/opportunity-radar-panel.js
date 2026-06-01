@@ -5,6 +5,7 @@
     open: localStorage.getItem(STORAGE_KEY) === '1',
     loading: false,
     items: [],
+    stores: [],
     error: '',
     refreshedAt: null
   };
@@ -61,6 +62,12 @@
       #tb-opportunity-radar-wrap .tb-opportunity-refresh:disabled{opacity:.7;cursor:wait}
       #tb-opportunity-radar-wrap .tb-opportunity-status{font-size:12px;color:#64748b;margin-top:10px}
       #tb-opportunity-radar-wrap .tb-opportunity-status[data-error='1']{color:#b91c1c}
+      #tb-opportunity-radar-wrap .tb-store-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-top:12px}
+      #tb-opportunity-radar-wrap .tb-store-card{border:1px solid #ffedd5;border-radius:14px;background:#fffaf5;padding:10px}
+      #tb-opportunity-radar-wrap .tb-store-card strong{display:block;font-size:12px;color:#111827;margin-bottom:4px}
+      #tb-opportunity-radar-wrap .tb-store-card span{display:block;font-size:11px;color:#64748b;line-height:1.4}
+      #tb-opportunity-radar-wrap .tb-store-card[data-status='Ürün bulundu']{background:#f0fdf4;border-color:#bbf7d0}
+      #tb-opportunity-radar-wrap .tb-store-card[data-status='Erişim sorunu']{background:#fef2f2;border-color:#fecaca}
       #tb-opportunity-radar-wrap .tb-opportunity-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-top:16px}
       #tb-opportunity-radar-wrap article{border:1px solid #ffedd5;border-radius:16px;background:#fff;box-shadow:0 4px 12px rgba(15,23,42,.04);overflow:hidden}
       #tb-opportunity-radar-wrap .tb-opportunity-image{width:100%;aspect-ratio:16/9;background:#f8fafc;object-fit:cover;display:block;border-bottom:1px solid #ffedd5}
@@ -84,7 +91,19 @@
     if (state.loading) return 'E-ticaret mağazalarında teknoloji fırsatları taranıyor...';
     if (state.error) return state.error;
     const hot = state.items.filter((item) => Number(item.score || 0) >= 72).length;
-    return `Son kontrol: ${fmtDate(state.refreshedAt) || 'Henüz yüklenmedi'} · Haberleştirilebilir fırsat: ${hot}`;
+    const foundStores = state.stores.filter((item) => Number(item.product_count || 0) > 0).length;
+    return `Son kontrol: ${fmtDate(state.refreshedAt) || 'Henüz yüklenmedi'} · Haberleştirilebilir fırsat: ${hot} · Ürün bulunan mağaza: ${foundStores}/${state.stores.length || '-'}`;
+  }
+
+  function renderStores() {
+    if (!state.stores.length) return '';
+    return `<div class="tb-store-grid">${state.stores.map((store) => `
+      <div class="tb-store-card" data-status="${esc(store.status)}">
+        <strong>${esc(store.store)}</strong>
+        <span>${esc(store.status)} · ${Number(store.product_count || 0)} ürün</span>
+        <span>${esc(store.note || '')}</span>
+      </div>
+    `).join('')}</div>`;
   }
 
   function render() {
@@ -134,7 +153,8 @@
       </div>
       <div class="tb-opportunity-body">
         <div class="tb-opportunity-status" data-error="${state.error ? '1' : '0'}">${esc(statusText())}</div>
-        ${cards ? `<div class="tb-opportunity-grid">${cards}</div>` : '<div class="tb-opportunity-empty">Henüz gösterilecek teknoloji fırsatı bulunamadı.</div>'}
+        ${renderStores()}
+        ${cards ? `<div class="tb-opportunity-grid">${cards}</div>` : '<div class="tb-opportunity-empty">Henüz gösterilecek teknoloji fırsatı bulunamadı. Mağaza durum kartları hangi kaynaklarda parse sorunu olduğunu gösterir.</div>'}
       </div>
     `;
 
@@ -161,6 +181,7 @@
       const data = await response.json().catch(() => ({}));
       if (!response.ok || data?.error) throw new Error(data?.error || `HTTP ${response.status}`);
       state.items = Array.isArray(data.items) ? data.items : [];
+      state.stores = Array.isArray(data.store_summary) ? data.store_summary : [];
       state.refreshedAt = data.refreshed_at || new Date().toISOString();
     } catch (error) {
       console.error('Opportunity radar error:', error);
