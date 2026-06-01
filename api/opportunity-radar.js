@@ -231,42 +231,86 @@ async function fetchSource(source = {}) {
         cache: 'no-store',
         signal: controller.signal,
         headers: {
-          'user-agent': 'Mozilla/5.0 TeknoblogRadarBot/1.0 (+https://www.teknoblog.com/)',
+          'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36 TeknoblogRadarBot/1.0',
           'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
           'accept-language': 'tr-TR,tr;q=0.9,en-US;q=0.7,en;q=0.5'
         }
       });
       clearTimeout(timer);
       if (!response.ok) {
-        debug.push({ source: source.name, url, status: response.status });
+        debug.push({ source: source.name, url, status: response.status, count: 0, note: `HTTP ${response.status}` });
         continue;
       }
       const html = await response.text();
       const parsed = parseProducts(html, source);
       items.push(...parsed);
-      debug.push({ source: source.name, url, status: response.status, count: parsed.length });
+      debug.push({ source: source.name, url, status: response.status, count: parsed.length, html_length: html.length, note: parsed.length ? 'Ürün çıkarıldı' : 'HTML alındı, ürün/fiyat parse edilemedi' });
     } catch (error) {
-      debug.push({ source: source.name, url, error: error?.message || String(error) });
+      debug.push({ source: source.name, url, count: 0, error: error?.message || String(error), note: 'Erişim veya zaman aşımı hatası' });
     }
   }
-  return { items, debug };
+  return { source: source.name, items, debug };
+}
+
+function buildStoreSummary(results = []) {
+  return SOURCES.map((source) => {
+    const result = results.find((item) => item.source === source.name) || { items: [], debug: [] };
+    const checked = result.debug.length;
+    const okResponses = result.debug.filter((item) => Number(item.status || 0) >= 200 && Number(item.status || 0) < 400).length;
+    const errorCount = result.debug.filter((item) => item.error || (item.status && (item.status < 200 || item.status >= 400))).length;
+    const count = result.items.length;
+    let status = 'Ürün çıkarılamadı';
+    if (count > 0) status = 'Ürün bulundu';
+    else if (okResponses === 0 && errorCount > 0) status = 'Erişim sorunu';
+    return {
+      store: source.name,
+      checked_urls: checked,
+      ok_responses: okResponses,
+      product_count: count,
+      error_count: errorCount,
+      status,
+      note: count > 0 ? `${count} teknoloji fırsatı bulundu` : 'Sayfa kontrol edildi, statik HTML içinde ürün/fiyat yakalanamadı'
+    };
+  });
+}
+
+function diversify(items = [], limit = 36) {
+  const byStore = new Map();
+  for (const item of items) {
+    if (!byStore.has(item.store)) byStore.set(item.store, []);
+    byStore.get(item.store).push(item);
+  }
+  for (const list of byStore.values()) list.sort((a, b) => b.score - a.score || b.discount_rate - a.discount_rate || b.sale_price - a.sale_price);
+  const picked = [];
+  for (const source of SOURCES) {
+    const first = byStore.get(source.name)?.shift();
+    if (first) picked.push(first);
+  }
+  const rest = [...byStore.values()].flat().sort((a, b) => b.score - a.score || b.discount_rate - a.discount_rate || b.sale_price - a.sale_price);
+  for (const item of rest) {
+    if (picked.length >= limit) break;
+    picked.push(item);
+  }
+  return picked.slice(0, limit);
 }
 
 export default async function handler(req, res) {
   try {
     const limit = Math.min(60, Math.max(6, Number(req.query?.limit || 36)));
     const results = await Promise.all(SOURCES.map(fetchSource));
-    const items = results.flatMap((result) => result.items)
-      .sort((a, b) => b.score - a.score || b.discount_rate - a.discount_rate || b.sale_price - a.sale_price)
-      .slice(0, limit);
+    const allItems = results.flatMap((result) => result.items);
+    const items = diversify(allItems, limit);
+    const storeSummary = buildStoreSummary(results);
 
     return json(res, 200, {
       items,
       count: items.length,
+      store_summary: storeSummary,
+      checked_stores: SOURCES.map((source) => source.name),
       refreshed_at: new Date().toISOString(),
       debug: results.flatMap((result) => result.debug)
     });
   } catch (error) {
-    return json(res, 500, { error: error?.message || String(error), items: [] });
+    return json(res, 500, { error: error?.message || String(error), items: [], store_summary: buildStoreSummary([]) });
   }
 }
