@@ -50,6 +50,25 @@ const TECH_PATTERNS = [
   /watch|wear\s*os|akıllı\s*saat|app\s*store|play\s*store|whatsapp|instagram|youtube|chrome/i
 ];
 
+const DISCOVER_TOPIC_PATTERNS = [
+  /yapay\s*zeka|openai|chatgpt|gemini|claude|copilot/i,
+  /google|android|chrome|youtube|whatsapp|instagram|meta/i,
+  /apple|iphone|ios|ipad|macbook|vision\s*pro/i,
+  /samsung|galaxy|one\s*ui|xiaomi|huawei|honor|oppo|vivo|pixel/i,
+  /windows|microsoft|nvidia|amd|intel|snapdragon|mediatek/i,
+  /güvenlik|siber|veri\s*sızıntısı|hack|açık/i,
+  /güncelleme|beta|özellik|sızıntı|iddia|rapor|tanıttı|duyurdu|fiyat|indirim/i
+];
+
+const TRUSTED_SOURCE_PATTERNS = [
+  /teknoblog/i,
+  /the verge|verge/i,
+  /engadget/i,
+  /techcrunch/i,
+  /9to5|macrumors|android authority|windows central/i,
+  /shiftdelete|donanımhaber|webtekno|webrazzi|log\.com\.tr|chip/i
+];
+
 function isHardNoise(item = {}) {
   const text = textOf(item);
   if (!text.trim()) return false;
@@ -69,8 +88,8 @@ function ageHours(item) {
   return Math.max(0, (Date.now() - published) / 3600000);
 }
 
-function isLast24Hours(item) {
-  return ageHours(item) <= 24;
+function isFreshForDiscover(item, maxHours = 36) {
+  return ageHours(item) <= maxHours;
 }
 
 function freshnessScore(item) {
@@ -79,20 +98,48 @@ function freshnessScore(item) {
   if (hours <= 6) return 30;
   if (hours <= 12) return 25;
   if (hours <= 24) return 20;
-  if (hours <= 36) return 14;
-  if (hours <= 48) return 9;
-  if (hours <= 72) return 2;
-  if (hours <= 96) return -10;
-  if (hours <= 168) return -26;
-  if (hours <= 336) return -46;
-  return -70;
+  if (hours <= 36) return 6;
+  if (hours <= 48) return -8;
+  if (hours <= 72) return -24;
+  if (hours <= 168) return -58;
+  return -100;
 }
 
 function sourceAdjustment(item) {
   let adjustment = 0;
-  if (isTrendFeedItem(item)) adjustment -= 35;
-  if (/teknoblog/i.test(textOf(item))) adjustment += 6;
+  if (isTrendFeedItem(item)) adjustment -= 45;
+  if (TRUSTED_SOURCE_PATTERNS.some((pattern) => pattern.test(textOf(item)))) adjustment += 8;
   return adjustment;
+}
+
+function titleQualityScore(item = {}) {
+  const title = String(item.title || '').trim();
+  const text = textOf(item);
+  let value = 0;
+  if (title.length >= 45 && title.length <= 115) value += 10;
+  if (DISCOVER_TOPIC_PATTERNS.some((pattern) => pattern.test(text))) value += 24;
+  if (/nasıl|neden|hangi|ne zaman|liste|alacak|geliyor|değişiyor|artıyor|düşüyor|başladı|yayınlandı|sundu|tanıttı|duyurdu/i.test(title)) value += 10;
+  if (/son dakika|canlı|maç|hangi kanalda|kimdir|burç|deprem/i.test(text)) value -= 35;
+  if (item.image_url || item.image || item.thumbnail) value += 6;
+  if (item.summary || item.excerpt || item.description) value += 5;
+  return value;
+}
+
+function computedDiscoverScore(item = {}) {
+  const base = scoreValue(item, 'discover_score');
+  const total = scoreValue(item, 'total_score');
+  const traffic = scoreValue(item, 'traffic_score');
+  const editorial = scoreValue(item, 'editorial_score');
+  const score = Math.round(
+    (base * 0.38) +
+    (total * 0.18) +
+    (traffic * 0.14) +
+    (editorial * 0.12) +
+    titleQualityScore(item) +
+    freshnessScore(item) +
+    sourceAdjustment(item)
+  );
+  return Math.max(0, Math.min(100, Math.max(base, score)));
 }
 
 function adjustedScore(item, sortKey) {
@@ -100,10 +147,14 @@ function adjustedScore(item, sortKey) {
     return timeValue(item?.[sortKey]);
   }
 
+  if (sortKey === 'discover_score') {
+    return computedDiscoverScore(item);
+  }
+
   const raw = scoreValue(item, sortKey);
   const total = scoreValue(item, 'total_score');
   const editorial = scoreValue(item, 'editorial_score');
-  const discover = scoreValue(item, 'discover_score');
+  const discover = computedDiscoverScore(item);
 
   return Math.round(
     (raw * 0.55) +
@@ -129,6 +180,16 @@ function compareItems(a, b, sortKey) {
   return timeValue(b?.updated_at) - timeValue(a?.updated_at);
 }
 
+function withDiscoverScore(item = {}) {
+  const radarDiscoverScore = computedDiscoverScore(item);
+  return {
+    ...item,
+    original_discover_score: scoreValue(item, 'discover_score'),
+    radar_discover_score: radarDiscoverScore,
+    discover_score: radarDiscoverScore
+  };
+}
+
 export default async function handler(req, res) {
   try {
     if (String(req.query?.opportunity || '') === '1') {
@@ -150,14 +211,14 @@ export default async function handler(req, res) {
     ];
 
     const sortKey = allowedSorts.includes(sort) ? sort : 'published_at';
-    const discoverOnlyFresh = sortKey === 'discover_score';
+    const discoverMode = sortKey === 'discover_score';
 
     const [{ data: items, error: itemsError }, { data: sources, error: sourcesError }, { data: rawItems, error: rawItemsError }] = await Promise.all([
       supabase
         .from('topic_candidates')
         .select('*')
         .eq('status', 'active')
-        .limit(1000),
+        .limit(1500),
       supabase
         .from('sources')
         .select('id,name'),
@@ -165,7 +226,7 @@ export default async function handler(req, res) {
         .from('raw_feed_items')
         .select('id,published_at,image_url,source_id')
         .order('created_at', { ascending: false })
-        .limit(10000)
+        .limit(15000)
     ]);
 
     if (itemsError) return json(res, 500, { error: itemsError.message });
@@ -175,23 +236,33 @@ export default async function handler(req, res) {
     const sourceMap = new Map((sources || []).map((source) => [String(source.id), source.name || '']));
     const rawMap = new Map((rawItems || []).map((item) => [String(item.id), item]));
 
-    const enriched = (items || []).map((item) => {
+    let enriched = (items || []).map((item) => {
       const raw = rawMap.get(String(item.raw_feed_item_id || '')) || null;
       return {
         ...item,
         source_name: item.source_name || sourceMap.get(String(item.source_id)) || sourceMap.get(String(raw?.source_id || '')) || '',
-        published_at: item.published_at || raw?.published_at || null,
+        published_at: item.published_at || raw?.published_at || item.created_at || item.updated_at || null,
         image_url: item.image_url || raw?.image_url || null
       };
     })
       .filter((item) => !isHardNoise(item))
-      .filter((item) => !discoverOnlyFresh || isLast24Hours(item));
+      .filter((item) => !isTrendFeedItem(item));
+
+    if (discoverMode) {
+      const last24 = enriched.filter((item) => isFreshForDiscover(item, 24)).map(withDiscoverScore).filter((item) => scoreValue(item, 'discover_score') >= 45);
+      const last36 = enriched.filter((item) => isFreshForDiscover(item, 36)).map(withDiscoverScore).filter((item) => scoreValue(item, 'discover_score') >= 42);
+      enriched = last24.length >= 18 ? last24 : last36;
+    } else {
+      enriched = enriched.map(withDiscoverScore);
+    }
 
     enriched.sort((a, b) => compareItems(a, b, sortKey));
 
     return json(res, 200, {
       items: enriched.slice(0, 500),
-      filters: discoverOnlyFresh ? { sort: sortKey, max_age_hours: 24 } : { sort: sortKey }
+      filters: discoverMode
+        ? { sort: sortKey, primary_max_age_hours: 24, fallback_max_age_hours: 36, min_radar_discover_score: enriched.some((item) => ageHours(item) > 24) ? 42 : 45 }
+        : { sort: sortKey }
     });
   } catch (error) {
     return json(res, 500, { error: error?.message || String(error) });
