@@ -52,8 +52,8 @@
   async function runWithToken(token) {
     saveToken(token);
     const encoded = encodeURIComponent(token);
-    await fetchJson(`/api/ingest?token=${encoded}&source_limit=8&item_limit=12&t=${Date.now()}`, 70000);
-    await fetchJson(`/api/score?token=${encoded}&t=${Date.now()}`, 100000);
+    await fetchJson(`/api/ingest?token=${encoded}&source_limit=40&item_limit=30&t=${Date.now()}`, 120000);
+    await fetchJson(`/api/score?token=${encoded}&t=${Date.now()}`, 120000);
   }
 
   async function guardedRefresh(event) {
@@ -67,7 +67,7 @@
     const oldText = button.textContent;
     button.disabled = true;
     button.textContent = 'Yenileniyor...';
-    status('İçerikler yenileniyor...');
+    status('Daha fazla kaynak taranıyor, içerikler yenileniyor...');
 
     try {
       await runWithToken(getStoredToken());
