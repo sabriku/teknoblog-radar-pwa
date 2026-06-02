@@ -18,7 +18,9 @@ function textOf(item = {}) {
     item.excerpt,
     item.description,
     item.source_name,
-    item.url
+    item.url,
+    item.canonical_url,
+    item.link
   ].filter(Boolean).join(' ').toLowerCase();
 }
 
@@ -40,14 +42,19 @@ const HARD_NOISE_PATTERNS = [
   /fenerbahçe/i,
   /besiktas|beşiktaş/i,
   /trabzonspor/i,
-  /transfer/i
+  /transfer/i,
+  /deprem/i,
+  /hava\s*durumu/i,
+  /burç/i,
+  /kimdir/i
 ];
 
 const TECH_PATTERNS = [
   /google|android|iphone|ios|ipad|macbook|windows|samsung|galaxy|xiaomi|huawei|oppo|vivo|honor|pixel/i,
   /openai|chatgpt|gemini|claude|yapay\s*zeka|\bai\b/i,
   /telefon|tablet|laptop|gpu|cpu|nvidia|amd|intel|snapdragon|mediatek|çip|chip|işlemci/i,
-  /watch|wear\s*os|akıllı\s*saat|app\s*store|play\s*store|whatsapp|instagram|youtube|chrome/i
+  /watch|wear\s*os|akıllı\s*saat|app\s*store|play\s*store|whatsapp|instagram|youtube|chrome/i,
+  /microsoft|apple|meta|xbox|playstation|steam|güvenlik|siber|veri|uygulama|yazılım|robot/i
 ];
 
 const DISCOVER_TOPIC_PATTERNS = [
@@ -77,6 +84,10 @@ function isHardNoise(item = {}) {
   return !TECH_PATTERNS.some((pattern) => pattern.test(text));
 }
 
+function hasTechSignal(item = {}) {
+  return TECH_PATTERNS.some((pattern) => pattern.test(textOf(item)));
+}
+
 function isTrendFeedItem(item = {}) {
   const text = textOf(item);
   return /google\s*trends|trend\s*feed|tr\s*4s\s*teknoloji|tr\s*24s\s*teknoloji|tr\s*48s\s*teknoloji|tr\s*168s\s*teknoloji/i.test(text);
@@ -88,7 +99,7 @@ function ageHours(item) {
   return Math.max(0, (Date.now() - published) / 3600000);
 }
 
-function isFreshForDiscover(item, maxHours = 36) {
+function isFreshForDiscover(item, maxHours = 24) {
   return ageHours(item) <= maxHours;
 }
 
@@ -116,7 +127,7 @@ function titleQualityScore(item = {}) {
   const title = String(item.title || '').trim();
   const text = textOf(item);
   let value = 0;
-  if (title.length >= 45 && title.length <= 115) value += 10;
+  if (title.length >= 35 && title.length <= 130) value += 10;
   if (DISCOVER_TOPIC_PATTERNS.some((pattern) => pattern.test(text))) value += 24;
   if (/nasıl|neden|hangi|ne zaman|liste|alacak|geliyor|değişiyor|artıyor|düşüyor|başladı|yayınlandı|sundu|tanıttı|duyurdu/i.test(title)) value += 10;
   if (/son dakika|canlı|maç|hangi kanalda|kimdir|burç|deprem/i.test(text)) value -= 35;
@@ -131,10 +142,10 @@ function computedDiscoverScore(item = {}) {
   const traffic = scoreValue(item, 'traffic_score');
   const editorial = scoreValue(item, 'editorial_score');
   const score = Math.round(
-    (base * 0.38) +
-    (total * 0.18) +
-    (traffic * 0.14) +
-    (editorial * 0.12) +
+    (base * 0.34) +
+    (total * 0.16) +
+    (traffic * 0.12) +
+    (editorial * 0.10) +
     titleQualityScore(item) +
     freshnessScore(item) +
     sourceAdjustment(item)
@@ -190,6 +201,33 @@ function withDiscoverScore(item = {}) {
   };
 }
 
+function normalizeRawItem(item = {}, sourceMap = new Map()) {
+  const sourceName = item.source_name || sourceMap.get(String(item.source_id)) || '';
+  return {
+    ...item,
+    title: item.title || item.item_title || item.feed_title || item.name || '',
+    summary: item.summary || item.description || item.excerpt || '',
+    url: item.url || item.link || item.canonical_url || item.guid || '',
+    source_name: sourceName,
+    published_at: item.published_at || item.created_at || item.updated_at || null,
+    image_url: item.image_url || item.thumbnail || item.image || null,
+    total_score: item.total_score || 0,
+    traffic_score: item.traffic_score || 0,
+    editorial_score: item.editorial_score || 0,
+    discover_score: item.discover_score || 0
+  };
+}
+
+function dedupeItems(items = []) {
+  const seen = new Set();
+  return items.filter((item) => {
+    const key = String(item.url || item.canonical_url || item.link || item.title || '').toLowerCase().trim();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export default async function handler(req, res) {
   try {
     if (String(req.query?.opportunity || '') === '1') {
@@ -218,15 +256,15 @@ export default async function handler(req, res) {
         .from('topic_candidates')
         .select('*')
         .eq('status', 'active')
-        .limit(1500),
+        .limit(2500),
       supabase
         .from('sources')
         .select('id,name'),
       supabase
         .from('raw_feed_items')
-        .select('id,published_at,image_url,source_id')
+        .select('*')
         .order('created_at', { ascending: false })
-        .limit(15000)
+        .limit(25000)
     ]);
 
     if (itemsError) return json(res, 500, { error: itemsError.message });
@@ -242,16 +280,28 @@ export default async function handler(req, res) {
         ...item,
         source_name: item.source_name || sourceMap.get(String(item.source_id)) || sourceMap.get(String(raw?.source_id || '')) || '',
         published_at: item.published_at || raw?.published_at || item.created_at || item.updated_at || null,
-        image_url: item.image_url || raw?.image_url || null
+        image_url: item.image_url || raw?.image_url || null,
+        url: item.url || item.canonical_url || raw?.url || raw?.link || item.source_url || ''
       };
     })
       .filter((item) => !isHardNoise(item))
       .filter((item) => !isTrendFeedItem(item));
 
     if (discoverMode) {
-      const last24 = enriched.filter((item) => isFreshForDiscover(item, 24)).map(withDiscoverScore).filter((item) => scoreValue(item, 'discover_score') >= 45);
-      const last36 = enriched.filter((item) => isFreshForDiscover(item, 36)).map(withDiscoverScore).filter((item) => scoreValue(item, 'discover_score') >= 42);
-      enriched = last24.length >= 18 ? last24 : last36;
+      const candidateItems = enriched
+        .filter((item) => isFreshForDiscover(item, 24))
+        .map(withDiscoverScore);
+
+      const rawFallback = (rawItems || [])
+        .map((item) => normalizeRawItem(item, sourceMap))
+        .filter((item) => isFreshForDiscover(item, 24))
+        .filter((item) => !isHardNoise(item))
+        .filter((item) => !isTrendFeedItem(item))
+        .filter(hasTechSignal)
+        .map(withDiscoverScore)
+        .map((item) => ({ ...item, from_raw_feed_fallback: true }));
+
+      enriched = dedupeItems([...candidateItems, ...rawFallback]);
     } else {
       enriched = enriched.map(withDiscoverScore);
     }
@@ -261,7 +311,7 @@ export default async function handler(req, res) {
     return json(res, 200, {
       items: enriched.slice(0, 500),
       filters: discoverMode
-        ? { sort: sortKey, primary_max_age_hours: 24, fallback_max_age_hours: 36, min_radar_discover_score: enriched.some((item) => ageHours(item) > 24) ? 42 : 45 }
+        ? { sort: sortKey, max_age_hours: 24, min_radar_discover_score: 0, includes_raw_feed_fallback: true, candidate_count: enriched.length }
         : { sort: sortKey }
     });
   } catch (error) {
