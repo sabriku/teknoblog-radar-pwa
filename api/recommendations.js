@@ -1,5 +1,5 @@
 import { getSupabaseAdmin, json } from './_lib.js';
-import opportunityRadar from './opportunity-feed-radar.js';
+import opportunityRadar from './opportunity-radar.js';
 
 function scoreValue(item, key) {
   const value = Number(item?.[key]);
