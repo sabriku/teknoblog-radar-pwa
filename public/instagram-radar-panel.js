@@ -12,24 +12,81 @@
   let timer = null;
 
   function esc(value) {
-    return String(value ?? '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
+    return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function textOf(item = {}) {
+    return [item.title, item.summary, item.excerpt, item.description, item.source_name].filter(Boolean).join(' ').toLowerCase();
+  }
+
+  function ageHours(item = {}) {
+    const time = new Date(item.published_at || item.created_at || item.updated_at || 0).getTime();
+    if (!time || Number.isNaN(time)) return 999999;
+    return Math.max(0, (Date.now() - time) / 3600000);
+  }
+
+  function score(item = {}, key = '') {
+    const n = Number(item[key]);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  function clamp(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return 0;
+    return Math.max(0, Math.min(100, Math.round(n)));
+  }
+
+  function instagramScore(item = {}) {
+    const text = textOf(item);
+    let value = 0;
+    value += score(item, 'social_score') * 0.28;
+    value += score(item, 'discover_score') * 0.22;
+    value += score(item, 'traffic_score') * 0.10;
+    if (/openai|chatgpt|gemini|iphone|ios|samsung|galaxy|android|whatsapp|instagram|youtube|google|güncelleme|özellik|fiyat|indirim|kampanya|iddia|sızıntı|değişiklik|tanıttı|duyurdu|geliyor/i.test(text)) value += 24;
+    if (/neden|nasıl|hangi|liste|alacak|fark|karşılaştırma|detay|model|rehber/i.test(text)) value += 14;
+    if (item.image_url || item.image || item.thumbnail) value += 10;
+    if (String(item.title || '').length >= 35 && String(item.title || '').length <= 110) value += 10;
+    if (ageHours(item) <= 6) value += 10;
+    else if (ageHours(item) <= 12) value += 7;
+    else if (ageHours(item) <= 24) value += 4;
+    return clamp(value);
+  }
+
+  function carouselAngle(item = {}) {
+    const text = textOf(item);
+    if (/fiyat|indirim|kampanya|ücret|zam/i.test(text)) return 'Fiyat ve satın alma etkisi odaklı karusel';
+    if (/güncelleme|özellik|beta|alacak|geliyor/i.test(text)) return 'Ne değişti, kimleri etkiliyor karuseli';
+    if (/yapay zeka|openai|chatgpt|gemini/i.test(text)) return 'Yapay zekâ gündemi ve etkileri karuseli';
+    if (/iphone|samsung|galaxy|android|ios/i.test(text)) return 'Telefon kullanıcılarını ilgilendiren özet karusel';
+    return 'Hızlı teknoloji gündemi karuseli';
+  }
+
+  function hookText(item = {}) {
+    const text = textOf(item);
+    if (/fiyat|indirim|kampanya|zam/i.test(text)) return 'Bu fiyat veya kampanya detayı karusel formatında ilgi çekebilir.';
+    if (/güncelleme|özellik|beta/i.test(text)) return 'Bu yenilik günlük kullanımda fark yaratabilecek nitelikte.';
+    return String(item.title || 'Bu gelişme Instagram karusel formatında hızlı anlatıma uygun görünüyor.');
+  }
+
+  function slidePlan() {
+    return [
+      'Kapak: En çarpıcı sonucu tek cümleyle ver',
+      'Olay: Haberde tam olarak ne oldu?',
+      'Etki: Kullanıcıyı veya sektörü nasıl ilgilendiriyor?',
+      'Detay: En önemli teknik veya ticari ayrıntı',
+      'Son kart: Teknoblog’da detaylar ve takip çağrısı'
+    ];
+  }
+
+  function decorate(item = {}) {
+    const s = instagramScore(item);
+    return { ...item, instagram_score: s, carousel_potential_score: s, carousel_angle: carouselAngle(item), hook_text: hookText(item), slide_plan: slidePlan(), max_age_hours: 24 };
   }
 
   function fmtDate(value) {
     const date = new Date(value || 0);
     if (Number.isNaN(date.getTime())) return '';
-    return new Intl.DateTimeFormat('tr-TR', {
-      day: '2-digit',
-      month: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      timeZone: 'Europe/Istanbul'
-    }).format(date);
+    return new Intl.DateTimeFormat('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Istanbul' }).format(date);
   }
 
   function fallbackImage(item = {}) {
@@ -45,30 +102,7 @@
     if (document.getElementById('tb-instagram-radar-style')) return;
     const style = document.createElement('style');
     style.id = 'tb-instagram-radar-style';
-    style.textContent = `
-      #tb-instagram-radar-wrap{margin:18px 0 34px;border:1px solid #fbcfe8;border-radius:20px;background:#fff;padding:16px;box-shadow:0 8px 24px rgba(190,24,93,.08)}
-      #tb-instagram-radar-wrap[data-open='0'] .tb-instagram-body{display:none}
-      #tb-instagram-radar-wrap .tb-instagram-head{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
-      #tb-instagram-radar-wrap .tb-instagram-toggle{display:flex;align-items:center;gap:10px;cursor:pointer;background:#fdf2f8;border:1px solid #fbcfe8;border-radius:999px;padding:10px 14px;font-weight:800;color:#be185d}
-      #tb-instagram-radar-wrap .tb-instagram-toggle b{font:700 20px/1 'Fira Sans Condensed',sans-serif}
-      #tb-instagram-radar-wrap .tb-instagram-refresh{border:1px solid #be185d;background:#fff;color:#be185d;padding:9px 12px;border-radius:12px;font-weight:800;cursor:pointer}
-      #tb-instagram-radar-wrap .tb-instagram-refresh:disabled{opacity:.7;cursor:wait}
-      #tb-instagram-radar-wrap .tb-instagram-status{font-size:12px;color:#64748b;margin-top:10px}
-      #tb-instagram-radar-wrap .tb-instagram-status[data-error='1']{color:#b91c1c}
-      #tb-instagram-radar-wrap .tb-instagram-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin-top:16px}
-      #tb-instagram-radar-wrap article{border:1px solid #fce7f3;border-radius:16px;background:#fff;box-shadow:0 4px 12px rgba(15,23,42,.04);overflow:hidden}
-      #tb-instagram-radar-wrap .tb-instagram-image{width:100%;aspect-ratio:16/9;background:#f8fafc;object-fit:cover;display:block;border-bottom:1px solid #fce7f3}
-      #tb-instagram-radar-wrap .tb-instagram-inner{padding:12px}
-      #tb-instagram-radar-wrap h3{font:700 18px/1.32 'Fira Sans Condensed',sans-serif;color:#111827;margin:8px 0}
-      #tb-instagram-radar-wrap .tb-instagram-badge{display:inline-flex;border-radius:999px;padding:6px 9px;background:#fdf2f8;color:#be185d;border:1px solid #f9a8d4;font-size:11px;font-weight:900}
-      #tb-instagram-radar-wrap .tb-instagram-meta{display:flex;flex-wrap:wrap;gap:6px;font-size:11px;color:#64748b;margin:8px 0}
-      #tb-instagram-radar-wrap .tb-instagram-angle{font-size:12px;line-height:1.45;color:#be185d;font-weight:800;margin-top:8px}
-      #tb-instagram-radar-wrap .tb-instagram-hook{font-size:12px;line-height:1.5;color:#475569;margin-top:8px;background:#fdf2f8;border:1px solid #fce7f3;border-radius:12px;padding:9px}
-      #tb-instagram-radar-wrap ol{margin:10px 0 0 18px;padding:0;color:#475569;font-size:12px;line-height:1.5}
-      #tb-instagram-radar-wrap .tb-instagram-link{display:inline-flex;margin-top:10px;font-size:12px;font-weight:900;color:#be185d;text-decoration:none}
-      #tb-instagram-radar-wrap .tb-instagram-link:hover{text-decoration:underline}
-      #tb-instagram-radar-wrap .tb-instagram-empty{border:1px dashed #fbcfe8;border-radius:14px;color:#64748b;font-size:13px;margin-top:14px;padding:14px;text-align:center}
-    `;
+    style.textContent = `#tb-instagram-radar-wrap{margin:18px 0 34px;border:1px solid #fbcfe8;border-radius:20px;background:#fff;padding:16px;box-shadow:0 8px 24px rgba(190,24,93,.08)}#tb-instagram-radar-wrap[data-open='0'] .tb-instagram-body{display:none}#tb-instagram-radar-wrap .tb-instagram-head{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}#tb-instagram-radar-wrap .tb-instagram-toggle{display:flex;align-items:center;gap:10px;cursor:pointer;background:#fdf2f8;border:1px solid #fbcfe8;border-radius:999px;padding:10px 14px;font-weight:800;color:#be185d}#tb-instagram-radar-wrap .tb-instagram-toggle b{font:700 20px/1 'Fira Sans Condensed',sans-serif}#tb-instagram-radar-wrap .tb-instagram-refresh{border:1px solid #be185d;background:#fff;color:#be185d;padding:9px 12px;border-radius:12px;font-weight:800;cursor:pointer}#tb-instagram-radar-wrap .tb-instagram-refresh:disabled{opacity:.7;cursor:wait}#tb-instagram-radar-wrap .tb-instagram-status{font-size:12px;color:#64748b;margin-top:10px}#tb-instagram-radar-wrap .tb-instagram-status[data-error='1']{color:#b91c1c}#tb-instagram-radar-wrap .tb-instagram-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin-top:16px}#tb-instagram-radar-wrap article{border:1px solid #fce7f3;border-radius:16px;background:#fff;box-shadow:0 4px 12px rgba(15,23,42,.04);overflow:hidden}#tb-instagram-radar-wrap .tb-instagram-image{width:100%;aspect-ratio:16/9;background:#f8fafc;object-fit:cover;display:block;border-bottom:1px solid #fce7f3}#tb-instagram-radar-wrap .tb-instagram-inner{padding:12px}#tb-instagram-radar-wrap h3{font:700 18px/1.32 'Fira Sans Condensed',sans-serif;color:#111827;margin:8px 0}#tb-instagram-radar-wrap .tb-instagram-badge{display:inline-flex;border-radius:999px;padding:6px 9px;background:#fdf2f8;color:#be185d;border:1px solid #f9a8d4;font-size:11px;font-weight:900}#tb-instagram-radar-wrap .tb-instagram-meta{display:flex;flex-wrap:wrap;gap:6px;font-size:11px;color:#64748b;margin:8px 0}#tb-instagram-radar-wrap .tb-instagram-angle{font-size:12px;line-height:1.45;color:#be185d;font-weight:800;margin-top:8px}#tb-instagram-radar-wrap .tb-instagram-hook{font-size:12px;line-height:1.5;color:#475569;margin-top:8px;background:#fdf2f8;border:1px solid #fce7f3;border-radius:12px;padding:9px}#tb-instagram-radar-wrap ol{margin:10px 0 0 18px;padding:0;color:#475569;font-size:12px;line-height:1.5}#tb-instagram-radar-wrap .tb-instagram-link{display:inline-flex;margin-top:10px;font-size:12px;font-weight:900;color:#be185d;text-decoration:none}#tb-instagram-radar-wrap .tb-instagram-empty{border:1px dashed #fbcfe8;border-radius:14px;color:#64748b;font-size:13px;margin-top:14px;padding:14px;text-align:center}`;
     document.head.appendChild(style);
   }
 
@@ -83,56 +117,16 @@
     ensureStyle();
     const target = findMountTarget();
     if (!target) return false;
-
     let wrap = document.getElementById('tb-instagram-radar-wrap');
-    if (!wrap) {
-      wrap = document.createElement('section');
-      wrap.id = 'tb-instagram-radar-wrap';
-      target.appendChild(wrap);
-    }
-
+    if (!wrap) { wrap = document.createElement('section'); wrap.id = 'tb-instagram-radar-wrap'; target.appendChild(wrap); }
     wrap.setAttribute('data-open', state.open ? '1' : '0');
-
     const cards = state.items.map((item) => {
       const img = item.image_url || fallbackImage(item);
       const slides = Array.isArray(item.slide_plan) ? item.slide_plan : [];
-      return `
-        <article>
-          <img class="tb-instagram-image" src="${esc(img)}" alt="${esc(item.title)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='${esc(fallbackImage(item))}'">
-          <div class="tb-instagram-inner">
-            <span class="tb-instagram-badge">Instagram ${Number(item.instagram_score || 0)} · Keşfet adayı</span>
-            <h3>${esc(item.title)}</h3>
-            <div class="tb-instagram-meta">
-              <span>${esc(item.source_name || 'Kaynak yok')}</span>
-              <span>${esc(fmtDate(item.published_at))}</span>
-            </div>
-            <div class="tb-instagram-angle">${esc(item.carousel_angle || 'Karusel haber formatı')}</div>
-            <div class="tb-instagram-hook">${esc(item.hook_text || '')}</div>
-            ${slides.length ? `<ol>${slides.map((slide) => `<li>${esc(slide)}</li>`).join('')}</ol>` : ''}
-            <a class="tb-instagram-link" href="${esc(item.url || '#')}" target="_blank" rel="noopener noreferrer">Haberi aç</a>
-          </div>
-        </article>
-      `;
+      return `<article><img class="tb-instagram-image" src="${esc(img)}" alt="${esc(item.title)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='${esc(fallbackImage(item))}'"><div class="tb-instagram-inner"><span class="tb-instagram-badge">Instagram ${Number(item.instagram_score || 0)} · Keşfet adayı</span><h3>${esc(item.title)}</h3><div class="tb-instagram-meta"><span>${esc(item.source_name || 'Kaynak yok')}</span><span>${esc(fmtDate(item.published_at))}</span></div><div class="tb-instagram-angle">${esc(item.carousel_angle || 'Karusel haber formatı')}</div><div class="tb-instagram-hook">${esc(item.hook_text || '')}</div>${slides.length ? `<ol>${slides.map((slide) => `<li>${esc(slide)}</li>`).join('')}</ol>` : ''}<a class="tb-instagram-link" href="${esc(item.url || '#')}" target="_blank" rel="noopener noreferrer">Haberi aç</a></div></article>`;
     }).join('');
-
-    wrap.innerHTML = `
-      <div class="tb-instagram-head">
-        <button type="button" class="tb-instagram-toggle" aria-expanded="${state.open ? 'true' : 'false'}">
-          <span>▾</span><b>Instagram Radarı</b>
-        </button>
-        <button type="button" class="tb-instagram-refresh" ${state.loading ? 'disabled' : ''}>Instagram Adaylarını Yenile</button>
-      </div>
-      <div class="tb-instagram-body">
-        <div class="tb-instagram-status" data-error="${state.error ? '1' : '0'}">${esc(statusText())}</div>
-        ${cards ? `<div class="tb-instagram-grid">${cards}</div>` : '<div class="tb-instagram-empty">Son 24 saat içinde Instagram karusel için yeterli aday bulunamadı.</div>'}
-      </div>
-    `;
-
-    wrap.querySelector('.tb-instagram-toggle')?.addEventListener('click', () => {
-      state.open = !state.open;
-      localStorage.setItem(STORAGE_KEY, state.open ? '1' : '0');
-      render();
-    });
+    wrap.innerHTML = `<div class="tb-instagram-head"><button type="button" class="tb-instagram-toggle" aria-expanded="${state.open ? 'true' : 'false'}"><span>▾</span><b>Instagram Radarı</b></button><button type="button" class="tb-instagram-refresh" ${state.loading ? 'disabled' : ''}>Instagram Adaylarını Yenile</button></div><div class="tb-instagram-body"><div class="tb-instagram-status" data-error="${state.error ? '1' : '0'}">${esc(statusText())}</div>${cards ? `<div class="tb-instagram-grid">${cards}</div>` : '<div class="tb-instagram-empty">Son 24 saat içinde Instagram karusel için yeterli aday bulunamadı.</div>'}</div>`;
+    wrap.querySelector('.tb-instagram-toggle')?.addEventListener('click', () => { state.open = !state.open; localStorage.setItem(STORAGE_KEY, state.open ? '1' : '0'); render(); });
     wrap.querySelector('.tb-instagram-refresh')?.addEventListener('click', () => fetchItems(true));
     return true;
   }
@@ -143,14 +137,14 @@
     state.error = '';
     render();
     try {
-      const url = new URL('/api/instagram-radar', window.location.origin);
-      url.searchParams.set('limit', '18');
+      const url = new URL('/api/recommendations', window.location.origin);
+      url.searchParams.set('sort', 'social_score');
       url.searchParams.set('_', Date.now().toString());
       const response = await fetch(url.toString(), { cache: 'no-store', headers: { accept: 'application/json' } });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || data?.error) throw new Error(data?.error || `HTTP ${response.status}`);
-      state.items = Array.isArray(data.items) ? data.items : [];
-      state.refreshedAt = data.refreshed_at || new Date().toISOString();
+      state.items = (Array.isArray(data.items) ? data.items : []).filter((item) => ageHours(item) <= 24).map(decorate).filter((item) => item.instagram_score >= 35).sort((a, b) => b.instagram_score - a.instagram_score || new Date(b.published_at || 0) - new Date(a.published_at || 0)).slice(0, 18);
+      state.refreshedAt = new Date().toISOString();
     } catch (error) {
       console.error('Instagram radar error:', error);
       state.error = `Instagram Radarı verisi alınamadı: ${error?.message || 'Bilinmeyen hata'}`;
@@ -164,14 +158,7 @@
     if (started) return;
     started = true;
     let tries = 0;
-    const wait = setInterval(async () => {
-      tries += 1;
-      if (render() || tries > 60) {
-        clearInterval(wait);
-        await fetchItems();
-        if (!timer) timer = setInterval(fetchItems, REFRESH_MS);
-      }
-    }, 250);
+    const wait = setInterval(async () => { tries += 1; if (render() || tries > 60) { clearInterval(wait); await fetchItems(); if (!timer) timer = setInterval(fetchItems, REFRESH_MS); } }, 250);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
