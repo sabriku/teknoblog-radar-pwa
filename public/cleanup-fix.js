@@ -10,7 +10,7 @@
 
   function loadNavigationHelpers() {
     loadScriptOnce('tb-editorial-tabs-lite-loader-v5', '/editorial-tabs-lite.js?v=20260524-5');
-    loadScriptOnce('tb-main-radar-tabs-loader-v9', '/radar-main-tabs.js?v=20260524-9');
+    loadScriptOnce('tb-main-radar-tabs-loader-v10', '/radar-main-tabs.js?v=20260524-10');
     loadScriptOnce('tb-phase2-filter-fix-loader-v1', '/phase2-filter-fix.js?v=20260524-1');
     loadScriptOnce('tb-radar-ux-optimizer-loader-v1', '/radar-ux-optimizer.js?v=20260524-1');
     loadScriptOnce('tb-source-diversity-layer-loader-v2', '/source-diversity-layer.js?v=20260524-2');
