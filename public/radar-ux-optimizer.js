@@ -19,9 +19,12 @@
   }
 
   function ensureStyle() {
-    if (document.getElementById('tb-ux-optimizer-style')) return;
-    const style = document.createElement('style');
-    style.id = 'tb-ux-optimizer-style';
+    let style = document.getElementById('tb-ux-optimizer-style');
+    if (!style) {
+      style = document.createElement('style');
+      style.id = 'tb-ux-optimizer-style';
+      document.head.appendChild(style);
+    }
     style.textContent = `
       #tb-main-tabs{align-items:center;gap:6px!important;padding:7px 0 9px!important}
       #tb-main-tabs button{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:7px 10px!important;font-size:11.5px!important;letter-spacing:-.01em}
@@ -43,8 +46,10 @@
       #tb-editorial-center .tb-lite-card p,#tb-editorial-center .tb-lite-card li{font-size:11.3px!important;line-height:1.42!important}
       #tb-editorial-center .top b,#tb-editorial-center .top span,#tb-editorial-center .scores span{font-size:10.5px!important;padding:3px 6px!important}
       #tb-editorial-center .actions a,#tb-editorial-center .actions button{font-size:10.5px!important;padding:6px 7px!important}
-      .tb-ai-bridge{border-color:#0ea5e9!important;color:#0369a1!important;background:#f0f9ff!important}
-      .tb-ai-hint{display:block;margin-top:6px;font-size:10.5px;color:#64748b;line-height:1.35}
+      .tb-ai-bridge{display:inline-flex!important;align-items:center!important;gap:5px!important;border:1px solid #bae6fd!important;color:#0369a1!important;background:#f0f9ff!important;border-radius:999px!important;padding:6px 8px!important;font-size:10.5px!important;font-weight:900!important;line-height:1!important;box-shadow:none!important;white-space:nowrap!important;max-width:max-content!important}
+      .tb-ai-bridge:hover{border-color:#0ea5e9!important;background:#e0f2fe!important}
+      .tb-ai-bridge .tb-ai-icon{font-size:12px;line-height:1}
+      .tb-ai-toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:9999;background:#0f172a;color:#fff;border-radius:999px;padding:10px 14px;font-size:12px;font-weight:800;box-shadow:0 10px 30px rgba(15,23,42,.25)}
       .tb-section-kicker{display:inline-flex;gap:6px;align-items:center;border:1px solid #e5e7eb;background:#f8fafc;border-radius:999px;padding:5px 8px;font-size:11px;font-weight:900;color:#475569;margin-bottom:8px}
       @media(max-width:1100px){#tb-layout{grid-template-columns:minmax(0,1fr) 300px!important;gap:14px!important}}
       @media(max-width:960px){#tb-layout{display:block!important}#tb-layout aside{position:static!important;max-height:none!important;margin-top:14px!important}}
@@ -56,7 +61,6 @@
         #tb-editorial-center .tb-lite-img{max-height:190px!important}
       }
     `;
-    document.head.appendChild(style);
   }
 
   function decorateTabs() {
@@ -74,12 +78,8 @@
     document.querySelectorAll('#tb-opportunity-radar-wrap,#tb-google-news-wrap,#tb-trend-radar-wrap,#tb-google-trends-radar-section,#tb-instagram-radar-wrap').forEach((section) => {
       if (section.getAttribute('data-tb-main-hidden') === '1') return;
       section.setAttribute('data-open', '1');
-      section.querySelectorAll('.tb-opportunity-body,.tb-google-news-body,.tb-trend-body,.tb-instagram-body,#tb-trend-status,#tb-trend-grid,#tb-trend-window-tabs').forEach((body) => {
-        body.style.display = '';
-      });
-      section.querySelectorAll('.tb-section-toggle').forEach((button) => {
-        button.innerHTML = '<span class="tb-section-chevron">▾</span><span>Daralt</span>';
-      });
+      section.querySelectorAll('.tb-opportunity-body,.tb-google-news-body,.tb-trend-body,.tb-instagram-body,#tb-trend-status,#tb-trend-grid,#tb-trend-window-tabs').forEach((body) => { body.style.display = ''; });
+      section.querySelectorAll('.tb-section-toggle').forEach((button) => { button.innerHTML = '<span class="tb-section-chevron">▾</span><span>Daralt</span>'; });
     });
   }
 
@@ -104,14 +104,24 @@
     ].filter(Boolean).join('\n');
   }
 
+  function showToast(message) {
+    const old = document.querySelector('.tb-ai-toast');
+    if (old) old.remove();
+    const toast = document.createElement('div');
+    toast.className = 'tb-ai-toast';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 2200);
+  }
+
   async function copyAndOpenChatGPT(prompt, button) {
-    try {
-      await navigator.clipboard.writeText(prompt);
-      const old = button.textContent;
-      button.textContent = 'Kopyalandı';
-      setTimeout(() => { button.textContent = old; }, 1200);
-    } catch {}
-    window.open('https://chatgpt.com/', '_blank', 'noopener,noreferrer');
+    try { await navigator.clipboard.writeText(prompt); } catch {}
+    const old = button.innerHTML;
+    button.innerHTML = '<span class="tb-ai-icon">✓</span><span>Kopyalandı</span>';
+    showToast('Brief panoya kopyalandı. ChatGPT açılıyor.');
+    setTimeout(() => { button.innerHTML = old; }, 1400);
+    const target = `https://chatgpt.com/?q=${encodeURIComponent(prompt)}`;
+    window.open(target, '_blank', 'noopener,noreferrer');
   }
 
   function addAiBridge() {
@@ -121,15 +131,10 @@
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'tb-ai-bridge';
-      button.textContent = 'ChatGPT brief';
+      button.title = 'Briefi panoya kopyala ve ChatGPT’de aç';
+      button.innerHTML = '<span class="tb-ai-icon">✨</span><span>AI brief</span>';
       button.addEventListener('click', () => copyAndOpenChatGPT(promptFromCard(card), button));
       actions.appendChild(button);
-      if (card.closest('#tb-editorial-center')) {
-        const hint = document.createElement('span');
-        hint.className = 'tb-ai-hint';
-        hint.textContent = 'Ek maliyet yok: prompt kopyalanır, ChatGPT arayüzü açılır.';
-        actions.appendChild(hint);
-      }
       card.dataset.aiBridge = '1';
     });
   }
