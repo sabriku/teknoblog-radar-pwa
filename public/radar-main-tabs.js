@@ -2,7 +2,6 @@
   const LS = 'tb_main_nav_tab';
   const TABS = [
     ['news', 'Haberler'],
-    ['writeLater', 'Yazılacaklar'],
     ['editorial', 'Editoryal'],
     ['ops', 'Operasyon'],
     ['instagram', 'Instagram'],
@@ -12,7 +11,7 @@
     ['decision', 'Trend/Karar']
   ];
   let active = localStorage.getItem(LS) || 'news';
-  if (active === 'sources') active = 'news';
+  if (active === 'sources' || active === 'writeLater') active = 'news';
 
   function ensureStyle() {
     let style = document.getElementById('tb-main-tabs-style');
@@ -67,7 +66,6 @@
     const cards = document.getElementById('tb-cards-anchor') || document.getElementById('tb-grid')?.parentElement || main;
     return {
       news: [document.getElementById('tb-source-tabs'), cards].filter(Boolean),
-      writeLater: [moveIntoMain(document.getElementById('tb-write-later-panel'))].filter(Boolean),
       editorial: [moveIntoMain(document.getElementById('tb-editorial-center'))].filter(Boolean),
       ops: [moveIntoMain(document.getElementById('tb-editorial-ops-suite'))].filter(Boolean),
       instagram: [moveIntoMain(document.getElementById('tb-instagram-radar-wrap'))].filter(Boolean),
@@ -124,7 +122,7 @@
     ensureStyle();
     if (!ensureTabs()) return false;
     const sections = getSections();
-    const switchable = new Set([].concat(sections.news, sections.writeLater, sections.editorial, sections.ops, sections.instagram, sections.opportunity, sections.trends, sections.googleNews, sections.decision));
+    const switchable = new Set([].concat(sections.news, sections.editorial, sections.ops, sections.instagram, sections.opportunity, sections.trends, sections.googleNews, sections.decision));
     switchable.forEach((el) => el?.setAttribute('data-tb-main-hidden', '1'));
     const activeList = sections[active] || sections.news || [];
     setVisible(activeList, true);
