@@ -7,10 +7,10 @@
     ['opportunity', 'Fırsatlar'],
     ['trends', 'Google Trends'],
     ['googleNews', 'Google News'],
-    ['decision', 'Trend/Karar'],
-    ['sources', 'Kaynaklar']
+    ['decision', 'Trend/Karar']
   ];
   let active = localStorage.getItem(LS) || 'news';
+  if (active === 'sources') active = 'news';
 
   function ensureStyle() {
     let style = document.getElementById('tb-main-tabs-style');
@@ -24,6 +24,7 @@
       #tb-main-tabs button{flex:0 0 auto;border:1px solid #d1d5db;background:#fff;color:#374151;border-radius:999px;padding:8px 11px;font-size:12px;font-weight:900;cursor:pointer;white-space:nowrap;line-height:1.1}
       #tb-main-tabs button[aria-selected='true']{border-color:#f04a0a;background:#fff1eb;color:#f04a0a;box-shadow:0 4px 12px rgba(240,74,10,.10)}
       [data-tb-main-hidden='1']{display:none!important}
+      #tb-layout aside{display:flex!important}
       @media(max-width:720px){
         #tb-radar-root{padding:10px!important}
         #tb-main-tabs{margin:0 -10px 10px;padding:8px 10px;background:#f8fafc}
@@ -33,12 +34,6 @@
         #tb-grid{grid-template-columns:1fr!important;gap:10px!important}
       }
     `;
-  }
-
-  function closestSection(selector) {
-    const el = document.querySelector(selector);
-    if (!el) return null;
-    return el.closest('section') || el.closest('[id$="wrap"]') || el.parentElement;
   }
 
   function getSections() {
@@ -54,7 +49,7 @@
       trends: [document.getElementById('tb-google-trends-radar-section')].filter(Boolean),
       googleNews: [document.getElementById('tb-google-news-wrap')].filter(Boolean),
       decision: [document.getElementById('tb-trend-radar-wrap'), document.getElementById('tb-phase2-bar')].filter(Boolean),
-      sources: [aside, document.getElementById('tb-source-tabs')].filter(Boolean)
+      persistent: [aside].filter(Boolean)
     };
   }
 
@@ -90,13 +85,29 @@
     });
   }
 
+  function openActivePanels(list) {
+    list.forEach((el) => {
+      if (!el) return;
+      el.setAttribute('data-open', '1');
+      el.querySelectorAll('.tb-opportunity-body,.tb-google-news-body,.tb-trend-body,#tb-trend-status,#tb-trend-grid,#tb-trend-window-tabs').forEach((child) => {
+        child.style.display = '';
+      });
+      el.querySelectorAll('.tb-section-toggle').forEach((button) => {
+        button.innerHTML = '<span class="tb-section-chevron">▾</span><span>Daralt</span>';
+      });
+    });
+  }
+
   function apply() {
     ensureStyle();
     if (!ensureTabs()) return false;
     const sections = getSections();
-    const all = new Set(Object.values(sections).flat());
-    all.forEach((el) => el?.setAttribute('data-tb-main-hidden', '1'));
-    setVisible(sections[active] || sections.news || [], true);
+    const switchable = new Set([].concat(sections.news, sections.editorial, sections.instagram, sections.opportunity, sections.trends, sections.googleNews, sections.decision));
+    switchable.forEach((el) => el?.setAttribute('data-tb-main-hidden', '1'));
+    const activeList = sections[active] || sections.news || [];
+    setVisible(activeList, true);
+    setVisible(sections.persistent || [], true);
+    openActivePanels(activeList);
     document.querySelectorAll('#tb-main-tabs [data-main-tab]').forEach((button) => button.setAttribute('aria-selected', button.dataset.mainTab === active ? 'true' : 'false'));
     return true;
   }
