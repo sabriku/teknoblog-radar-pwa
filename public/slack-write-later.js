@@ -50,11 +50,11 @@
 
   function sourceFrom(card) {
     const text = card.textContent || '';
-    const pills = [...card.querySelectorAll('.tb-ops-pill,.meta,span,b')].map((el) => el.textContent.trim()).filter(Boolean);
-    const sourceLike = pills.find((v) => /verge|engadget|teknoblog|shiftdelete|donanım|webtekno|log|macrumors|9to5|google|apple|android|xda|gsmarena|techcrunch|kaynak/i.test(v));
-    if (sourceLike) return sourceLike.replace(/^Kaynak:\s*/i, '').slice(0, 120);
-    const parts = text.split('·').map((x) => x.trim()).filter(Boolean);
-    return (parts[parts.length - 1] || 'Kaynak yok').slice(0, 120);
+    const meta = card.querySelector('.meta,.tb-ec-meta,.tb-instagram-meta,.tb-opportunity-meta,.wl-meta')?.textContent || '';
+    const pool = `${meta} ${text}`;
+    const parts = pool.split('·').map((x) => x.trim()).filter(Boolean);
+    const sourceLike = parts.find((v) => /verge|engadget|teknoblog|shiftdelete|donanım|webtekno|log|macrumors|9to5|google|apple|android|xda|gsmarena|techcrunch/i.test(v));
+    return (sourceLike || parts[parts.length - 1] || 'Kaynak yok').replace(/^Kaynak:\s*/i, '').slice(0, 120);
   }
 
   function summaryFrom(card) {
@@ -85,13 +85,14 @@
 
   function isNewsCard(card) {
     if (!card || card.dataset.slackWriteLaterIgnore === '1') return false;
-    if (card.closest('#tb-write-later-panel')) return false;
-    if (card.closest('#tb-today-published-panel')) return false;
+    if (card.closest('#tb-write-later-panel,#tb-today-published-panel,#tb-source-add-panel,#tb-sources-list,aside')) return false;
+    const allowedRoot = card.closest('#tb-grid,#tb-editorial-center,#tb-instagram-radar-wrap,#tb-opportunity-radar-wrap,#tb-google-news-wrap,#tb-trend-radar-wrap,#tb-editorial-ops-suite');
+    if (!allowedRoot) return false;
     const title = titleFrom(card);
     const url = urlFrom(card);
     if (!title || title.length < 12) return false;
     if (!url && !card.querySelector('button[data-status],button[data-copy],button.tb-ai-bridge')) return false;
-    return /haber|kaynak|discover|trend|radar|skor|yazılacak|brief|teknoloji|google|apple|samsung|android|openai|chatgpt|iphone|galaxy/i.test(card.textContent || title);
+    return /haber|kaynak|discover|trend|radar|skor|brief|teknoloji|google|apple|samsung|android|openai|chatgpt|iphone|galaxy/i.test(card.textContent || title);
   }
 
   function addToPool(item) {
@@ -115,6 +116,10 @@
     return data;
   }
 
+  function slackIcon() {
+    return '<span class="tb-slack-logo" aria-hidden="true"><span></span><span></span><span></span><span></span></span>';
+  }
+
   async function handleSlack(card, button) {
     const item = itemFromCard(card);
     addToPool(item);
@@ -122,16 +127,16 @@
     switchToWriteLater();
     const old = button.innerHTML;
     button.disabled = true;
-    button.innerHTML = '⏳ Gönderiliyor';
+    button.innerHTML = '<span class="tb-slack-loading">…</span>';
     try {
       await sendSlack(item);
-      button.innerHTML = '✅ Slack’e gitti';
+      button.innerHTML = '✓';
       toast('Slack’e gönderildi ve Yazılacaklar’a eklendi.');
     } catch (error) {
-      button.innerHTML = '⚠️ Slack ayarı yok';
+      button.innerHTML = '!';
       toast(`Yazılacaklar’a eklendi. Slack gönderimi başarısız: ${error.message || error}`, true);
     } finally {
-      setTimeout(() => { button.disabled = false; button.innerHTML = old; }, 1800);
+      setTimeout(() => { button.disabled = false; button.innerHTML = old; }, 1700);
     }
   }
 
@@ -152,10 +157,18 @@
     }
     style.textContent = `
       .tb-card-action-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;align-items:center}
-      .tb-slack-btn,.tb-write-later-btn{display:inline-flex;align-items:center;gap:5px;border:1px solid #d1d5db;background:#fff;border-radius:999px;padding:6px 8px;font-size:10.5px;font-weight:900;color:#334155;cursor:pointer;line-height:1;white-space:nowrap}
-      .tb-slack-btn{border-color:#c4b5fd;color:#5b21b6;background:#f5f3ff}
-      .tb-write-later-btn{border-color:#fed7aa;color:#c2410c;background:#fff7ed}
-      .tb-slack-btn:hover,.tb-write-later-btn:hover{filter:brightness(.98)}
+      .tb-slack-btn{width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:9px;background:#4a154b;color:#fff;cursor:pointer;line-height:1;box-shadow:0 3px 8px rgba(74,21,75,.18);padding:0!important;flex:0 0 auto}
+      .tb-slack-btn:hover{background:#611f69;transform:translateY(-1px)}
+      .tb-slack-btn:disabled{opacity:.65;cursor:wait;transform:none}
+      .tb-slack-logo{position:relative;display:block;width:17px;height:17px}
+      .tb-slack-logo span{position:absolute;display:block;width:7px;height:7px;border-radius:2px;background:#fff;opacity:.96}
+      .tb-slack-logo span:nth-child(1){left:0;top:5px;border-radius:4px 2px 2px 4px}
+      .tb-slack-logo span:nth-child(2){left:5px;top:0;border-radius:4px 4px 2px 2px}
+      .tb-slack-logo span:nth-child(3){right:0;top:5px;border-radius:2px 4px 4px 2px}
+      .tb-slack-logo span:nth-child(4){left:5px;bottom:0;border-radius:2px 2px 4px 4px}
+      .tb-slack-loading{font-size:15px;font-weight:900;color:#fff}
+      .tb-write-later-btn{display:inline-flex;align-items:center;gap:5px;border:1px solid #fed7aa;background:#fff7ed;border-radius:999px;padding:6px 8px;font-size:10.5px;font-weight:900;color:#c2410c;cursor:pointer;line-height:1;white-space:nowrap}
+      .tb-write-later-btn:hover{filter:brightness(.98)}
       #${PANEL_ID}{border:1px solid #dbe3ef;border-radius:20px;background:#fff;padding:14px;box-shadow:0 6px 18px rgba(9,30,66,.06)}
       #${PANEL_ID} .wl-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;margin-bottom:10px}
       #${PANEL_ID} .wl-title{font:700 22px/1 'Fira Sans Condensed',sans-serif;color:#111827}
@@ -174,7 +187,7 @@
       #${PANEL_ID} .wl-meta{font-size:11px;color:#64748b;font-weight:800;margin-bottom:7px}
       #${PANEL_ID} .wl-actions{display:flex;gap:6px;flex-wrap:wrap}
       #${PANEL_ID} .wl-actions a,#${PANEL_ID} .wl-actions button{border:1px solid #cbd5e1;background:#fff;border-radius:9px;padding:6px 8px;font-size:10.5px;font-weight:900;color:#334155;text-decoration:none;cursor:pointer}
-      #${PANEL_ID} .wl-actions .slack{border-color:#c4b5fd;color:#5b21b6;background:#f5f3ff}
+      #${PANEL_ID} .wl-actions .slack{width:30px;height:30px;border:0;background:#4a154b;color:#fff;border-radius:9px;padding:0;display:inline-flex;align-items:center;justify-content:center}
       #${PANEL_ID} .wl-empty{border:1px dashed #cbd5e1;border-radius:14px;background:#f8fafc;color:#64748b;padding:14px;font-size:13px;line-height:1.45}
       @media(max-width:720px){#${PANEL_ID} .wl-item{grid-template-columns:auto minmax(0,1fr)}#${PANEL_ID} .wl-img,#${PANEL_ID} .wl-placeholder{display:none}}
     `;
@@ -218,7 +231,7 @@
         <button type="button" data-wl-clear-done>Tamamlananları temizle</button>
         <button type="button" data-wl-clear-all>Tümünü temizle</button>
       </div>
-      ${items.length ? `<div class="wl-list">${items.map((item) => renderItem(item, Boolean(done[item.key]))).join('')}</div>` : '<div class="wl-empty">Henüz Yazılacaklar listesine haber eklenmedi. Herhangi bir haber kartındaki “Slack’e gönder” veya “Yazılacaklar” düğmesini kullan.</div>'}
+      ${items.length ? `<div class="wl-list">${items.map((item) => renderItem(item, Boolean(done[item.key]))).join('')}</div>` : '<div class="wl-empty">Henüz Yazılacaklar listesine haber eklenmedi. Herhangi bir haber kartındaki Slack simgesini veya “Yazılacaklar” düğmesini kullan.</div>'}
     `;
   }
 
@@ -232,7 +245,7 @@
           <div class="wl-meta">${esc(item.source || 'Kaynak yok')} · Skor ${Number(item.score || 0)} · ${esc(new Intl.DateTimeFormat('tr-TR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:'Europe/Istanbul'}).format(new Date(item.added_at || Date.now())))}</div>
           <div class="wl-actions">
             ${item.url ? `<a href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">Kaynak haber</a>` : ''}
-            <button type="button" class="slack" data-wl-slack="${esc(item.key)}">Slack’e gönder</button>
+            <button type="button" class="slack" data-wl-slack="${esc(item.key)}" title="Slack’e gönder" aria-label="Slack’e gönder">${slackIcon()}</button>
             <button type="button" data-wl-copy="${esc(item.key)}">Brief kopyala</button>
             <button type="button" data-wl-remove="${esc(item.key)}">Sil</button>
           </div>
@@ -262,18 +275,27 @@
     else document.getElementById(PANEL_ID)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
+  let decorateTimer = null;
+  function scheduleDecorate() {
+    clearTimeout(decorateTimer);
+    decorateTimer = setTimeout(decorateCards, 120);
+  }
+
   function decorateCards() {
     ensureStyle();
-    const candidates = [...document.querySelectorAll('article,.tb-lite-card,.tb-ops-card')].filter(isNewsCard);
+    const roots = ['#tb-grid', '#tb-editorial-center', '#tb-instagram-radar-wrap', '#tb-opportunity-radar-wrap', '#tb-google-news-wrap', '#tb-trend-radar-wrap', '#tb-editorial-ops-suite'];
+    const candidates = roots.flatMap((selector) => [...document.querySelectorAll(`${selector} article, ${selector} .tb-lite-card, ${selector} .tb-ops-card`)]).filter(isNewsCard);
     candidates.forEach((card) => {
       if (card.dataset.slackWriteLaterReady === '1') return;
-      const actions = card.querySelector('.actions,.tb-ops-actions,.tb-ec-actions,.tb-instagram-inner,.tb-opportunity-inner,.wl-actions') || card;
+      const actions = card.querySelector('.actions,.tb-ops-actions,.tb-ec-actions,.tb-instagram-inner,.tb-opportunity-inner') || card;
       const row = document.createElement('div');
       row.className = 'tb-card-action-row';
       const slack = document.createElement('button');
       slack.type = 'button';
       slack.className = 'tb-slack-btn';
-      slack.innerHTML = '💬 Slack’e gönder';
+      slack.title = 'Slack’e gönder';
+      slack.setAttribute('aria-label', 'Slack’e gönder');
+      slack.innerHTML = slackIcon();
       slack.addEventListener('click', (event) => { event.preventDefault(); event.stopPropagation(); handleSlack(card, slack); });
       const later = document.createElement('button');
       later.type = 'button';
@@ -331,8 +353,13 @@
     renderPanel();
     decorateCards();
     bindPanelEvents();
-    const observer = new MutationObserver(() => window.requestAnimationFrame(() => { decorateCards(); renderPanel(); }));
-    observer.observe(document.body, { childList: true, subtree: true });
+    const watchTargets = ['tb-grid', 'tb-editorial-center', 'tb-instagram-radar-wrap', 'tb-opportunity-radar-wrap', 'tb-google-news-wrap', 'tb-trend-radar-wrap', 'tb-editorial-ops-suite'];
+    watchTargets.forEach((id) => {
+      const target = document.getElementById(id);
+      if (!target) return;
+      const observer = new MutationObserver(scheduleDecorate);
+      observer.observe(target, { childList: true, subtree: true });
+    });
     setTimeout(decorateCards, 700);
     setTimeout(decorateCards, 1800);
   }
