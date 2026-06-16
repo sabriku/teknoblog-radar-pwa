@@ -14,6 +14,7 @@
     loadScriptOnce('tb-phase2-filter-fix-loader-v1', '/phase2-filter-fix.js?v=20260524-1');
     loadScriptOnce('tb-radar-ux-optimizer-loader-v1', '/radar-ux-optimizer.js?v=20260524-1');
     loadScriptOnce('tb-source-diversity-layer-loader-v1', '/source-diversity-layer.js?v=20260524-1');
+    loadScriptOnce('tb-source-add-sidebar-loader-v1', '/source-add-sidebar.js?v=20260524-1');
   }
 
   function cleanupBtn() { return document.getElementById('tb-cleanup'); }
