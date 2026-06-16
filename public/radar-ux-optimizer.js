@@ -1,0 +1,174 @@
+(() => {
+  const ICONS = {
+    news: '📰',
+    editorial: '🧭',
+    instagram: '📸',
+    opportunity: '🏷️',
+    trends: '📈',
+    googleNews: '🌐',
+    decision: '⚡'
+  };
+
+  function esc(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function ensureStyle() {
+    if (document.getElementById('tb-ux-optimizer-style')) return;
+    const style = document.createElement('style');
+    style.id = 'tb-ux-optimizer-style';
+    style.textContent = `
+      #tb-main-tabs{align-items:center;gap:6px!important;padding:7px 0 9px!important}
+      #tb-main-tabs button{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:7px 10px!important;font-size:11.5px!important;letter-spacing:-.01em}
+      #tb-main-tabs button .tb-tab-icon{font-size:14px;line-height:1}
+      #tb-layout{align-items:start!important}
+      #tb-layout main{min-width:0!important;max-width:100%!important}
+      #tb-layout aside{position:sticky;top:58px;max-height:calc(100vh - 70px);overflow:auto}
+      #tb-editorial-center,#tb-instagram-radar-wrap,#tb-opportunity-radar-wrap,#tb-google-news-wrap,#tb-trend-radar-wrap,#tb-google-trends-radar-section{max-width:100%!important;box-sizing:border-box!important}
+      #tb-editorial-center{padding:12px!important;border-radius:18px!important}
+      #tb-editorial-center .lite-head{gap:8px!important}
+      #tb-editorial-center .lite-toggle,#tb-editorial-center .lite-refresh{padding:7px 10px!important;font-size:12px!important}
+      #tb-editorial-center .lite-tabs{gap:6px!important;padding:9px 0!important}
+      #tb-editorial-center .lite-tab{padding:7px 9px!important;font-size:11px!important}
+      #tb-editorial-center .lite-note{font-size:12px!important;padding:8px!important;margin-bottom:8px!important}
+      #tb-editorial-center .lite-grid{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))!important;gap:10px!important}
+      #tb-editorial-center .tb-lite-card{padding:10px!important;border-radius:14px!important}
+      #tb-editorial-center .tb-lite-img{width:calc(100% + 20px)!important;margin:-10px -10px 8px!important;max-height:145px!important}
+      #tb-editorial-center .tb-lite-card h4{font-size:15.5px!important;line-height:1.22!important}
+      #tb-editorial-center .tb-lite-card p,#tb-editorial-center .tb-lite-card li{font-size:11.3px!important;line-height:1.42!important}
+      #tb-editorial-center .top b,#tb-editorial-center .top span,#tb-editorial-center .scores span{font-size:10.5px!important;padding:3px 6px!important}
+      #tb-editorial-center .actions a,#tb-editorial-center .actions button{font-size:10.5px!important;padding:6px 7px!important}
+      .tb-ai-bridge{border-color:#0ea5e9!important;color:#0369a1!important;background:#f0f9ff!important}
+      .tb-ai-hint{display:block;margin-top:6px;font-size:10.5px;color:#64748b;line-height:1.35}
+      .tb-section-kicker{display:inline-flex;gap:6px;align-items:center;border:1px solid #e5e7eb;background:#f8fafc;border-radius:999px;padding:5px 8px;font-size:11px;font-weight:900;color:#475569;margin-bottom:8px}
+      @media(max-width:1100px){#tb-layout{grid-template-columns:minmax(0,1fr) 300px!important;gap:14px!important}}
+      @media(max-width:960px){#tb-layout{display:block!important}#tb-layout aside{position:static!important;max-height:none!important;margin-top:14px!important}}
+      @media(max-width:720px){
+        #tb-main-tabs{position:sticky;top:0;margin:0 -10px 10px!important;padding:7px 10px!important}
+        #tb-main-tabs button{font-size:11px!important;padding:7px 9px!important;min-height:30px}
+        #tb-main-tabs button .tb-tab-icon{font-size:13px}
+        #tb-editorial-center .lite-grid{grid-template-columns:1fr!important}
+        #tb-editorial-center .tb-lite-img{max-height:190px!important}
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function decorateTabs() {
+    document.querySelectorAll('#tb-main-tabs [data-main-tab]').forEach((button) => {
+      if (button.dataset.uxDecorated === '1') return;
+      const key = button.getAttribute('data-main-tab') || '';
+      const icon = ICONS[key] || '•';
+      const label = button.textContent.trim();
+      button.innerHTML = `<span class="tb-tab-icon" aria-hidden="true">${esc(icon)}</span><span>${esc(label)}</span>`;
+      button.dataset.uxDecorated = '1';
+    });
+  }
+
+  function openVisiblePanels() {
+    document.querySelectorAll('#tb-opportunity-radar-wrap,#tb-google-news-wrap,#tb-trend-radar-wrap,#tb-google-trends-radar-section,#tb-instagram-radar-wrap').forEach((section) => {
+      if (section.getAttribute('data-tb-main-hidden') === '1') return;
+      section.setAttribute('data-open', '1');
+      section.querySelectorAll('.tb-opportunity-body,.tb-google-news-body,.tb-trend-body,.tb-instagram-body,#tb-trend-status,#tb-trend-grid,#tb-trend-window-tabs').forEach((body) => {
+        body.style.display = '';
+      });
+      section.querySelectorAll('.tb-section-toggle').forEach((button) => {
+        button.innerHTML = '<span class="tb-section-chevron">▾</span><span>Daralt</span>';
+      });
+    });
+  }
+
+  function promptFromCard(card) {
+    const title = card.querySelector('h3,h4')?.textContent?.trim() || 'Başlıksız içerik';
+    const link = card.querySelector('a[href]')?.href || '';
+    const meta = card.querySelector('.meta,.tb-ec-meta,.tb-instagram-meta,.tb-opportunity-meta')?.textContent?.trim() || '';
+    return [
+      'Teknoblog için bu içeriği değerlendir.',
+      `Başlık: ${title}`,
+      meta ? `Meta: ${meta}` : '',
+      link ? `URL: ${link}` : '',
+      'Çıktı formatı:',
+      '1) Yaz / Bekle / Geç kararı',
+      '2) Google Discover açısı',
+      '3) SEO başlığı',
+      '4) SEO açıklaması',
+      '5) Instagram karusel kapağı',
+      '6) 5 kartlık karusel akışı',
+      '7) Teknoblog okuyucusuna etkisi',
+      'Dil: Türkçe. Ton: tarafsız, etken çatı, Teknoblog editoryal dili.'
+    ].filter(Boolean).join('\n');
+  }
+
+  async function copyAndOpenChatGPT(prompt, button) {
+    try {
+      await navigator.clipboard.writeText(prompt);
+      const old = button.textContent;
+      button.textContent = 'Kopyalandı';
+      setTimeout(() => { button.textContent = old; }, 1200);
+    } catch {}
+    window.open('https://chatgpt.com/', '_blank', 'noopener,noreferrer');
+  }
+
+  function addAiBridge() {
+    document.querySelectorAll('#tb-editorial-center article,#tb-grid article,#tb-instagram-radar-wrap article,#tb-opportunity-radar-wrap article').forEach((card) => {
+      if (card.dataset.aiBridge === '1') return;
+      const actions = card.querySelector('.actions,.tb-ec-actions,.tb-instagram-inner,.tb-opportunity-inner') || card;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'tb-ai-bridge';
+      button.textContent = 'ChatGPT brief';
+      button.addEventListener('click', () => copyAndOpenChatGPT(promptFromCard(card), button));
+      actions.appendChild(button);
+      if (card.closest('#tb-editorial-center')) {
+        const hint = document.createElement('span');
+        hint.className = 'tb-ai-hint';
+        hint.textContent = 'Ek maliyet yok: prompt kopyalanır, ChatGPT arayüzü açılır.';
+        actions.appendChild(hint);
+      }
+      card.dataset.aiBridge = '1';
+    });
+  }
+
+  function addSectionKickers() {
+    const map = [
+      ['#tb-editorial-center', '🧭', 'Editoryal karar merkezi'],
+      ['#tb-instagram-radar-wrap', '📸', 'Karusel / Keşfet adayları'],
+      ['#tb-opportunity-radar-wrap', '🏷️', 'Fırsat ve fiyat sinyalleri'],
+      ['#tb-google-news-wrap', '🌐', 'Google News teknoloji gündemi'],
+      ['#tb-trend-radar-wrap', '⚡', 'Trend ve karar katmanı'],
+      ['#tb-google-trends-radar-section', '📈', 'Google Trends sinyalleri']
+    ];
+    map.forEach(([selector, icon, text]) => {
+      const section = document.querySelector(selector);
+      if (!section || section.querySelector(':scope > .tb-section-kicker')) return;
+      const kicker = document.createElement('div');
+      kicker.className = 'tb-section-kicker';
+      kicker.textContent = `${icon} ${text}`;
+      section.insertBefore(kicker, section.firstChild);
+    });
+  }
+
+  function run() {
+    ensureStyle();
+    decorateTabs();
+    openVisiblePanels();
+    addAiBridge();
+    addSectionKickers();
+  }
+
+  function start() {
+    run();
+    const observer = new MutationObserver(() => window.requestAnimationFrame(run));
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-tb-main-hidden', 'aria-selected'] });
+    setTimeout(run, 500);
+    setTimeout(run, 1500);
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
+  else start();
+})();
