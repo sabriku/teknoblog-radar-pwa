@@ -3,6 +3,7 @@
   const TABS = [
     ['news', 'Haberler'],
     ['editorial', 'Editoryal'],
+    ['ops', 'Operasyon'],
     ['instagram', 'Instagram'],
     ['opportunity', 'Fırsatlar'],
     ['trends', 'Google Trends'],
@@ -66,6 +67,7 @@
     return {
       news: [document.getElementById('tb-source-tabs'), cards].filter(Boolean),
       editorial: [moveIntoMain(document.getElementById('tb-editorial-center'))].filter(Boolean),
+      ops: [moveIntoMain(document.getElementById('tb-editorial-ops-suite'))].filter(Boolean),
       instagram: [moveIntoMain(document.getElementById('tb-instagram-radar-wrap'))].filter(Boolean),
       opportunity: [moveIntoMain(document.getElementById('tb-opportunity-radar-wrap'))].filter(Boolean),
       trends: [moveIntoMain(document.getElementById('tb-google-trends-radar-section'))].filter(Boolean),
@@ -120,7 +122,7 @@
     ensureStyle();
     if (!ensureTabs()) return false;
     const sections = getSections();
-    const switchable = new Set([].concat(sections.news, sections.editorial, sections.instagram, sections.opportunity, sections.trends, sections.googleNews, sections.decision));
+    const switchable = new Set([].concat(sections.news, sections.editorial, sections.ops, sections.instagram, sections.opportunity, sections.trends, sections.googleNews, sections.decision));
     switchable.forEach((el) => el?.setAttribute('data-tb-main-hidden', '1'));
     const activeList = sections[active] || sections.news || [];
     setVisible(activeList, true);
