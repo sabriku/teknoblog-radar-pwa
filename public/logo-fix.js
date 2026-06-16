@@ -57,11 +57,25 @@
     return true;
   }
 
+  function loadEditorialCenter() {
+    if (document.getElementById('tb-editorial-command-center-script')) return;
+    const script = document.createElement('script');
+    script.id = 'tb-editorial-command-center-script';
+    script.src = `/editorial-command-center.js?v=20260524-1&_=${Date.now()}`;
+    script.defer = true;
+    document.body.appendChild(script);
+  }
+
   let tries = 0;
   const timer = setInterval(() => {
     tries += 1;
     if (applyLogoFix() || tries > 20) clearInterval(timer);
   }, 300);
 
-  document.addEventListener('DOMContentLoaded', applyLogoFix);
+  document.addEventListener('DOMContentLoaded', () => {
+    applyLogoFix();
+    loadEditorialCenter();
+  });
+
+  if (document.readyState !== 'loading') loadEditorialCenter();
 })();
