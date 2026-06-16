@@ -24,16 +24,38 @@
       #tb-main-tabs button{flex:0 0 auto;border:1px solid #d1d5db;background:#fff;color:#374151;border-radius:999px;padding:8px 11px;font-size:12px;font-weight:900;cursor:pointer;white-space:nowrap;line-height:1.1}
       #tb-main-tabs button[aria-selected='true']{border-color:#f04a0a;background:#fff1eb;color:#f04a0a;box-shadow:0 4px 12px rgba(240,74,10,.10)}
       [data-tb-main-hidden='1']{display:none!important}
-      #tb-layout aside{display:flex!important}
+      #tb-layout{display:grid!important;grid-template-columns:minmax(0,1fr) 340px!important;gap:20px!important;align-items:start}
+      #tb-layout main{min-width:0!important}
+      #tb-layout aside{display:flex!important;min-width:0!important}
+      #tb-editorial-center{width:100%!important;max-width:none!important;box-sizing:border-box!important;margin-top:0!important}
+      #tb-editorial-center .lite-grid{grid-template-columns:repeat(auto-fit,minmax(240px,1fr))!important;gap:10px!important}
+      #tb-editorial-center .tb-lite-card h4{font-size:16px!important}
+      #tb-editorial-center .tb-lite-card p,#tb-editorial-center .tb-lite-card li{font-size:11.5px!important}
+      #tb-editorial-center .tb-lite-img{max-height:170px!important}
+      @media(max-width:960px){
+        #tb-layout{display:block!important}
+        #tb-layout aside{margin-top:12px}
+      }
       @media(max-width:720px){
         #tb-radar-root{padding:10px!important}
         #tb-main-tabs{margin:0 -10px 10px;padding:8px 10px;background:#f8fafc}
         #tb-main-tabs button{padding:8px 10px;font-size:11px}
-        #tb-layout{display:block!important}
-        #tb-layout aside{margin-top:12px}
         #tb-grid{grid-template-columns:1fr!important;gap:10px!important}
+        #tb-editorial-center .lite-grid{grid-template-columns:1fr!important}
       }
     `;
+  }
+
+  function getMain() {
+    const layout = document.getElementById('tb-layout');
+    return layout?.querySelector('main') || document.querySelector('main') || document.getElementById('tb-radar-root');
+  }
+
+  function moveIntoMain(el) {
+    const main = getMain();
+    if (!el || !main) return el;
+    if (el.parentElement !== main) main.appendChild(el);
+    return el;
   }
 
   function getSections() {
@@ -43,12 +65,12 @@
     const cards = document.getElementById('tb-cards-anchor') || document.getElementById('tb-grid')?.parentElement || main;
     return {
       news: [document.getElementById('tb-source-tabs'), cards].filter(Boolean),
-      editorial: [document.getElementById('tb-editorial-center')].filter(Boolean),
-      instagram: [document.getElementById('tb-instagram-radar-wrap')].filter(Boolean),
-      opportunity: [document.getElementById('tb-opportunity-radar-wrap')].filter(Boolean),
-      trends: [document.getElementById('tb-google-trends-radar-section')].filter(Boolean),
-      googleNews: [document.getElementById('tb-google-news-wrap')].filter(Boolean),
-      decision: [document.getElementById('tb-trend-radar-wrap'), document.getElementById('tb-phase2-bar')].filter(Boolean),
+      editorial: [moveIntoMain(document.getElementById('tb-editorial-center'))].filter(Boolean),
+      instagram: [moveIntoMain(document.getElementById('tb-instagram-radar-wrap'))].filter(Boolean),
+      opportunity: [moveIntoMain(document.getElementById('tb-opportunity-radar-wrap'))].filter(Boolean),
+      trends: [moveIntoMain(document.getElementById('tb-google-trends-radar-section'))].filter(Boolean),
+      googleNews: [moveIntoMain(document.getElementById('tb-google-news-wrap'))].filter(Boolean),
+      decision: [moveIntoMain(document.getElementById('tb-trend-radar-wrap')), document.getElementById('tb-phase2-bar')].filter(Boolean),
       persistent: [aside].filter(Boolean)
     };
   }
@@ -89,12 +111,8 @@
     list.forEach((el) => {
       if (!el) return;
       el.setAttribute('data-open', '1');
-      el.querySelectorAll('.tb-opportunity-body,.tb-google-news-body,.tb-trend-body,#tb-trend-status,#tb-trend-grid,#tb-trend-window-tabs').forEach((child) => {
-        child.style.display = '';
-      });
-      el.querySelectorAll('.tb-section-toggle').forEach((button) => {
-        button.innerHTML = '<span class="tb-section-chevron">▾</span><span>Daralt</span>';
-      });
+      el.querySelectorAll('.tb-opportunity-body,.tb-google-news-body,.tb-trend-body,#tb-trend-status,#tb-trend-grid,#tb-trend-window-tabs').forEach((child) => { child.style.display = ''; });
+      el.querySelectorAll('.tb-section-toggle').forEach((button) => { button.innerHTML = '<span class="tb-section-chevron">▾</span><span>Daralt</span>'; });
     });
   }
 
@@ -121,9 +139,7 @@
     }, 250);
     document.addEventListener('tb:radar-section-ready', apply);
     window.addEventListener('load', apply);
-    document.addEventListener('click', (event) => {
-      if (event.target.closest('[data-phase2-filter]')) setTimeout(apply, 50);
-    }, true);
+    document.addEventListener('click', (event) => { if (event.target.closest('[data-phase2-filter]')) setTimeout(apply, 50); }, true);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
