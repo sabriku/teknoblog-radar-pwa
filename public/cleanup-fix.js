@@ -1,4 +1,18 @@
 (() => {
+  function loadScriptOnce(id, src) {
+    if (document.getElementById(id)) return;
+    const script = document.createElement('script');
+    script.id = id;
+    script.src = src;
+    script.defer = true;
+    document.head.appendChild(script);
+  }
+
+  function loadNavigationHelpers() {
+    loadScriptOnce('tb-editorial-tabs-lite-loader-v4', '/editorial-tabs-lite.js?v=20260524-4');
+    loadScriptOnce('tb-main-radar-tabs-loader-v2', '/radar-main-tabs.js?v=20260524-2');
+  }
+
   function cleanupBtn() { return document.getElementById('tb-cleanup'); }
   function cleanupStatusEl() { return document.getElementById('tb-cleanup-status'); }
 
@@ -78,4 +92,7 @@
     event.stopImmediatePropagation();
     runCleanup();
   }, true);
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', loadNavigationHelpers, { once: true });
+  else loadNavigationHelpers();
 })();
