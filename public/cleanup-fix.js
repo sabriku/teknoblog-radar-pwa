@@ -16,6 +16,7 @@
     loadScriptOnce('tb-source-diversity-layer-loader-v1', '/source-diversity-layer.js?v=20260524-1');
     loadScriptOnce('tb-source-add-sidebar-loader-v1', '/source-add-sidebar.js?v=20260524-1');
     loadScriptOnce('tb-editorial-ops-suite-loader-v1', '/editorial-ops-suite.js?v=20260524-1');
+    loadScriptOnce('tb-editorial-ops-suite-v2-loader-v1', '/editorial-ops-suite-v2.js?v=20260524-1');
   }
 
   function cleanupBtn() { return document.getElementById('tb-cleanup'); }
