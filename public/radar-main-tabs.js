@@ -2,7 +2,6 @@
   const LS = 'tb_main_nav_tab';
   const TABS = [
     ['news', 'Haberler'],
-    ['writePool', 'Yazılacaklar'],
     ['editorial', 'Editoryal'],
     ['ops', 'Operasyon'],
     ['instagram', 'Instagram'],
@@ -12,7 +11,7 @@
     ['decision', 'Trend/Karar']
   ];
   let active = localStorage.getItem(LS) || 'news';
-  if (active === 'sources' || active === 'writeLater') active = 'news';
+  if (active === 'sources' || active === 'writeLater' || active === 'writePool') active = 'news';
 
   function ensureStyle() {
     let style = document.getElementById('tb-main-tabs-style');
@@ -56,7 +55,6 @@
     const aside = layout?.querySelector('aside');
     return {
       news: [document.getElementById('tb-source-tabs'), document.getElementById('tb-status'), document.getElementById('tb-grid'), document.getElementById('tb-pagination')].filter(Boolean),
-      writePool: [moveIntoMain(document.getElementById('tb-write-pool-panel'))].filter(Boolean),
       editorial: [moveIntoMain(document.getElementById('tb-editorial-center'))].filter(Boolean),
       ops: [moveIntoMain(document.getElementById('tb-editorial-ops-suite'))].filter(Boolean),
       instagram: [moveIntoMain(document.getElementById('tb-instagram-radar-wrap'))].filter(Boolean),
@@ -130,7 +128,7 @@
     ensureStyle();
     if (!ensureTabs()) return false;
     const sections = getSections();
-    const switchable = new Set([].concat(sections.news, sections.writePool, sections.editorial, sections.ops, sections.instagram, sections.opportunity, sections.trends, sections.googleNews, sections.decision));
+    const switchable = new Set([].concat(sections.news, sections.editorial, sections.ops, sections.instagram, sections.opportunity, sections.trends, sections.googleNews, sections.decision));
     switchable.forEach((el) => el?.setAttribute('data-tb-main-hidden', '1'));
     const activeList = sections[active] || sections.news || [];
     setVisible(activeList, true);
