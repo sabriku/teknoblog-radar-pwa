@@ -30,36 +30,56 @@
     return document.querySelector('#tb-layout aside') || document.querySelector('aside');
   }
 
+  function isTodayPanel(el) {
+    const t = (el?.textContent || '').replace(/\s+/g, ' ').toLowerCase();
+    return /bugün/.test(t) && /teknoblog/.test(t) && /yay/.test(t);
+  }
+
+  function findTodayPanel(sidebar) {
+    if (!sidebar) return null;
+    return [...sidebar.children].find(isTodayPanel) || document.getElementById('tb-today-published-panel');
+  }
+
+  function placePanel(panel, sidebar) {
+    const today = findTodayPanel(sidebar);
+    if (today && today.parentElement === sidebar) {
+      if (today.nextSibling !== panel) sidebar.insertBefore(panel, today.nextSibling);
+      return;
+    }
+    if (sidebar.firstChild !== panel) sidebar.insertBefore(panel, sidebar.firstChild);
+  }
+
   function ensurePanel() {
     ensureStyle();
     const sidebar = findSidebar();
     if (!sidebar) return false;
-    if (document.getElementById('tb-source-add-panel')) return true;
-
-    const panel = document.createElement('section');
-    panel.id = 'tb-source-add-panel';
-    panel.innerHTML = `
-      <h3>Kaynak ekle</h3>
-      <form id="tb-source-form" autocomplete="off">
-        <input name="name" placeholder="Kaynak adı" required>
-        <input name="rss_url" placeholder="RSS / Feed URL" required>
-        <input name="site_url" placeholder="Site URL, opsiyonel">
-        <select name="market_relevance">
-          <option value="global">Global</option>
-          <option value="local">Türkiye odaklı</option>
-          <option value="mixed">Karma</option>
-        </select>
-        <div class="tb-source-add-row">
-          <input name="priority_weight" type="number" min="0" max="100" value="50" placeholder="Öncelik">
-          <input name="trust_score" type="number" min="0" max="100" value="70" placeholder="Güven">
-        </div>
-        <label><input name="is_active" type="checkbox" checked> Kaynak aktif</label>
-        <button type="submit">Kaynağı Ekle</button>
-        <button id="tb-source-cancel" type="button" class="secondary" style="display:none">Düzenlemeyi İptal Et</button>
-        <div id="tb-source-form-status"></div>
-      </form>
-    `;
-    sidebar.insertBefore(panel, sidebar.firstChild);
+    let panel = document.getElementById('tb-source-add-panel');
+    if (!panel) {
+      panel = document.createElement('section');
+      panel.id = 'tb-source-add-panel';
+      panel.innerHTML = `
+        <h3>Kaynak ekle</h3>
+        <form id="tb-source-form" autocomplete="off">
+          <input name="name" placeholder="Kaynak adı" required>
+          <input name="rss_url" placeholder="RSS / Feed URL" required>
+          <input name="site_url" placeholder="Site URL, opsiyonel">
+          <select name="market_relevance">
+            <option value="global">Global</option>
+            <option value="local">Türkiye odaklı</option>
+            <option value="mixed">Karma</option>
+          </select>
+          <div class="tb-source-add-row">
+            <input name="priority_weight" type="number" min="0" max="100" value="50" placeholder="Öncelik">
+            <input name="trust_score" type="number" min="0" max="100" value="70" placeholder="Güven">
+          </div>
+          <label><input name="is_active" type="checkbox" checked> Kaynak aktif</label>
+          <button type="submit">Kaynağı Ekle</button>
+          <button id="tb-source-cancel" type="button" class="secondary" style="display:none">Düzenlemeyi İptal Et</button>
+          <div id="tb-source-form-status"></div>
+        </form>
+      `;
+    }
+    placePanel(panel, sidebar);
     return true;
   }
 
@@ -139,7 +159,8 @@
     let tries = 0;
     const timer = setInterval(() => {
       tries += 1;
-      if (ensurePanel() || tries > 80) clearInterval(timer);
+      ensurePanel();
+      if (tries > 80) clearInterval(timer);
     }, 250);
     document.addEventListener('submit', handleSubmit, true);
   }
