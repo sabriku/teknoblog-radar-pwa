@@ -107,6 +107,23 @@
     });
   }
 
+  function forceNewsVisible() {
+    const main = getMain();
+    const layout = document.getElementById('tb-layout');
+    [layout, main, document.getElementById('tb-source-tabs'), document.getElementById('tb-status'), document.getElementById('tb-grid'), document.getElementById('tb-pagination')].forEach((el) => {
+      if (!el) return;
+      el.removeAttribute('data-tb-main-hidden');
+    });
+    const grid = document.getElementById('tb-grid');
+    if (grid) {
+      grid.style.display = 'grid';
+      if (!grid.style.gridTemplateColumns) grid.style.gridTemplateColumns = 'repeat(auto-fit,minmax(300px,1fr))';
+      if (!grid.style.gap) grid.style.gap = '14px';
+    }
+    const opportunity = document.getElementById('tb-opportunity-radar-wrap');
+    if (opportunity) opportunity.setAttribute('data-tb-main-hidden', '1');
+  }
+
   function apply() {
     ensureStyle();
     if (!ensureTabs()) return false;
@@ -117,6 +134,7 @@
     setVisible(activeList, true);
     setVisible(sections.persistent || [], true);
     openActivePanels(activeList);
+    if (active === 'news') forceNewsVisible();
     document.querySelectorAll('#tb-main-tabs [data-main-tab]').forEach((button) => button.setAttribute('aria-selected', button.dataset.mainTab === active ? 'true' : 'false'));
     return true;
   }
