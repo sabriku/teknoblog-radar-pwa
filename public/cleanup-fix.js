@@ -9,8 +9,9 @@
   }
 
   function loadNavigationHelpers() {
-    loadScriptOnce('tb-editorial-tabs-lite-loader-v4', '/editorial-tabs-lite.js?v=20260524-4');
-    loadScriptOnce('tb-main-radar-tabs-loader-v2', '/radar-main-tabs.js?v=20260524-2');
+    loadScriptOnce('tb-editorial-tabs-lite-loader-v5', '/editorial-tabs-lite.js?v=20260524-5');
+    loadScriptOnce('tb-main-radar-tabs-loader-v3', '/radar-main-tabs.js?v=20260524-3');
+    loadScriptOnce('tb-phase2-filter-fix-loader-v1', '/phase2-filter-fix.js?v=20260524-1');
   }
 
   function cleanupBtn() { return document.getElementById('tb-cleanup'); }
@@ -75,9 +76,7 @@
         body: JSON.stringify({ period }),
         timeoutMs: 120000
       });
-      if (status) {
-        status.textContent = `Temizleme tamamlandı. Silinen haber: ${Number(result.deleted_raw_feed_items || 0)}, silinen aday: ${Number(result.deleted_topic_candidates || 0)}. Sayfa zorla yenileniyor...`;
-      }
+      if (status) status.textContent = `Temizleme tamamlandı. Silinen haber: ${Number(result.deleted_raw_feed_items || 0)}, silinen aday: ${Number(result.deleted_topic_candidates || 0)}. Sayfa zorla yenileniyor...`;
       setTimeout(hardReload, 700);
     } catch (error) {
       if (status) status.textContent = `Temizleme hatası: ${String(error.message || error)}`;
