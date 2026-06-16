@@ -33,17 +33,8 @@
       #tb-editorial-center .tb-lite-card h4{font-size:16px!important}
       #tb-editorial-center .tb-lite-card p,#tb-editorial-center .tb-lite-card li{font-size:11.5px!important}
       #tb-editorial-center .tb-lite-img{max-height:170px!important}
-      @media(max-width:960px){
-        #tb-layout{display:block!important}
-        #tb-layout aside{margin-top:12px}
-      }
-      @media(max-width:720px){
-        #tb-radar-root{padding:10px!important}
-        #tb-main-tabs{margin:0 -10px 10px;padding:8px 10px;background:#f8fafc}
-        #tb-main-tabs button{padding:8px 10px;font-size:11px}
-        #tb-grid{grid-template-columns:1fr!important;gap:10px!important}
-        #tb-editorial-center .lite-grid{grid-template-columns:1fr!important}
-      }
+      @media(max-width:960px){#tb-layout{display:block!important}#tb-layout aside{margin-top:12px}}
+      @media(max-width:720px){#tb-radar-root{padding:10px!important}#tb-main-tabs{margin:0 -10px 10px;padding:8px 10px;background:#f8fafc}#tb-main-tabs button{padding:8px 10px;font-size:11px}#tb-grid{grid-template-columns:1fr!important;gap:10px!important}#tb-editorial-center .lite-grid{grid-template-columns:1fr!important}}
     `;
   }
 
@@ -61,11 +52,9 @@
 
   function getSections() {
     const layout = document.getElementById('tb-layout');
-    const main = layout?.querySelector('main');
     const aside = layout?.querySelector('aside');
-    const cards = document.getElementById('tb-cards-anchor') || document.getElementById('tb-grid')?.parentElement || main;
     return {
-      news: [document.getElementById('tb-source-tabs'), cards].filter(Boolean),
+      news: [document.getElementById('tb-source-tabs'), document.getElementById('tb-status'), document.getElementById('tb-grid'), document.getElementById('tb-pagination')].filter(Boolean),
       editorial: [moveIntoMain(document.getElementById('tb-editorial-center'))].filter(Boolean),
       ops: [moveIntoMain(document.getElementById('tb-editorial-ops-suite'))].filter(Boolean),
       instagram: [moveIntoMain(document.getElementById('tb-instagram-radar-wrap'))].filter(Boolean),
