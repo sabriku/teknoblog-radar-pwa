@@ -9,84 +9,22 @@
   <link href="https://fonts.googleapis.com/css2?family=Fira+Sans+Condensed:wght@600;700&family=Open+Sans:wght@400;700;800&display=swap" rel="stylesheet">
   <style>
     :root{--tb:#f04a0a;--ink:#111827;--muted:#64748b;--line:#dbe3ef;--bg:#f8fafc}
-    *{box-sizing:border-box}
-    body{margin:0;background:var(--bg);color:var(--ink);font-family:'Open Sans',sans-serif}
-    .wrap{max-width:1220px;margin:0 auto;padding:18px}
-    header{display:flex;gap:14px;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;margin-bottom:18px}
-    h1{font:700 36px/1 'Fira Sans Condensed',sans-serif;color:var(--tb);margin:0}
-    .sub{font-size:13px;color:var(--muted);line-height:1.5;margin-top:8px}
-    a.top{display:inline-flex;align-items:center;text-decoration:none;border:1px solid var(--tb);color:var(--tb);background:#fff;border-radius:999px;padding:9px 12px;font-size:12px;font-weight:900}
-    .grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(360px,440px);gap:16px;align-items:start}
-    .card{border:1px solid var(--line);border-radius:20px;background:#fff;padding:16px;box-shadow:0 6px 18px rgba(9,30,66,.06)}
-    h2{font:700 24px/1 'Fira Sans Condensed',sans-serif;margin:0 0 10px;color:#111827}
-    label{display:block;font-size:12px;font-weight:800;color:#334155;margin:10px 0 5px}
-    input,select,textarea{width:100%;border:1px solid #d1d5db;border-radius:12px;padding:10px 11px;background:#fff;color:#111827;font:13px/1.4 'Open Sans',sans-serif}
-    textarea{min-height:270px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}
-    .row{display:grid;grid-template-columns:1fr 1fr;gap:9px}
-    button{border:0;border-radius:12px;background:var(--tb);color:#fff;padding:10px 13px;font-size:12px;font-weight:900;cursor:pointer}
-    button.secondary{background:#fff;color:var(--tb);border:1px solid var(--tb)}
-    button:disabled{opacity:.65;cursor:wait}
-    .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
-    .status{min-height:18px;font-size:12px;color:var(--muted);line-height:1.45;margin-top:9px}
-    .source-list{display:flex;flex-direction:column;gap:9px;max-height:690px;overflow:auto;padding-right:4px}
-    .source{border:1px solid #e5e7eb;border-radius:15px;padding:11px;background:#fff}
-    .source strong{display:block;font:700 18px/1.2 'Fira Sans Condensed',sans-serif;margin-bottom:4px}
-    .source small{display:block;color:#64748b;font-size:11px;word-break:break-all;line-height:1.45}
-    .badge{display:inline-flex;border:1px solid #e5e7eb;border-radius:999px;padding:3px 7px;margin:7px 5px 0 0;font-size:10.5px;font-weight:900;color:#475569;background:#f8fafc}
-    .result{border:1px solid #e5e7eb;border-radius:14px;padding:10px;margin-top:8px;font-size:12px;line-height:1.45;background:#fff}
-    .result.ok{border-color:#bbf7d0;background:#f0fdf4}.result.skip{border-color:#fde68a;background:#fffbeb}.result.fail{border-color:#fecaca;background:#fef2f2}
-    .summary{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}.summary div{border:1px solid #e5e7eb;border-radius:14px;padding:10px;background:#fff}.summary b{display:block;font-size:24px;color:var(--tb)}.summary span{font-size:11px;color:#64748b;font-weight:900}
-    @media(max-width:900px){.grid{grid-template-columns:1fr}.row{grid-template-columns:1fr}h1{font-size:31px}}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:'Open Sans',sans-serif}.wrap{max-width:1220px;margin:0 auto;padding:18px}.sub{font-size:13px;color:var(--muted);line-height:1.5;margin-top:8px}.grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(360px,440px);gap:16px;align-items:start}.card{border:1px solid var(--line);border-radius:20px;background:#fff;padding:16px;box-shadow:0 6px 18px rgba(9,30,66,.06)}h2{font:700 24px/1 'Fira Sans Condensed',sans-serif;margin:0 0 10px;color:#111827}label{display:block;font-size:12px;font-weight:800;color:#334155;margin:10px 0 5px}input,select,textarea{width:100%;border:1px solid #d1d5db;border-radius:12px;padding:10px 11px;background:#fff;color:#111827;font:13px/1.4 'Open Sans',sans-serif}textarea{min-height:270px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}.row{display:grid;grid-template-columns:1fr 1fr;gap:9px}button{border:0;border-radius:12px;background:var(--tb);color:#fff;padding:10px 13px;font-size:12px;font-weight:900;cursor:pointer}button.secondary{background:#fff;color:var(--tb);border:1px solid var(--tb)}button:disabled{opacity:.65;cursor:wait}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.status{min-height:18px;font-size:12px;color:var(--muted);line-height:1.45;margin-top:9px}.source-list{display:flex;flex-direction:column;gap:9px;max-height:690px;overflow:auto;padding-right:4px}.source{border:1px solid #e5e7eb;border-radius:15px;padding:11px;background:#fff}.source strong{display:block;font:700 18px/1.2 'Fira Sans Condensed',sans-serif;margin-bottom:4px}.source small{display:block;color:#64748b;font-size:11px;word-break:break-all;line-height:1.45}.badge{display:inline-flex;border:1px solid #e5e7eb;border-radius:999px;padding:3px 7px;margin:7px 5px 0 0;font-size:10.5px;font-weight:900;color:#475569;background:#f8fafc}.result{border:1px solid #e5e7eb;border-radius:14px;padding:10px;margin-top:8px;font-size:12px;line-height:1.45;background:#fff}.result.ok{border-color:#bbf7d0;background:#f0fdf4}.result.skip{border-color:#fde68a;background:#fffbeb}.result.fail{border-color:#fecaca;background:#fef2f2}.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}.summary div{border:1px solid #e5e7eb;border-radius:14px;padding:10px;background:#fff}.summary b{display:block;font-size:24px;color:var(--tb)}.summary span{font-size:11px;color:#64748b;font-weight:900}@media(max-width:900px){.grid{grid-template-columns:1fr}.row{grid-template-columns:1fr}}
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <header>
-      <div>
-        <h1>Kaynak Yönetimi</h1>
-        <div class="sub">Tekil kaynak ekleyin veya RSS adreslerini toplu içe aktarın. Toplu eklemede RSS başlığı ve site adresi otomatik okunur; kaynak türü, pazar odağı, güven ve öncelik otomatik belirlenir.</div>
-      </div>
-      <a class="top" href="/">← Radara dön</a>
+  <div id="tb-radar-root" class="wrap tb-page">
+    <header class="tb-page-header">
+      <div><h1>Kaynak Yönetimi</h1><div class="sub">Tekil kaynak ekleyin veya RSS adreslerini toplu içe aktarın. Toplu eklemede RSS başlığı ve site adresi otomatik okunur; kaynak türü, pazar odağı, güven ve öncelik otomatik belirlenir.</div></div>
+      <a class="tb-back" href="/">← Radara dön</a>
     </header>
-
     <div class="grid">
-      <section class="card">
-        <h2>Toplu RSS ekle</h2>
-        <div class="sub">Her satıra bir RSS/Atom URL girin. Sistem mevcut RSS ve site adreslerini eleyerek sadece yeni kaynakları ekler. Öncelik ve güven puanları otomatik atanır.</div>
-        <label for="bulk-rss">RSS URL listesi</label>
-        <textarea id="bulk-rss" placeholder="https://example.com/feed/&#10;https://example.com/rss.xml"></textarea>
-        <div class="actions"><button id="bulk-submit" type="button">Toplu ekle</button><button id="bulk-clear" class="secondary" type="button">Temizle</button></div>
-        <div id="bulk-status" class="status"></div>
-        <div id="bulk-results"></div>
-      </section>
-
-      <section class="card">
-        <h2>Tekil kaynak ekle</h2>
-        <form id="single-form" autocomplete="off">
-          <label>Kaynak adı</label><input name="name" required placeholder="The Verge">
-          <label>RSS / Feed URL</label><input name="rss_url" required placeholder="https://www.theverge.com/rss/index.xml">
-          <label>Site URL, opsiyonel</label><input name="site_url" placeholder="https://www.theverge.com">
-          <div class="row">
-            <div><label>Pazar odağı</label><select name="market_relevance"><option value="global">Global</option><option value="local">Türkiye odaklı</option><option value="mixed">Karma</option></select></div>
-            <div><label>Kaynak türü</label><select name="source_type"><option value="news">Haber</option><option value="official">Resmî kaynak</option><option value="deals">Fırsat</option><option value="competitor">Rakip takip</option></select></div>
-          </div>
-          <div class="row">
-            <div><label>Öncelik</label><input name="priority_weight" type="number" min="0" max="100" value="50"></div>
-            <div><label>Güven</label><input name="trust_score" type="number" min="0" max="100" value="70"></div>
-          </div>
-          <label style="display:flex;gap:8px;align-items:center"><input name="is_active" type="checkbox" checked style="width:auto"> Kaynak aktif</label>
-          <div class="actions"><button type="submit">Kaynağı ekle</button></div>
-          <div id="single-status" class="status"></div>
-        </form>
-      </section>
+      <section class="card"><h2>Toplu RSS ekle</h2><div class="sub">Her satıra bir RSS/Atom URL girin. Sistem mevcut RSS ve site adreslerini eleyerek sadece yeni kaynakları ekler. Öncelik ve güven puanları otomatik atanır.</div><label for="bulk-rss">RSS URL listesi</label><textarea id="bulk-rss" placeholder="https://example.com/feed/&#10;https://example.com/rss.xml"></textarea><div class="actions"><button id="bulk-submit" type="button">Toplu ekle</button><button id="bulk-clear" class="secondary" type="button">Temizle</button></div><div id="bulk-status" class="status"></div><div id="bulk-results"></div></section>
+      <section class="card"><h2>Tekil kaynak ekle</h2><form id="single-form" autocomplete="off"><label>Kaynak adı</label><input name="name" required placeholder="The Verge"><label>RSS / Feed URL</label><input name="rss_url" required placeholder="https://www.theverge.com/rss/index.xml"><label>Site URL, opsiyonel</label><input name="site_url" placeholder="https://www.theverge.com"><div class="row"><div><label>Pazar odağı</label><select name="market_relevance"><option value="global">Global</option><option value="local">Türkiye odaklı</option><option value="mixed">Karma</option></select></div><div><label>Kaynak türü</label><select name="source_type"><option value="news">Haber</option><option value="official">Resmî kaynak</option><option value="deals">Fırsat</option><option value="competitor">Rakip takip</option></select></div></div><div class="row"><div><label>Öncelik</label><input name="priority_weight" type="number" min="0" max="100" value="50"></div><div><label>Güven</label><input name="trust_score" type="number" min="0" max="100" value="70"></div></div><label style="display:flex;gap:8px;align-items:center"><input name="is_active" type="checkbox" checked style="width:auto"> Kaynak aktif</label><div class="actions"><button type="submit">Kaynağı ekle</button></div><div id="single-status" class="status"></div></form></section>
     </div>
-
-    <section class="card" style="margin-top:16px">
-      <h2>Mevcut kaynaklar</h2>
-      <div id="sources-status" class="status">Kaynaklar yükleniyor...</div>
-      <div id="sources-list" class="source-list"></div>
-    </section>
+    <section class="card" style="margin-top:16px"><h2>Mevcut kaynaklar</h2><div id="sources-status" class="status">Kaynaklar yükleniyor...</div><div id="sources-list" class="source-list"></div></section>
   </div>
+  <script src="/radar-main-tabs.js?v=20260524-14" defer></script>
   <script src="/sources-manager.js?v=20260524-2" defer></script>
 </body>
 </html>
