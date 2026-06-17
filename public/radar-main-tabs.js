@@ -5,6 +5,8 @@
     ['/opportunities.html', 'Fırsatlar'],
     ['/trends.html', 'Google Trends'],
     ['/google-news.html', 'Google News'],
+    ['/instagram.html', 'Instagram'],
+    ['/decision.html', 'Trend/Karar'],
     ['/editorial.html', 'Editoryal'],
     ['/ops.html', 'Operasyon']
   ];
