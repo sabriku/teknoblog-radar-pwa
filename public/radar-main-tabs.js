@@ -24,6 +24,15 @@
       .replace(/'/g, '&#39;');
   }
 
+  function normalizePath(pathname) {
+    const p = String(pathname || '/').replace(/\/+$/, '') || '/';
+    return p === '/index.html' ? '/' : p;
+  }
+
+  function isHome() {
+    return normalizePath(window.location.pathname) === '/';
+  }
+
   function ensureStyle() {
     let style = document.getElementById('tb-main-tabs-style');
     if (!style) {
@@ -55,11 +64,6 @@
     `;
   }
 
-  function normalizePath(pathname) {
-    const p = String(pathname || '/').replace(/\/+$/, '') || '/';
-    return p === '/index.html' ? '/' : p;
-  }
-
   function linkHtml() {
     const current = normalizePath(window.location.pathname);
     return LINKS.map(([href, label]) => {
@@ -69,6 +73,7 @@
   }
 
   function enhanceHeader() {
+    if (isHome()) return;
     const root = document.getElementById('tb-radar-root') || document.querySelector('.tb-page') || document.body;
     const header = root.querySelector(':scope > header') || root.querySelector('.tb-page-header');
     if (!header || header.dataset.sharedRadarHeader === '1') return;
