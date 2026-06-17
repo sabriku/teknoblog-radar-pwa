@@ -22,8 +22,9 @@
     }
     style.textContent = `
       #tb-main-tabs{display:flex;gap:6px;overflow-x:auto;overflow-y:hidden;padding:8px 0 10px;margin:-6px 0 12px;border-bottom:1px solid #e5e7eb;position:sticky;top:0;background:#f8fafc;z-index:60;scrollbar-width:thin;-webkit-overflow-scrolling:touch}
-      #tb-main-tabs button{flex:0 0 auto;border:1px solid #d1d5db;background:#fff;color:#374151;border-radius:999px;padding:8px 11px;font-size:12px;font-weight:900;cursor:pointer;white-space:nowrap;line-height:1.1}
+      #tb-main-tabs button,#tb-main-tabs a{flex:0 0 auto;border:1px solid #d1d5db;background:#fff;color:#374151;border-radius:999px;padding:8px 11px;font-size:12px;font-weight:900;cursor:pointer;white-space:nowrap;line-height:1.1;text-decoration:none;font-family:'Open Sans',sans-serif;display:inline-flex;align-items:center}
       #tb-main-tabs button[aria-selected='true']{border-color:#f04a0a;background:#fff1eb;color:#f04a0a;box-shadow:0 4px 12px rgba(240,74,10,.10)}
+      #tb-main-tabs a.tb-nav-link{border-color:#f04a0a;color:#f04a0a;background:#fff7ed}
       [data-tb-main-hidden='1']{display:none!important}
       #tb-layout{display:grid!important;grid-template-columns:minmax(0,1fr) 340px!important;gap:20px!important;align-items:start}
       #tb-layout main{min-width:0!important}
@@ -34,7 +35,7 @@
       #tb-editorial-center .tb-lite-card p,#tb-editorial-center .tb-lite-card li{font-size:11.5px!important}
       #tb-editorial-center .tb-lite-img{max-height:170px!important}
       @media(max-width:960px){#tb-layout{display:block!important}#tb-layout aside{margin-top:12px}}
-      @media(max-width:720px){#tb-radar-root{padding:10px!important}#tb-main-tabs{margin:0 -10px 10px;padding:8px 10px;background:#f8fafc}#tb-main-tabs button{padding:8px 10px;font-size:11px}#tb-grid{grid-template-columns:1fr!important;gap:10px!important}#tb-editorial-center .lite-grid{grid-template-columns:1fr!important}}
+      @media(max-width:720px){#tb-radar-root{padding:10px!important}#tb-main-tabs{margin:0 -10px 10px;padding:8px 10px;background:#f8fafc}#tb-main-tabs button,#tb-main-tabs a{padding:8px 10px;font-size:11px}#tb-grid{grid-template-columns:1fr!important;gap:10px!important}#tb-editorial-center .lite-grid{grid-template-columns:1fr!important}}
     `;
   }
 
@@ -85,7 +86,7 @@
         apply();
       });
     }
-    const html = TABS.map(([id, label]) => `<button type="button" data-main-tab="${id}" aria-selected="${active === id ? 'true' : 'false'}">${label}</button>`).join('');
+    const html = `${TABS.map(([id, label]) => `<button type="button" data-main-tab="${id}" aria-selected="${active === id ? 'true' : 'false'}">${label}</button>`).join('')}<a class="tb-nav-link" href="/sources.html">Kaynaklar</a>`;
     if (nav.innerHTML !== html) nav.innerHTML = html;
     return true;
   }
