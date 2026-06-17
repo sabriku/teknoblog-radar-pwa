@@ -68,7 +68,7 @@
         <div><b>${Number(counts.skipped || 0)}</b><span>Atlanan</span></div>
         <div><b>${Number(counts.failed || 0)}</b><span>Hatalı</span></div>
       </div>
-      ${added.map((source) => `<div class="result ok"><strong>Eklendi:</strong> ${esc(source.name)}<br><small>${esc(source.rss_url || source.feed_url || '')}</small></div>`).join('')}
+      ${added.map((source) => `<div class="result ok"><strong>Eklendi:</strong> ${esc(source.name)}<br><small>${esc(source.rss_url || source.feed_url || '')}</small><br><small>${esc(sourceTypeLabel(source.source_type))} · ${esc(marketLabel(source.market_relevance))} · Öncelik ${Number(source.priority_weight || 0)} · Güven ${Number(source.trust_score || 0)}</small></div>`).join('')}
       ${skipped.map((row) => `<div class="result skip"><strong>Atlandı:</strong> ${esc(row.rss_url)}<br><small>${esc(row.reason || '')}</small></div>`).join('')}
       ${failed.map((row) => `<div class="result fail"><strong>Hata:</strong> ${esc(row.rss_url)}<br><small>${esc(row.error || '')}</small></div>`).join('')}
     `;
@@ -84,16 +84,13 @@
     }
     try {
       setLoading(button, true, 'Ekleniyor...');
-      if (status) status.textContent = 'RSS kaynakları okunuyor ve karşılaştırılıyor...';
-      const data = await fetchJson('/api/source-bulk', {
+      if (status) status.textContent = 'RSS kaynakları okunuyor, otomatik puanlanıyor ve mevcut listeyle karşılaştırılıyor...';
+      const data = await fetchJson('/api/sources', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json; charset=utf-8' },
         body: JSON.stringify({
+          action: 'bulk_add',
           rss_urls: text,
-          market_relevance: $('bulk-market')?.value || 'global',
-          source_type: $('bulk-type')?.value || 'news',
-          priority_weight: Number($('bulk-priority')?.value || 50),
-          trust_score: Number($('bulk-trust')?.value || 70),
           is_active: true
         })
       });
