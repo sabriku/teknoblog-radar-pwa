@@ -2,16 +2,13 @@
   const state = {
     items: [],
     sources: [],
-    trends: [],
     sort: 'published_at',
     source: 'all',
     view: 'cards',
     page: 1,
     pageSize: 20,
     selected: new Set(),
-    loading: false,
-    trendLoading: false,
-    trendWindow: '24h'
+    loading: false
   };
 
   const esc = (value) => String(value ?? '')
@@ -34,71 +31,25 @@
     return el.value;
   }
 
-  function publishedAt(item) {
-    return pick(item?.published_at, item?.created_at, item?.updated_at);
-  }
-
-  function timestamp(item) {
-    const time = new Date(publishedAt(item) || 0).getTime();
-    return Number.isFinite(time) ? time : 0;
-  }
-
-  function ageHours(item) {
-    const time = timestamp(item);
-    if (!time) return 999999;
-    return Math.max(0, (Date.now() - time) / 3600000);
-  }
-
-  function isLast24h(item) {
-    return ageHours(item) <= 24;
-  }
-
-  function score(item, key) {
-    const value = Number(item?.[key]);
-    return Number.isFinite(value) ? value : 0;
-  }
-
-  function title(item) {
-    return decode(pick(item?.title, 'Başlıksız içerik'));
-  }
-
-  function summary(item) {
-    return decode(pick(item?.summary, item?.excerpt, item?.description));
-  }
-
-  function url(item) {
-    return pick(item?.url, item?.canonical_url, item?.link, item?.article_url, item?.target_url, item?.source_url, item?.site_url);
-  }
-
-  function image(item) {
-    return pick(item?.image_url, item?.image, item?.thumbnail, item?.thumb_url, item?.media_url);
-  }
-
-  function sourceName(item) {
-    return pick(item?.source_name, 'Kaynak yok');
-  }
+  function publishedAt(item) { return pick(item?.published_at, item?.created_at, item?.updated_at); }
+  function timestamp(item) { const time = new Date(publishedAt(item) || 0).getTime(); return Number.isFinite(time) ? time : 0; }
+  function ageHours(item) { const time = timestamp(item); if (!time) return 999999; return Math.max(0, (Date.now() - time) / 3600000); }
+  function isLast24h(item) { return ageHours(item) <= 24; }
+  function score(item, key) { const value = Number(item?.[key]); return Number.isFinite(value) ? value : 0; }
+  function title(item) { return decode(pick(item?.title, 'Başlıksız içerik')); }
+  function summary(item) { return decode(pick(item?.summary, item?.excerpt, item?.description)); }
+  function url(item) { return pick(item?.url, item?.canonical_url, item?.link, item?.article_url, item?.target_url, item?.source_url, item?.site_url); }
+  function image(item) { return pick(item?.image_url, item?.image, item?.thumbnail, item?.thumb_url, item?.media_url); }
+  function sourceName(item) { return pick(item?.source_name, 'Kaynak yok'); }
 
   function formatDate(value) {
     const date = new Date(value || 0);
     if (Number.isNaN(date.getTime())) return '';
-    return new Intl.DateTimeFormat('tr-TR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      timeZone: 'Europe/Istanbul'
-    }).format(date);
+    return new Intl.DateTimeFormat('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Istanbul' }).format(date);
   }
 
   function todayLabel() {
-    return new Intl.DateTimeFormat('tr-TR', {
-      weekday: 'long',
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
-      timeZone: 'Europe/Istanbul'
-    }).format(new Date());
+    return new Intl.DateTimeFormat('tr-TR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Istanbul' }).format(new Date());
   }
 
   function freshnessAdjustedScore(item, key) {
@@ -135,9 +86,7 @@
     return sortedItems().slice(start, start + state.pageSize);
   }
 
-  function totalPages() {
-    return Math.max(1, Math.ceil(visibleItems().length / state.pageSize));
-  }
+  function totalPages() { return Math.max(1, Math.ceil(visibleItems().length / state.pageSize)); }
 
   function scoreBadge(label, value, color) {
     return `<span style="display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;border:1px solid ${color};color:${color};background:#fff;font-size:11px;font-weight:800">${esc(label)} ${esc(value)}</span>`;
@@ -171,18 +120,7 @@
           </div>
         </header>
         <div id="tb-status" style="margin-bottom:12px;font-size:14px;color:#475569"></div>
-        <section id="tb-google-trends-radar-section" style="margin-bottom:18px;border:1px solid #dbe3ef;border-radius:22px;background:#fff;padding:16px;box-shadow:0 6px 18px rgba(9,30,66,.06)">
-          <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;justify-content:space-between;margin-bottom:14px">
-            <div>
-              <div style="font:700 24px/1 'Fira Sans Condensed',sans-serif;color:#111827">Google Trends Teknoloji Radarı</div>
-              <div style="margin-top:8px;font-size:14px;line-height:1.5;color:#475569">Yalnızca bugünün ve son 24 saatin teknoloji trendleri gösterilir.</div>
-            </div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap" id="tb-trend-window-tabs"></div>
-          </div>
-          <div id="tb-trend-status" style="margin-bottom:12px;font-size:13px;color:#64748b"></div>
-          <div id="tb-trend-grid"></div>
-        </section>
-        <div id="tb-source-tabs" style="display:flex;gap:8px;overflow:auto;padding-bottom:8px;margin-bottom:16px"></div>
+        <div id="tb-source-tabs" style="display:flex;gap:8px;align-items:center;margin-bottom:16px"></div>
         <div id="tb-layout" style="display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:20px">
           <main>
             <div id="tb-grid"></div>
@@ -211,13 +149,9 @@
   function renderSourceTabs() {
     const wrap = document.getElementById('tb-source-tabs');
     if (!wrap) return;
-    const names = ['all', ...new Set(visibleItems().map(sourceName).filter(Boolean))].sort((a, b) => a === 'all' ? -1 : b === 'all' ? 1 : a.localeCompare(b, 'tr'));
+    const names = ['all', ...new Set(state.items.map(sourceName).filter(Boolean))].sort((a, b) => a === 'all' ? -1 : b === 'all' ? 1 : a.localeCompare(b, 'tr'));
     if (!names.includes(state.source)) state.source = 'all';
-    wrap.innerHTML = names.map((name) => {
-      const active = state.source === name;
-      const label = name === 'all' ? 'Tüm kaynaklar' : name;
-      return `<button type="button" data-source-filter="${esc(name)}" style="flex:0 0 auto;padding:8px 12px;border-radius:999px;border:1px solid ${active ? '#f04a0a' : '#d1d5db'};background:${active ? '#fff1eb' : '#fff'};color:${active ? '#f04a0a' : '#374151'};font-weight:800;cursor:pointer">${esc(label)}</button>`;
-    }).join('');
+    wrap.innerHTML = `<label for="tb-source-select" style="font-size:13px;font-weight:800;color:#111827;white-space:nowrap">Kaynak</label><select id="tb-source-select" style="min-width:260px;max-width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:12px;background:#fff;font-weight:800;color:#374151">${names.map((name) => `<option value="${esc(name)}"${state.source === name ? ' selected' : ''}>${esc(name === 'all' ? 'Tüm kaynaklar' : name)}</option>`).join('')}</select>`;
   }
 
   function renderCard(item) {
@@ -274,40 +208,6 @@
     wrap.innerHTML = state.sources.length ? state.sources.map((source) => `<div style="padding:12px;border:1px solid #e5e7eb;border-radius:12px"><div style="font-weight:800;color:#111827">${esc(source.name || 'İsimsiz kaynak')}</div><div style="margin-top:6px;font-size:12px;color:#64748b;word-break:break-all">${esc(pick(source.rss_url, source.feed_url, source.site_url, source.url))}</div></div>`).join('') : '<div style="font-size:14px;color:#64748b">Henüz kaynak görünmüyor.</div>';
   }
 
-  function sparkline(points = []) {
-    const values = points.map((p) => Number(p.count || 0));
-    const max = Math.max(1, ...values);
-    const width = 260;
-    const height = 54;
-    const step = values.length > 1 ? width / (values.length - 1) : width;
-    const coords = values.map((value, i) => `${i * step},${height - (value / max) * 44 - 5}`).join(' ');
-    return `<svg viewBox="0 0 ${width} ${height}" style="width:100%;height:54px;display:block"><polyline fill="none" stroke="#7c3aed" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="${coords}"/><line x1="0" y1="${height - 5}" x2="${width}" y2="${height - 5}" stroke="#e5e7eb" stroke-width="1"/></svg>`;
-  }
-
-  function renderTrendCard(item) {
-    const links = Array.isArray(item.linked_news) ? item.linked_news : [];
-    return `<article style="border:1px solid #e5e7eb;border-radius:16px;background:#fff;padding:14px;box-shadow:0 4px 12px rgba(15,23,42,.04)">
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${scoreBadge('Trend', Math.round(score(item, 'trend_score')), '#7c3aed')}${scoreBadge('Discover', Math.round(score(item, 'discover_potential_score')), '#2563eb')}</div>
-      <h3 style="margin:0 0 8px;font:700 20px/1.25 'Fira Sans Condensed',sans-serif;color:#111827">${esc(item.cluster_name || item.summary?.display_name || 'Trend')}</h3>
-      <div style="font-size:12px;color:#64748b;font-weight:800;margin-bottom:8px">Sinyal: ${esc(item.window_signal_count || 0)} · Referans: ${esc(links.length)} · Maksimum yaş: ${esc(item.max_age_hours || 24)} saat</div>
-      ${sparkline(item.sparkline || [])}
-      <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">${links.length ? links.map((link) => `<a href="${esc(link.candidate_url || '#')}" target="_blank" rel="noopener noreferrer" style="font-size:13px;line-height:1.4;color:#f04a0a;font-weight:800;text-decoration:none">${esc(link.candidate_title || 'Haber referansı')}</a>`).join('') : '<span style="font-size:13px;color:#64748b">Son 24 saatte eşleşen haber referansı yok.</span>'}</div>
-    </article>`;
-  }
-
-  function renderTrends() {
-    const tabs = document.getElementById('tb-trend-window-tabs');
-    const status = document.getElementById('tb-trend-status');
-    const grid = document.getElementById('tb-trend-grid');
-    if (!tabs || !status || !grid) return;
-    tabs.innerHTML = ['4h', '24h'].map((key) => `<button type="button" data-trend-window="${key}" style="padding:8px 12px;border-radius:999px;border:1px solid ${state.trendWindow === key ? '#7c3aed' : '#d1d5db'};background:${state.trendWindow === key ? '#f5f3ff' : '#fff'};color:${state.trendWindow === key ? '#7c3aed' : '#374151'};font-weight:800;cursor:pointer">${key === '4h' ? 'Son 4 saat' : 'Son 24 saat'}</button>`).join('');
-    status.textContent = state.trendLoading ? 'Trendler yükleniyor...' : `${state.trends.length} güncel trend kümesi listeleniyor`;
-    grid.style.display = 'grid';
-    grid.style.gridTemplateColumns = 'repeat(auto-fit,minmax(300px,1fr))';
-    grid.style.gap = '12px';
-    grid.innerHTML = state.trends.length ? state.trends.map(renderTrendCard).join('') : '<div style="padding:16px;border:1px dashed #cbd5e1;border-radius:14px;color:#64748b">Güncel trend kümesi bulunamadı.</div>';
-  }
-
   async function fetchJson(path, options = {}) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), options.timeoutMs || 30000);
@@ -341,20 +241,6 @@
     }
   }
 
-  async function loadTrends() {
-    state.trendLoading = true;
-    renderTrends();
-    try {
-      const data = await fetchJson(`/api/trend-overview?window=${encodeURIComponent(state.trendWindow)}&limit=12&t=${Date.now()}`, { timeoutMs: 30000 });
-      state.trends = Array.isArray(data.items) ? data.items : [];
-    } catch {
-      state.trends = [];
-    } finally {
-      state.trendLoading = false;
-      renderTrends();
-    }
-  }
-
   async function refreshContent() {
     const status = document.getElementById('tb-status');
     let token = localStorage.getItem('tb_radar_cron_token') || '';
@@ -366,7 +252,7 @@
     try {
       await fetchJson(`/api/ingest?token=${encodeURIComponent(token)}&source_limit=8&item_limit=12&t=${Date.now()}`, { timeoutMs: 60000 });
       await fetchJson(`/api/score?token=${encodeURIComponent(token)}&t=${Date.now()}`, { timeoutMs: 90000 });
-      await Promise.allSettled([loadRecommendations(), loadSources(), loadTrends()]);
+      await Promise.allSettled([loadRecommendations(), loadSources()]);
       status.textContent = 'İçerikler güncellendi.';
     } catch (error) {
       status.textContent = `Hata: ${error.message}`;
@@ -383,6 +269,11 @@
         state.source = 'all';
         loadRecommendations();
       }
+      if (event.target?.id === 'tb-source-select') {
+        state.source = event.target.value || 'all';
+        state.page = 1;
+        renderItems();
+      }
       if (event.target?.matches('[data-select-url]')) {
         const value = event.target.getAttribute('data-select-url');
         if (event.target.checked) state.selected.add(value);
@@ -390,24 +281,11 @@
       }
     });
     document.addEventListener('click', async (event) => {
-      const sourceButton = event.target.closest('[data-source-filter]');
-      if (sourceButton) {
-        state.source = sourceButton.getAttribute('data-source-filter') || 'all';
-        state.page = 1;
-        renderItems();
-        return;
-      }
       const pageButton = event.target.closest('[data-page]');
       if (pageButton) {
         const dir = pageButton.getAttribute('data-page');
         state.page = dir === 'next' ? Math.min(totalPages(), state.page + 1) : Math.max(1, state.page - 1);
         renderItems();
-        return;
-      }
-      const trendButton = event.target.closest('[data-trend-window]');
-      if (trendButton) {
-        state.trendWindow = trendButton.getAttribute('data-trend-window') || '24h';
-        loadTrends();
         return;
       }
       if (event.target.closest('#tb-view-cards')) { state.view = 'cards'; renderItems(); return; }
@@ -434,8 +312,7 @@
     bind();
     renderItems();
     renderSources();
-    renderTrends();
-    await Promise.allSettled([loadRecommendations(), loadSources(), loadTrends()]);
+    await Promise.allSettled([loadRecommendations(), loadSources()]);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
