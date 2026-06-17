@@ -21,7 +21,7 @@
     h2{font:700 24px/1 'Fira Sans Condensed',sans-serif;margin:0 0 10px;color:#111827}
     label{display:block;font-size:12px;font-weight:800;color:#334155;margin:10px 0 5px}
     input,select,textarea{width:100%;border:1px solid #d1d5db;border-radius:12px;padding:10px 11px;background:#fff;color:#111827;font:13px/1.4 'Open Sans',sans-serif}
-    textarea{min-height:240px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}
+    textarea{min-height:270px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}
     .row{display:grid;grid-template-columns:1fr 1fr;gap:9px}
     button{border:0;border-radius:12px;background:var(--tb);color:#fff;padding:10px 13px;font-size:12px;font-weight:900;cursor:pointer}
     button.secondary{background:#fff;color:var(--tb);border:1px solid var(--tb)}
@@ -44,7 +44,7 @@
     <header>
       <div>
         <h1>Kaynak Yönetimi</h1>
-        <div class="sub">Tekil kaynak ekleyin veya RSS adreslerini toplu içe aktarın. Toplu eklemede RSS başlığı ve site adresi otomatik okunur; mevcut kaynaklar tekrar eklenmez.</div>
+        <div class="sub">Tekil kaynak ekleyin veya RSS adreslerini toplu içe aktarın. Toplu eklemede RSS başlığı ve site adresi otomatik okunur; kaynak türü, pazar odağı, güven ve öncelik otomatik belirlenir.</div>
       </div>
       <a class="top" href="/">← Radara dön</a>
     </header>
@@ -52,23 +52,9 @@
     <div class="grid">
       <section class="card">
         <h2>Toplu RSS ekle</h2>
-        <div class="sub">Her satıra bir RSS/Atom URL girin. Sistem mevcut RSS ve site adreslerini eleyerek sadece yeni kaynakları ekler.</div>
+        <div class="sub">Her satıra bir RSS/Atom URL girin. Sistem mevcut RSS ve site adreslerini eleyerek sadece yeni kaynakları ekler. Öncelik ve güven puanları otomatik atanır.</div>
         <label for="bulk-rss">RSS URL listesi</label>
         <textarea id="bulk-rss" placeholder="https://example.com/feed/&#10;https://example.com/rss.xml"></textarea>
-        <div class="row">
-          <div>
-            <label for="bulk-market">Pazar odağı</label>
-            <select id="bulk-market"><option value="global">Global</option><option value="local">Türkiye odaklı</option><option value="mixed">Karma</option></select>
-          </div>
-          <div>
-            <label for="bulk-type">Kaynak türü</label>
-            <select id="bulk-type"><option value="news">Haber</option><option value="official">Resmî kaynak</option><option value="deals">Fırsat</option><option value="competitor">Rakip takip</option></select>
-          </div>
-        </div>
-        <div class="row">
-          <div><label for="bulk-priority">Öncelik</label><input id="bulk-priority" type="number" min="0" max="100" value="50"></div>
-          <div><label for="bulk-trust">Güven</label><input id="bulk-trust" type="number" min="0" max="100" value="70"></div>
-        </div>
         <div class="actions"><button id="bulk-submit" type="button">Toplu ekle</button><button id="bulk-clear" class="secondary" type="button">Temizle</button></div>
         <div id="bulk-status" class="status"></div>
         <div id="bulk-results"></div>
@@ -101,6 +87,6 @@
       <div id="sources-list" class="source-list"></div>
     </section>
   </div>
-  <script src="/sources-manager.js?v=20260524-1" defer></script>
+  <script src="/sources-manager.js?v=20260524-2" defer></script>
 </body>
 </html>
