@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import WebSocket from 'ws';
 import { createHash } from 'node:crypto';
 
 export function getEnv(name) {
@@ -15,6 +16,9 @@ export function getSupabaseAdmin() {
       auth: {
         persistSession: false,
         autoRefreshToken: false
+      },
+      realtime: {
+        transport: WebSocket
       }
     }
   );
