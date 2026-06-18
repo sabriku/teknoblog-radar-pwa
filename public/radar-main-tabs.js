@@ -3,7 +3,7 @@
     ['/', 'Haberler'],
     ['/sources.html', 'Kaynaklar'],
     ['/opportunities.html', 'Fırsatlar'],
-    ['/trends.html', 'Google Trends'],
+    ['/google-trends-live.html', 'Google Trends'],
     ['/google-news.html', 'Google News'],
     ['/instagram.html', 'Instagram'],
     ['/decision.html', 'Trend/Karar'],
@@ -68,7 +68,7 @@
   function linkHtml() {
     const current = normalizePath(window.location.pathname);
     return LINKS.map(([href, label]) => {
-      const isCurrent = normalizePath(href) === current;
+      const isCurrent = normalizePath(href) === current || (current === '/trends.html' && href === '/google-trends-live.html');
       return `<a href="${href}"${isCurrent ? ' aria-current="page"' : ''}>${label}</a>`;
     }).join('');
   }
