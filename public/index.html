@@ -8,19 +8,87 @@
   <link rel="icon" href="/icon-192.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fira+Sans+Condensed:wght@500;600;700&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Sans+Condensed:wght@500;600;700&family=Open+Sans:wght@400;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css?v=20260418-5" />
+  <style>
+    :root{--tb:#f04a0a;--ink:#111827;--muted:#64748b;--line:#dbe3ef;--bg:#f8fafc;--card:#fff;--blue:#2563eb;--green:#15803d;--amber:#c2410c}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:'Open Sans',sans-serif}.tb-shell{max-width:1220px;margin:0 auto;min-height:100vh;padding:18px 22px;border-left:1px solid #e5e7eb;border-right:1px solid #e5e7eb;background:var(--bg)}.tb-shell-head{display:flex;gap:14px;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #e5e7eb}.tb-brand{font:700 36px/1 'Fira Sans Condensed',sans-serif;color:var(--tb)}.tb-date{margin-top:8px;font-size:14px;color:#475569}.tb-panel-context{margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}.tb-panel-context strong{font-size:13px;font-weight:900;color:#111827}.tb-panel-context span{font-size:12px;color:#64748b}.tb-spa-tabs{display:flex;gap:6px;overflow-x:auto;overflow-y:hidden;padding:8px 0 10px;margin:0 0 16px;border-bottom:1px solid #e5e7eb;position:sticky;top:0;background:var(--bg);z-index:70;scrollbar-width:thin;-webkit-overflow-scrolling:touch}.tb-spa-tab{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;border:1px solid #d1d5db;background:#fff;color:#374151;border-radius:999px;padding:8px 11px;font-size:12px;font-weight:900;cursor:pointer;white-space:nowrap;line-height:1.1}.tb-spa-tab[aria-selected='true']{border-color:var(--tb);background:#fff1eb;color:var(--tb);box-shadow:0 4px 12px rgba(240,74,10,.10)}.tb-panel{animation:tbFade .16s ease}.tb-panel[hidden]{display:none!important}.tb-panel-card{border:1px solid var(--line);border-radius:22px;background:#fff;box-shadow:0 8px 24px rgba(9,30,66,.06);padding:16px;min-height:320px}.tb-small-btn{padding:10px 12px;border:1px solid var(--tb);border-radius:12px;background:#fff;color:var(--tb);font-weight:800;cursor:pointer}.tb-primary-btn{padding:10px 14px;border:0;border-radius:12px;background:var(--tb);color:#fff;font-weight:800;cursor:pointer}.tb-view-btn{display:inline-flex;align-items:center;gap:6px;border:1px solid #e5e7eb;background:#fff;color:#374151;border-radius:999px;padding:8px 10px;font-size:12px;font-weight:900;cursor:pointer;box-shadow:0 3px 10px rgba(15,23,42,.04)}.tb-view-btn[aria-pressed='true']{border-color:var(--tb);background:#fff1eb;color:var(--tb);box-shadow:0 6px 16px rgba(240,74,10,.12)}.tb-view-icon{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:999px;background:#f8fafc;border:1px solid #e5e7eb;font-size:12px;line-height:1}.tb-view-btn[aria-pressed='true'] .tb-view-icon{background:var(--tb);color:#fff;border-color:var(--tb)}#tb-layout{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:20px;align-items:start;border:1px solid var(--line);border-radius:22px;background:#fff;box-shadow:0 8px 24px rgba(9,30,66,.06);padding:16px}#tb-layout main{min-width:0}#tb-layout aside{display:flex;flex-direction:column;gap:16px;min-width:0}.tb-source-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,420px);gap:16px}.tb-source-card{border:1px solid var(--line);border-radius:20px;background:#fff;padding:16px;box-shadow:0 6px 18px rgba(9,30,66,.06)}.tb-source-card h2{font:700 24px/1 'Fira Sans Condensed',sans-serif;margin:0 0 10px}.tb-source-card label{display:block;font-size:12px;font-weight:800;color:#334155;margin:10px 0 5px}.tb-source-card input,.tb-source-card select,.tb-source-card textarea{width:100%;border:1px solid #d1d5db;border-radius:12px;padding:10px 11px;background:#fff;color:#111827;font:13px/1.4 'Open Sans',sans-serif}.tb-source-card textarea{min-height:250px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}.tb-source-row{display:grid;grid-template-columns:1fr 1fr;gap:9px}.tb-source-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.tb-source-status{min-height:18px;font-size:12px;color:#64748b;line-height:1.45;margin-top:9px}.tb-source-list{display:flex;flex-direction:column;gap:9px;max-height:620px;overflow:auto;padding-right:4px}.tb-legacy-note{border:1px dashed #cbd5e1;border-radius:16px;padding:16px;background:#f8fafc;color:#475569;font-size:13px;line-height:1.55}.tb-footer-bar{margin:28px 0 8px;padding:16px;border:1px solid var(--line);border-radius:22px;background:#fff;box-shadow:0 8px 24px rgba(9,30,66,.05)}.tb-footer-title{font:700 20px/1 'Fira Sans Condensed',sans-serif;color:#111827;margin-bottom:10px}@keyframes tbFade{from{opacity:.72;transform:translateY(2px)}to{opacity:1;transform:none}}@media(max-width:960px){.tb-shell{padding:12px;border:0}#tb-layout{display:block}.tb-source-grid{grid-template-columns:1fr}.tb-view-text{display:none}#tb-layout aside{margin-top:12px}}@media(max-width:720px){.tb-brand{font-size:31px}.tb-spa-tabs{margin:0 -12px 14px;padding:8px 12px}.tb-spa-tab{font-size:11px;padding:8px 10px}.tb-source-row{grid-template-columns:1fr}#tb-grid{grid-template-columns:1fr!important}}
+  </style>
 </head>
 <body>
-  <div id="app"></div>
+  <div id="tb-radar-root" class="tb-shell">
+    <header class="tb-shell-head">
+      <div>
+        <div class="tb-brand">Teknoblog İçerik Radar</div>
+        <div class="tb-date" id="tb-shell-date"></div>
+        <div class="tb-panel-context"><strong id="tb-spa-current-title">📰 Haberler</strong><span id="tb-spa-current-desc">Ana haber akışı, kaynak filtresi ve görünüm seçenekleri.</span></div>
+      </div>
+    </header>
+
+    <nav class="tb-spa-tabs" role="tablist" aria-label="Radar bölümleri">
+      <button class="tb-spa-tab" type="button" role="tab" data-spa-tab="news">📰 Haberler</button>
+      <button class="tb-spa-tab" type="button" role="tab" data-spa-tab="sources">🗂️ Kaynaklar</button>
+      <button class="tb-spa-tab" type="button" role="tab" data-spa-tab="opportunities">🏷️ Fırsatlar</button>
+      <button class="tb-spa-tab" type="button" role="tab" data-spa-tab="google-trends">📈 Google Trends</button>
+      <button class="tb-spa-tab" type="button" role="tab" data-spa-tab="google-news">🌐 Google News</button>
+      <button class="tb-spa-tab" type="button" role="tab" data-spa-tab="instagram">📸 Instagram</button>
+      <button class="tb-spa-tab" type="button" role="tab" data-spa-tab="decision">⚡ Trend/Karar</button>
+      <button class="tb-spa-tab" type="button" role="tab" data-spa-tab="editorial">🧭 Editoryal</button>
+      <button class="tb-spa-tab" type="button" role="tab" data-spa-tab="ops">🛠️ Operasyon</button>
+    </nav>
+
+    <section class="tb-panel" data-spa-panel="news" role="tabpanel">
+      <div id="tb-status" style="margin-bottom:12px;font-size:14px;color:#475569"></div>
+      <div id="tb-source-tabs" style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap"></div>
+      <div id="tb-layout">
+        <main>
+          <div id="tb-news-viewbar"></div>
+          <div id="tb-grid"></div>
+          <div id="tb-pagination" style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:16px;flex-wrap:wrap"></div>
+        </main>
+        <aside>
+          <section style="border:1px solid #dbe3ef;border-radius:18px;background:#fff;padding:16px;box-shadow:0 6px 18px rgba(9,30,66,.06)"><div style="font:700 22px/1 'Fira Sans Condensed',sans-serif;margin-bottom:12px">🗂 Kaynak Listesi</div><div id="tb-sources-list" style="display:flex;flex-direction:column;gap:10px;max-height:360px;overflow:auto"></div></section>
+          <section style="border:1px solid #dbe3ef;border-radius:18px;background:#fff;padding:16px;box-shadow:0 6px 18px rgba(9,30,66,.06)"><div style="font:700 22px/1 'Fira Sans Condensed',sans-serif;margin-bottom:12px">🧾 İşlem Günlüğü</div><div id="tb-debug" style="font-size:12px;color:#475569">Henüz işlem kaydı yok.</div></section>
+        </aside>
+      </div>
+    </section>
+
+    <section class="tb-panel" data-spa-panel="sources" role="tabpanel">
+      <div class="tb-source-grid">
+        <section class="tb-source-card"><h2>Toplu RSS ekle</h2><p class="tb-legacy-note">Her satıra bir RSS/Atom URL girin. Sistem mevcut RSS ve site adreslerini eleyerek sadece yeni kaynakları ekler.</p><label for="bulk-rss">RSS URL listesi</label><textarea id="bulk-rss" placeholder="https://example.com/feed/&#10;https://example.com/rss.xml"></textarea><div class="tb-source-actions"><button id="bulk-submit" type="button" class="tb-primary-btn">Toplu ekle</button><button id="bulk-clear" class="tb-small-btn" type="button">Temizle</button></div><div id="bulk-status" class="tb-source-status"></div><div id="bulk-results"></div></section>
+        <section class="tb-source-card"><h2>Tekil kaynak ekle</h2><form id="single-form" autocomplete="off"><label>Kaynak adı</label><input name="name" required placeholder="The Verge"><label>RSS / Feed URL</label><input name="rss_url" required placeholder="https://www.theverge.com/rss/index.xml"><label>Site URL, opsiyonel</label><input name="site_url" placeholder="https://www.theverge.com"><div class="tb-source-row"><div><label>Pazar odağı</label><select name="market_relevance"><option value="global">Global</option><option value="local">Türkiye odaklı</option><option value="mixed">Karma</option></select></div><div><label>Kaynak türü</label><select name="source_type"><option value="news">Haber</option><option value="official">Resmî kaynak</option><option value="deals">Fırsat</option><option value="competitor">Rakip takip</option></select></div></div><div class="tb-source-row"><div><label>Öncelik</label><input name="priority_weight" type="number" min="0" max="100" value="50"></div><div><label>Güven</label><input name="trust_score" type="number" min="0" max="100" value="70"></div></div><label style="display:flex;gap:8px;align-items:center"><input name="is_active" type="checkbox" checked style="width:auto"> Kaynak aktif</label><div class="tb-source-actions"><button type="submit" class="tb-primary-btn">Kaynağı ekle</button></div><div id="single-status" class="tb-source-status"></div></form></section>
+      </div>
+      <section class="tb-source-card" style="margin-top:16px"><h2>Mevcut kaynaklar</h2><div id="sources-status" class="tb-source-status">Kaynaklar yükleniyor...</div><div id="sources-list" class="tb-source-list"></div></section>
+    </section>
+
+    <section class="tb-panel" data-spa-panel="opportunities" role="tabpanel"><main class="tb-panel-card" id="tb-opportunity-page-main"><div class="tb-legacy-note">Fırsatlar, Editoryal karar merkezinin Fırsatlar sekmesi içinde gösterilir. Panel yüklenince burada görünür.</div></main></section>
+    <section class="tb-panel" data-spa-panel="google-trends" role="tabpanel"><main class="tb-panel-card" id="tb-google-trends-wrap"></main></section>
+    <section class="tb-panel" data-spa-panel="google-news" role="tabpanel"><main class="tb-panel-card" id="tb-google-news-wrap"></main></section>
+    <section class="tb-panel" data-spa-panel="instagram" role="tabpanel"><main class="tb-panel-card" id="tb-instagram-radar-wrap"></main></section>
+    <section class="tb-panel" data-spa-panel="decision" role="tabpanel"><div class="tb-panel-card"><main><section id="tb-trend-radar-wrap"></section><section id="tb-phase2-bar"></section></main></div></section>
+    <section class="tb-panel" data-spa-panel="editorial" role="tabpanel"><main class="tb-panel-card" id="tb-editorial-page-main"></main></section>
+    <section class="tb-panel" data-spa-panel="ops" role="tabpanel"><div class="tb-panel-card"><div class="tb-legacy-note">Operasyon paneli ikinci aşamada bu tek sayfa kabuğuna taşınacak. Şimdilik sistem sağlığı ve deploy kontrolleri bu bölümde toplanacak.</div></div></section>
+
+    <footer class="tb-footer-bar"><div class="tb-footer-title">Tek sayfa Radar</div><div style="font-size:12px;color:#64748b;line-height:1.55">Tüm modüller aynı uygulama kabuğu içinde sekmelerle çalışır. Eski ayrı sayfalar geriye dönük uyumluluk için korunur.</div></footer>
+  </div>
+
+  <script>document.getElementById('tb-shell-date').textContent=new Intl.DateTimeFormat('tr-TR',{weekday:'long',day:'numeric',month:'long',year:'numeric',timeZone:'Europe/Istanbul'}).format(new Date());localStorage.setItem('tb_google_news_open','1');localStorage.setItem('tb_tabs_lite_open','1');</script>
   <script src="/auth-gate.js?v=20260423-1" defer></script>
   <script src="/radar-token-reset.js?v=20260523-1" defer></script>
+  <script src="/radar-spa.js?v=20260618-1" defer></script>
   <script src="/app.js?v=20260524-4" defer></script>
-  <script src="/discover-default.js?v=20260510-1" defer></script>
-  <script src="/refresh-fix.js?v=20260510-2" defer></script>
-  <script src="/cleanup-fix.js?v=20260524-5" defer></script>
+  <script src="/sources-manager.js?v=20260524-2" defer></script>
+  <script src="/google-trends-panel.js?v=20260618-1" defer></script>
+  <script src="/google-news-panel.js?v=20260523-2" defer></script>
+  <script src="/instagram-radar-panel.js?v=20260524-1" defer></script>
+  <script src="/editorial-tabs-lite.js?v=20260524-5" defer></script>
+  <script src="/trend-radar.js?v=20260514-2" defer></script>
+  <script src="/trend-phase2.js?v=20260514-1" defer></script>
+  <script src="/trend-panel-controls.js?v=20260523-1" defer></script>
+  <script src="/trend-refresh-ui.js?v=20260523-2" defer></script>
+  <script src="/trend-noise-filter.js?v=20260523-2" defer></script>
+  <script src="/radar-ux-optimizer.js?v=20260618-1" defer></script>
   <script src="/logo-fix.js?v=20260419-3" defer></script>
-  <script src="/teknoblog-sidebar.js?v=20260419-3" defer></script>
   <script src="/slack-push.js?v=20260419-4" defer></script>
   <script src="/refresh-token-guard.js?v=20260524-2" defer></script>
 </body>
