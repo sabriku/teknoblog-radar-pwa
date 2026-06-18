@@ -9,7 +9,7 @@
   }
 
   function loadNavigationHelpers() {
-    loadScriptOnce('tb-main-radar-tabs-loader-v18', '/radar-main-tabs.js?v=20260524-18');
+    loadScriptOnce('tb-main-radar-tabs-loader-v19', '/radar-main-tabs.js?v=20260524-19');
   }
 
   function cleanupBtn() { return document.getElementById('tb-cleanup'); }
