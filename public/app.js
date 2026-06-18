@@ -1,6 +1,14 @@
 (() => {
   const VIEW_KEY = 'tb_news_card_view';
   const VALID_VIEWS = new Set(['cards-2', 'cards-3', 'cards-4', 'stack', 'compact', 'list']);
+  const VIEW_LABELS = {
+    'cards-2': ['▦', '2 sütun'],
+    'cards-3': ['▦', '3 sütun'],
+    'cards-4': ['▦', '4 sütun'],
+    stack: ['▤', 'Alt alta'],
+    compact: ['▥', 'Kompakt'],
+    list: ['☰', 'Liste']
+  };
   const savedView = localStorage.getItem(VIEW_KEY);
 
   const state = {
@@ -93,8 +101,8 @@
 
   function totalPages() { return Math.max(1, Math.ceil(visibleItems().length / state.pageSize)); }
 
-  function scoreBadge(label, value, color) {
-    return `<span style="display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;border:1px solid ${color};color:${color};background:#fff;font-size:11px;font-weight:800">${esc(label)} ${esc(value)}</span>`;
+  function scoreBadge(label, value, color, icon = '') {
+    return `<span style="display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border-radius:999px;border:1px solid ${color};color:${color};background:#fff;font-size:11px;font-weight:800">${icon ? `<span aria-hidden="true">${esc(icon)}</span>` : ''}<span>${esc(label)} ${esc(value)}</span></span>`;
   }
 
   function root() {
@@ -118,33 +126,25 @@
               <option value="social_score">Sosyal ilgi</option>
               <option value="editorial_score">Editoryal öncelik</option>
             </select>
-            <label for="tb-view-select" style="font-size:13px;font-weight:800">Görünüm</label>
-            <select id="tb-view-select" style="padding:10px 12px;border:1px solid #d1d5db;border-radius:12px;background:#fff;font-weight:800;color:#374151">
-              <option value="cards-2">2 sütun</option>
-              <option value="cards-3">3 sütun</option>
-              <option value="cards-4">4 sütun</option>
-              <option value="stack">Alt alta kart</option>
-              <option value="compact">Kompakt kart</option>
-              <option value="list">Liste</option>
-            </select>
-            <button id="tb-refresh" type="button" class="tb-primary-btn">İçerikleri Yenile</button>
-            <button id="tb-copy-selected" type="button" class="tb-small-btn">Seçilen URL'leri kopyala</button>
+            <button id="tb-refresh" type="button" class="tb-primary-btn">↻ İçerikleri Yenile</button>
+            <button id="tb-copy-selected" type="button" class="tb-small-btn">⧉ Seçilen URL'leri kopyala</button>
           </div>
         </header>
         <div id="tb-status" style="margin-bottom:12px;font-size:14px;color:#475569"></div>
-        <div id="tb-source-tabs" style="display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap"></div>
+        <div id="tb-source-tabs" style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap"></div>
         <div id="tb-layout" style="display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:20px">
           <main>
+            <div id="tb-news-viewbar"></div>
             <div id="tb-grid"></div>
             <div id="tb-pagination" style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:16px;flex-wrap:wrap"></div>
           </main>
           <aside style="display:flex;flex-direction:column;gap:16px">
             <section style="border:1px solid #dbe3ef;border-radius:18px;background:#fff;padding:16px;box-shadow:0 6px 18px rgba(9,30,66,.06)">
-              <div style="font:700 22px/1 'Fira Sans Condensed',sans-serif;margin-bottom:12px">Kaynak Listesi</div>
+              <div style="font:700 22px/1 'Fira Sans Condensed',sans-serif;margin-bottom:12px">🗂 Kaynak Listesi</div>
               <div id="tb-sources-list" style="display:flex;flex-direction:column;gap:10px;max-height:360px;overflow:auto"></div>
             </section>
             <section style="border:1px solid #dbe3ef;border-radius:18px;background:#fff;padding:16px;box-shadow:0 6px 18px rgba(9,30,66,.06)">
-              <div style="font:700 22px/1 'Fira Sans Condensed',sans-serif;margin-bottom:12px">İşlem Günlüğü</div>
+              <div style="font:700 22px/1 'Fira Sans Condensed',sans-serif;margin-bottom:12px">🧾 İşlem Günlüğü</div>
               <div id="tb-debug" style="font-size:12px;color:#475569">Henüz işlem kaydı yok.</div>
             </section>
           </aside>
@@ -153,7 +153,11 @@
       <style>
         .tb-small-btn{padding:10px 12px;border:1px solid #f04a0a;border-radius:12px;background:#fff;color:#f04a0a;font-weight:800;cursor:pointer}
         .tb-primary-btn{padding:10px 14px;border:0;border-radius:12px;background:#f04a0a;color:#fff;font-weight:800;cursor:pointer}
-        @media(max-width:960px){#tb-layout{grid-template-columns:1fr!important}}
+        .tb-view-btn{display:inline-flex;align-items:center;gap:6px;border:1px solid #e5e7eb;background:#fff;color:#374151;border-radius:999px;padding:8px 10px;font-size:12px;font-weight:900;cursor:pointer;box-shadow:0 3px 10px rgba(15,23,42,.04)}
+        .tb-view-btn[aria-pressed='true']{border-color:#f04a0a;background:#fff1eb;color:#f04a0a;box-shadow:0 6px 16px rgba(240,74,10,.12)}
+        .tb-view-icon{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:999px;background:#f8fafc;border:1px solid #e5e7eb;font-size:12px;line-height:1}
+        .tb-view-btn[aria-pressed='true'] .tb-view-icon{background:#f04a0a;color:#fff;border-color:#f04a0a}
+        @media(max-width:960px){#tb-layout{grid-template-columns:1fr!important}.tb-view-text{display:none}}
       </style>`;
     return document.getElementById('tb-radar-root');
   }
@@ -164,6 +168,13 @@
     const names = ['all', ...new Set(state.items.map(sourceName).filter(Boolean))].sort((a, b) => a === 'all' ? -1 : b === 'all' ? 1 : a.localeCompare(b, 'tr'));
     if (!names.includes(state.source)) state.source = 'all';
     wrap.innerHTML = `<label for="tb-source-select" style="font-size:13px;font-weight:800;color:#111827;white-space:nowrap">Kaynak</label><select id="tb-source-select" style="min-width:260px;max-width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:12px;background:#fff;font-weight:800;color:#374151">${names.map((name) => `<option value="${esc(name)}"${state.source === name ? ' selected' : ''}>${esc(name === 'all' ? 'Tüm kaynaklar' : name)}</option>`).join('')}</select>`;
+  }
+
+  function renderViewBar() {
+    const wrap = document.getElementById('tb-news-viewbar');
+    if (!wrap) return;
+    const buttons = Object.entries(VIEW_LABELS).map(([key, [icon, label]]) => `<button type="button" class="tb-view-btn" data-view="${esc(key)}" aria-pressed="${state.view === key ? 'true' : 'false'}" title="${esc(label)}"><span class="tb-view-icon" aria-hidden="true">${esc(icon)}</span><span class="tb-view-text">${esc(label)}</span></button>`).join('');
+    wrap.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:0 0 12px;padding:10px;border:1px solid #e5e7eb;border-radius:18px;background:linear-gradient(135deg,#fff,#fff7ed)"><div style="display:flex;align-items:center;gap:8px;color:#111827;font-size:13px;font-weight:900"><span style="display:inline-grid;place-items:center;width:28px;height:28px;border-radius:10px;background:#f04a0a;color:#fff">▦</span><span>Haber görünümü</span></div><div style="display:flex;gap:6px;flex-wrap:wrap">${buttons}</div></div>`;
   }
 
   function gridColumnsForView() {
@@ -193,19 +204,20 @@
     const settings = viewSettings();
     const titleSize = settings.compact ? '18px' : '22px';
     const padding = settings.compact ? '12px' : '14px';
+    const topBorder = stale ? '#f59e0b' : '#f04a0a';
     const imageBlock = settings.image ? `<div style="position:relative;background:#f3f6fa;aspect-ratio:16/9">
-        ${itemImage ? `<img src="${esc(itemImage)}" alt="${esc(title(item))}" loading="lazy" style="width:100%;height:100%;object-fit:cover" onerror="this.style.display='none'">` : `<div style="display:flex;width:100%;height:100%;align-items:center;justify-content:center;color:#64748b;font-weight:800">Görsel yok</div>`}
+        ${itemImage ? `<img src="${esc(itemImage)}" alt="${esc(title(item))}" loading="lazy" style="width:100%;height:100%;object-fit:cover" onerror="this.style.display='none'">` : `<div style="display:flex;width:100%;height:100%;align-items:center;justify-content:center;color:#64748b;font-weight:800;background:linear-gradient(135deg,#fff7ed,#eff6ff)">📰 Görsel yok</div>`}
         <label style="position:absolute;top:10px;left:10px;background:rgba(255,255,255,.95);border-radius:999px;padding:6px 10px;display:flex;gap:6px;font-size:12px;font-weight:800"><input type="checkbox" data-select-url="${esc(itemUrl)}" ${checked}> Seç</label>
       </div>` : '';
     const selectInline = settings.image ? '' : `<label style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:999px;padding:6px 10px;display:inline-flex;gap:6px;font-size:12px;font-weight:800;width:max-content"><input type="checkbox" data-select-url="${esc(itemUrl)}" ${checked}> Seç</label>`;
-    return `<article style="${settings.article}border:1px solid ${stale ? '#fed7aa' : '#dbe3ef'};border-radius:18px;background:#fff;box-shadow:0 6px 18px rgba(9,30,66,.06);overflow:hidden">
+    return `<article style="${settings.article}border:1px solid ${stale ? '#fed7aa' : '#dbe3ef'};border-top:4px solid ${topBorder};border-radius:18px;background:#fff;box-shadow:0 6px 18px rgba(9,30,66,.06);overflow:hidden">
       ${imageBlock}
       <div style="padding:${padding};display:flex;flex-direction:column;gap:10px">
         ${selectInline}
-        <div style="display:flex;gap:6px;flex-wrap:wrap">${scoreBadge('Genel', score(item, 'total_score'), '#c2410c')}${scoreBadge('Discover', score(item, 'discover_score'), '#2563eb')}${scoreBadge('Trafik', score(item, 'traffic_score'), '#15803d')}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${scoreBadge('Genel', score(item, 'total_score'), '#c2410c', '★')}${scoreBadge('Discover', score(item, 'discover_score'), '#2563eb', 'G')}${scoreBadge('Trafik', score(item, 'traffic_score'), '#15803d', '↗')}</div>
         <h3 style="margin:0;font:700 ${titleSize}/1.25 'Fira Sans Condensed',sans-serif;color:#111827">${esc(title(item))}</h3>
-        <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:12px;color:#64748b;font-weight:800"><span>${esc(date)}</span><span>${esc(sourceName(item))}</span></div>
-        ${stale ? `<div style="font-size:12px;color:#b45309;font-weight:800">24 saatten eski, Discover için kullanılmamalı</div>` : ''}
+        <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:12px;color:#64748b;font-weight:800"><span>🕒 ${esc(date)}</span><span>🏷 ${esc(sourceName(item))}</span></div>
+        ${stale ? `<div style="font-size:12px;color:#b45309;font-weight:800">⚠ 24 saatten eski, Discover için kullanılmamalı</div>` : ''}
         <p style="margin:0;font-size:14px;line-height:1.55;color:#475569;display:-webkit-box;-webkit-line-clamp:${settings.clamp};-webkit-box-orient:vertical;overflow:hidden">${esc(summary(item))}</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap"><a href="${esc(itemUrl || '#')}" target="_blank" rel="noopener noreferrer" style="padding:10px 12px;border-radius:10px;background:#f04a0a;color:#fff;text-decoration:none;font-size:14px;font-weight:800;${itemUrl ? '' : 'pointer-events:none;opacity:.5'}">Haberi Aç</a><button type="button" data-copy-url="${esc(itemUrl)}" class="tb-small-btn">URL kopyala</button></div>
       </div>
@@ -217,10 +229,9 @@
     const grid = document.getElementById('tb-grid');
     const status = document.getElementById('tb-status');
     const sort = document.getElementById('tb-sort');
-    const view = document.getElementById('tb-view-select');
     if (sort) sort.value = state.sort;
-    if (view) view.value = state.view;
     renderSourceTabs();
+    renderViewBar();
     const all = visibleItems();
     const items = pagedItems();
     status.textContent = state.lastError
@@ -321,12 +332,6 @@
         state.page = 1;
         renderItems();
       }
-      if (event.target?.id === 'tb-view-select') {
-        const nextView = VALID_VIEWS.has(event.target.value) ? event.target.value : 'cards-3';
-        state.view = nextView;
-        localStorage.setItem(VIEW_KEY, nextView);
-        renderItems();
-      }
       if (event.target?.matches('[data-select-url]')) {
         const value = event.target.getAttribute('data-select-url');
         if (event.target.checked) state.selected.add(value);
@@ -334,6 +339,14 @@
       }
     });
     document.addEventListener('click', async (event) => {
+      const viewButton = event.target.closest('[data-view]');
+      if (viewButton) {
+        const nextView = VALID_VIEWS.has(viewButton.getAttribute('data-view')) ? viewButton.getAttribute('data-view') : 'cards-3';
+        state.view = nextView;
+        localStorage.setItem(VIEW_KEY, nextView);
+        renderItems();
+        return;
+      }
       const pageButton = event.target.closest('[data-page]');
       if (pageButton) {
         const dir = pageButton.getAttribute('data-page');
