@@ -1,7 +1,8 @@
 import { getSupabaseAdmin, json, hashValue, parseFeedItems, safeText } from './_lib.js';
 
 const GOOGLE_NEWS_TECH_RSS = 'https://news.google.com/rss/topics/CAAqKAgKIiJDQkFTRXdvSkwyMHZNR1ptZHpWbUVnSjBjaG9DVkZJb0FBUAE?hl=tr&gl=TR&ceid=TR:tr';
-const GOOGLE_NEWS_TIMEOUT_MS = 12000;
+const GOOGLE_TRENDS_TR_RSS = 'https://trends.google.com/trending/rss?geo=TR';
+const FEED_TIMEOUT_MS = 12000;
 const MAX_AGE_HOURS = 24;
 
 const FRESH_NEWS_QUERIES = [
@@ -23,7 +24,7 @@ const STRONG_TECH_INCLUDE_PATTERNS = [
   /\byapay zeka\b/i, /\bartificial intelligence\b/i, /\bai\b/i, /\bgemini\b/i,
   /\bopenai\b/i, /\bchatgpt\b/i, /\bcodex\b/i, /\bclaude\b/i,
   /\bandroid\b/i, /\bone ui\b/i, /\bios\b/i, /\biphone\b/i, /\bipad\b/i,
-  /\bmacbook\b/i, /\bimac\b/i, /\bmacos\b/i, /\bmac mini\b/i, /\bmac studio\b/i, /\bapple mac\b/i, /\bm\d\s*mac\b/i,
+  /\bmacbook\b/i, /\bimac\b/i, /\bmacos\b/i, /\bmac mini\b/i, /\bmac studio\b/i, /\bapple mac\b/i,
   /\bwindows\b/i, /\bchromebook\b/i, /\bpixel\b/i, /\bgalaxy\b/i, /\bsamsung\b/i,
   /\bgoogle\b/i, /\bapple\b/i, /\bhuawei\b/i, /\bxiaomi\b/i, /\boppo\b/i,
   /\bvivo\b/i, /\bhonor\b/i, /\bmeta\b/i, /\byoutube\b/i, /\bchrome\b/i,
@@ -43,8 +44,7 @@ const WEAK_TECH_INCLUDE_PATTERNS = [
 
 const EXCLUDE_PATTERNS = [
   /\bhull city\b/i, /\bchampionship\b/i, /\bpremier league\b/i, /\buefa\b/i,
-  /\bfutbol\b/i, /\bfootball\b/i, /\bmaç\b/i, /\bmac\b/i, /\bmacı\b/i, /\bmaci\b/i, /\bmaçı\b/i,
-  /\bhangi kanalda\b/i, /\bne zaman\b/i, /\bsaat kaçta\b/i, /\bsaat kacta\b/i,
+  /\bfutbol\b/i, /\bfootball\b/i, /\bmaç\b/i, /\bhangi kanalda\b/i,
   /\bcanlı izle\b/i, /\bcanli izle\b/i, /\bcanlı skor\b/i, /\bcanli skor\b/i,
   /\bkupa\b/i, /\bvoleybol\b/i, /\bspor\b/i, /\btransfer\b/i, /\bfenerbahçe\b/i,
   /\bfenerbahce\b/i, /\bgalatasaray\b/i, /\bbeşiktaş\b/i, /\bbesiktas\b/i,
@@ -68,73 +68,200 @@ function hasWeakTech(text = '') { return WEAK_TECH_INCLUDE_PATTERNS.some((p) => 
 function looksExcluded(text = '') { return EXCLUDE_PATTERNS.some((p) => p.test(String(text || ''))); }
 function isShortNoiseTopic(topic = '') { const n = normalizeTopic(topic); return SHORT_NOISE_TOPICS.has(n) || n.length < 3; }
 function isTechText(text = '') { const value = String(text || ''); if (!value.trim()) return false; if (looksExcluded(value) && !hasStrongTech(value)) return false; return hasStrongTech(value) || hasWeakTech(value); }
+function normalizeLimit(value, fallback = 24, max = 50) { const limit = Number(value || fallback); return Math.min(max, Math.max(1, Number.isFinite(limit) ? Math.round(limit) : fallback)); }
+function sourceFromTitle(title = '') { const parts = String(title || '').trim().split(' - '); return parts.length > 1 ? parts[parts.length - 1].trim() : 'Google News'; }
+function cleanNewsTitle(title = '') { const parts = String(title || '').trim().split(' - '); return parts.length > 1 ? parts.slice(0, -1).join(' - ').trim() : String(title || '').trim(); }
+function normalizePublishedAt(value = '') { const date = new Date(String(value || '').trim()); return Number.isNaN(date.getTime()) ? '' : date.toISOString(); }
+function keywordsFor(text = '') { return normalizeTopic(text).split(' ').filter((word) => word.length >= 4 && !['haber','güncel','teknoloji','türkiye','turkiye','için','olan','yeni'].includes(word)).slice(0, 8); }
+function overlapScore(a = '', b = '') { const ak = new Set(keywordsFor(a)); const bk = new Set(keywordsFor(b)); let score = 0; for (const word of ak) if (bk.has(word)) score += 1; return score; }
 function sortByTodayPriority(a, b) { return Number(b.window_signal_count || 0) - Number(a.window_signal_count || 0) || Number(b.discover_potential_score || 0) - Number(a.discover_potential_score || 0) || Number(b.trend_score || 0) - Number(a.trend_score || 0) || new Date(b.latest_signal_at || b.last_seen_at || 0).getTime() - new Date(a.latest_signal_at || a.last_seen_at || 0).getTime(); }
 function bucketSizeHours(w = '24h') { if (w === '4h') return 1; return 4; }
 function formatBucketLabel(date, bucketHours) { const pad = (n) => String(n).padStart(2, '0'); const hour = date.getHours(); return bucketHours >= 24 ? `${pad(date.getDate())}.${pad(date.getMonth() + 1)}` : `${pad(hour)}:00`; }
 function buildSparkline(signals = [], selectedWindow = '24h') { const hours = windowHours(selectedWindow); const bucketHours = bucketSizeHours(selectedWindow); const bucketCount = Math.max(1, Math.ceil(hours / bucketHours)); const now = Date.now(); const bucketMs = bucketHours * 3600 * 1000; const startMs = now - (bucketCount * bucketMs); const buckets = Array.from({ length: bucketCount }, (_, i) => { const ts = startMs + (i * bucketMs); return { ts: new Date(ts).toISOString(), label: formatBucketLabel(new Date(ts), bucketHours), count: 0 }; }); for (const signal of signals) { const detectedAt = new Date(signal.detected_at || 0).getTime(); if (!Number.isFinite(detectedAt) || detectedAt < startMs) continue; const index = Math.floor((detectedAt - startMs) / bucketMs); if (index >= 0 && index < buckets.length) buckets[index].count += 1; } return buckets; }
-function sourceFromTitle(title = '') { const parts = String(title || '').trim().split(' - '); return parts.length > 1 ? parts[parts.length - 1].trim() : 'Google News'; }
-function cleanNewsTitle(title = '') { const parts = String(title || '').trim().split(' - '); return parts.length > 1 ? parts.slice(0, -1).join(' - ').trim() : String(title || '').trim(); }
-function normalizePublishedAt(value = '') { const date = new Date(String(value || '').trim()); return Number.isNaN(date.getTime()) ? '' : date.toISOString(); }
-function normalizeLimit(value) { const limit = Number(value || 24); return Math.min(50, Math.max(1, Number.isFinite(limit) ? Math.round(limit) : 24)); }
-function keywordsFor(text = '') { return normalizeTopic(text).split(' ').filter((word) => word.length >= 4 && !['haber','güncel','teknoloji','türkiye','turkiye','için','olan','yeni'].includes(word)).slice(0, 8); }
-function overlapScore(a = '', b = '') { const ak = new Set(keywordsFor(a)); const bk = new Set(keywordsFor(b)); let score = 0; for (const word of ak) if (bk.has(word)) score += 1; return score; }
 
-async function fetchRss(url) { const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), GOOGLE_NEWS_TIMEOUT_MS); try { const response = await fetch(url, { cache: 'no-store', signal: controller.signal, headers: { 'user-agent': 'Mozilla/5.0 TeknoblogRadarBot/1.0 (+https://www.teknoblog.com/)', accept: 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8' } }); if (!response.ok) return []; const xml = await response.text(); return parseFeedItems(xml); } finally { clearTimeout(timeout); } }
-async function fetchGoogleNewsTech(limit = 24) { const raw = await fetchRss(GOOGLE_NEWS_TECH_RSS); const seen = new Set(); const items = []; for (const item of raw) { const title = safeText(item.title || ''); const normalized = { title: cleanNewsTitle(title), url: item.url || '', source_name: sourceFromTitle(title), published_at: normalizePublishedAt(item.published_at || ''), summary: safeText(item.summary || ''), image_url: item.image_url || '' }; const key = `${normalized.title}::${normalized.url}`; if (!normalized.title || !normalized.url || seen.has(key)) continue; if (!isFresh(normalized.published_at, MAX_AGE_HOURS)) continue; if (!isTechText(`${normalized.title} ${normalized.summary} ${normalized.source_name}`)) continue; seen.add(key); items.push(normalized); if (items.length >= limit) break; } return items; }
-async function fetchFreshReferences(limit = 80) { const urls = FRESH_NEWS_QUERIES.map((query) => `https://news.google.com/rss/search?q=${encodeURIComponent(`${query} when:1d`)}&hl=tr&gl=TR&ceid=TR:tr`); const batches = await Promise.all(urls.map(fetchRss)); const seen = new Set(); const items = []; for (const raw of batches.flat()) { const title = safeText(raw.title || ''); const item = { candidate_title: cleanNewsTitle(title), candidate_url: raw.url || '', source_name: sourceFromTitle(title), published_at: normalizePublishedAt(raw.published_at || ''), summary: safeText(raw.summary || ''), image_url: raw.image_url || '', match_score: 0 }; const key = `${item.candidate_title}::${item.candidate_url}`; if (!item.candidate_title || !item.candidate_url || seen.has(key)) continue; if (!isFresh(item.published_at, MAX_AGE_HOURS)) continue; if (!isTechText(`${item.candidate_title} ${item.summary} ${item.source_name}`)) continue; seen.add(key); items.push(item); if (items.length >= limit) break; } return items; }
-async function respondGoogleNewsTech(req, res) { const limit = normalizeLimit(req.query?.limit); const items = await fetchGoogleNewsTech(limit); return json(res, 200, { items, count: items.length, refreshed_at: new Date().toISOString(), source: 'Google News Bilim ve Teknoloji', source_url: GOOGLE_NEWS_TECH_RSS, max_age_hours: MAX_AGE_HOURS, via: 'trend-overview' }); }
-function decorateCluster(cluster = {}, signalGroup = {}, selectedWindow = '24h', freshRefs = []) { const signals = Array.isArray(signalGroup.signals) ? signalGroup.signals.filter((signal) => isFresh(signal.detected_at, windowHours(selectedWindow))) : []; const clusterText = [cluster.cluster_name, cluster.summary?.display_name, ...(Array.isArray(cluster.summary?.sample_topics) ? cluster.summary.sample_topics : []), ...signals.map((item) => item.topic_text)].filter(Boolean).join(' '); const linkedNews = freshRefs.map((ref) => ({ ...ref, match_score: overlapScore(clusterText, `${ref.candidate_title} ${ref.summary}`) })).filter((ref) => ref.match_score >= 1 || hasStrongTech(ref.candidate_title)).sort((a, b) => b.match_score - a.match_score || new Date(b.published_at || 0) - new Date(a.published_at || 0)).slice(0, 5); const latestSignalAt = signals.length ? signals.reduce((latest, item) => { const current = new Date(item.detected_at || 0).toISOString(); return !latest || current > latest ? current : latest; }, '') : null; return { ...cluster, selected_window: selectedWindow, window_signal_count: signals.length, sparkline: buildSparkline(signals, selectedWindow), latest_signal_at: latestSignalAt, signal_sources: [...new Set(signals.map((item) => item.source_name).filter(Boolean))], signal_topics: [...new Set(signals.map((item) => item.topic_text).filter(Boolean))], linked_news: linkedNews, source_count: Math.max(Number(cluster.source_count || 0), linkedNews.length), max_age_hours: MAX_AGE_HOURS }; }
-function buildClustersFromFreshReferences(freshRefs = [], limit = 12) { const map = new Map(); for (const ref of freshRefs) { const primary = keywordsFor(ref.candidate_title)[0] || normalizeTopic(ref.candidate_title).slice(0, 40); if (!primary) continue; const key = hashValue(primary); if (!map.has(key)) map.set(key, { cluster_key: key, cluster_name: ref.candidate_title, linked_news: [], trend_score: 55, discover_potential_score: 62, seo_potential_score: 58, affiliate_potential_score: 35, turkey_interest_score: /türkiye|turkiye|tl|btk/i.test(`${ref.candidate_title} ${ref.summary}`) ? 75 : 50, source_count: 0, signal_count: 0, competitor_count: 0, status: 'fresh_reference', summary: { display_name: ref.candidate_title, sample_topics: [ref.candidate_title] } }); const cluster = map.get(key); cluster.linked_news.push({ ...ref, match_score: 1 }); cluster.source_count = new Set(cluster.linked_news.map((item) => item.source_name)).size; cluster.signal_count = cluster.linked_news.length; cluster.window_signal_count = cluster.linked_news.length; cluster.latest_signal_at = cluster.linked_news.reduce((latest, item) => item.published_at > latest ? item.published_at : latest, ''); } return [...map.values()].sort(sortByTodayPriority).slice(0, limit); }
+async function fetchRss(url) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FEED_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      cache: 'no-store',
+      signal: controller.signal,
+      headers: {
+        'user-agent': 'Mozilla/5.0 TeknoblogRadarBot/1.0 (+https://www.teknoblog.com/)',
+        accept: 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8'
+      }
+    });
+    if (!response.ok) return [];
+    return parseFeedItems(await response.text());
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function trendScoreFor(item = {}, index = 0) {
+  const text = `${item.title || ''} ${item.summary || ''}`;
+  let score = Math.max(25, 100 - index * 3);
+  if (isTechText(text)) score += 12;
+  if (hasStrongTech(text)) score += 10;
+  if (looksExcluded(text) && !hasStrongTech(text)) score -= 22;
+  return clamp(score, 1, 100);
+}
+
+async function fetchGoogleTrends(limit = 30) {
+  const raw = await fetchRss(GOOGLE_TRENDS_TR_RSS);
+  const seen = new Set();
+  const items = [];
+  for (const [index, item] of raw.entries()) {
+    const title = safeText(item.title || '');
+    const summary = safeText(item.summary || item.description || '');
+    const url = item.url || item.link || '';
+    const published_at = normalizePublishedAt(item.published_at || new Date().toISOString()) || new Date().toISOString();
+    const key = `${title}::${url}`;
+    if (!title || seen.has(key)) continue;
+    seen.add(key);
+    const text = `${title} ${summary}`;
+    items.push({
+      title,
+      summary,
+      url,
+      published_at,
+      source_name: 'Google Trends Türkiye',
+      is_tech: isTechText(text),
+      trend_score: trendScoreFor({ title, summary }, index),
+      traffic_score: trendScoreFor({ title, summary }, index),
+      discover_score: isTechText(text) ? clamp(trendScoreFor({ title, summary }, index) + 4, 1, 100) : clamp(trendScoreFor({ title, summary }, index) - 10, 1, 100),
+      from_google_trends: true
+    });
+    if (items.length >= limit) break;
+  }
+  return items;
+}
+
+async function fetchGoogleNewsTech(limit = 24) {
+  const raw = await fetchRss(GOOGLE_NEWS_TECH_RSS);
+  const seen = new Set();
+  const items = [];
+  for (const item of raw) {
+    const title = safeText(item.title || '');
+    const normalized = { title: cleanNewsTitle(title), url: item.url || '', source_name: sourceFromTitle(title), published_at: normalizePublishedAt(item.published_at || ''), summary: safeText(item.summary || ''), image_url: item.image_url || '' };
+    const key = `${normalized.title}::${normalized.url}`;
+    if (!normalized.title || !normalized.url || seen.has(key)) continue;
+    if (!isFresh(normalized.published_at, MAX_AGE_HOURS)) continue;
+    if (!isTechText(`${normalized.title} ${normalized.summary} ${normalized.source_name}`)) continue;
+    seen.add(key);
+    items.push(normalized);
+    if (items.length >= limit) break;
+  }
+  return items;
+}
+
+async function fetchFreshReferences(limit = 80) {
+  const urls = FRESH_NEWS_QUERIES.map((query) => `https://news.google.com/rss/search?q=${encodeURIComponent(`${query} when:1d`)}&hl=tr&gl=TR&ceid=TR:tr`);
+  const batches = await Promise.all(urls.map(fetchRss));
+  const seen = new Set();
+  const items = [];
+  for (const raw of batches.flat()) {
+    const title = safeText(raw.title || '');
+    const item = { candidate_title: cleanNewsTitle(title), candidate_url: raw.url || '', source_name: sourceFromTitle(title), published_at: normalizePublishedAt(raw.published_at || ''), summary: safeText(raw.summary || ''), image_url: raw.image_url || '', match_score: 0 };
+    const key = `${item.candidate_title}::${item.candidate_url}`;
+    if (!item.candidate_title || !item.candidate_url || seen.has(key)) continue;
+    if (!isFresh(item.published_at, MAX_AGE_HOURS)) continue;
+    if (!isTechText(`${item.candidate_title} ${item.summary} ${item.source_name}`)) continue;
+    seen.add(key);
+    items.push(item);
+    if (items.length >= limit) break;
+  }
+  return items;
+}
+
+async function respondGoogleNewsTech(req, res) {
+  const limit = normalizeLimit(req.query?.limit);
+  const items = await fetchGoogleNewsTech(limit);
+  return json(res, 200, { items, count: items.length, refreshed_at: new Date().toISOString(), source: 'Google News Bilim ve Teknoloji', source_url: GOOGLE_NEWS_TECH_RSS, max_age_hours: MAX_AGE_HOURS, via: 'trend-overview' });
+}
+
+async function respondGoogleTrends(req, res) {
+  const limit = normalizeLimit(req.query?.limit, 30, 50);
+  const items = await fetchGoogleTrends(limit);
+  return json(res, 200, { items, count: items.length, refreshed_at: new Date().toISOString(), source: 'Google Trends Türkiye', source_url: GOOGLE_TRENDS_TR_RSS, via: 'trend-overview', route: 'google_trends' });
+}
+
+function decorateCluster(cluster = {}, signalGroup = {}, selectedWindow = '24h', freshRefs = []) {
+  const signals = Array.isArray(signalGroup.signals) ? signalGroup.signals.filter((signal) => isFresh(signal.detected_at, windowHours(selectedWindow))) : [];
+  const clusterText = [cluster.cluster_name, cluster.summary?.display_name, ...(Array.isArray(cluster.summary?.sample_topics) ? cluster.summary.sample_topics : []), ...signals.map((item) => item.topic_text)].filter(Boolean).join(' ');
+  const linkedNews = freshRefs.map((ref) => ({ ...ref, match_score: overlapScore(clusterText, `${ref.candidate_title} ${ref.summary}`) })).filter((ref) => ref.match_score >= 1 || hasStrongTech(ref.candidate_title)).sort((a, b) => b.match_score - a.match_score || new Date(b.published_at || 0) - new Date(a.published_at || 0)).slice(0, 5);
+  const latestSignalAt = signals.length ? signals.reduce((latest, item) => { const current = new Date(item.detected_at || 0).toISOString(); return !latest || current > latest ? current : latest; }, '') : null;
+  return { ...cluster, selected_window: selectedWindow, window_signal_count: signals.length, sparkline: buildSparkline(signals, selectedWindow), latest_signal_at: latestSignalAt, signal_sources: [...new Set(signals.map((item) => item.source_name).filter(Boolean))], signal_topics: [...new Set(signals.map((item) => item.topic_text).filter(Boolean))], linked_news: linkedNews, source_count: Math.max(Number(cluster.source_count || 0), linkedNews.length), max_age_hours: MAX_AGE_HOURS };
+}
+
+function buildClustersFromFreshReferences(freshRefs = [], limit = 12) {
+  const map = new Map();
+  for (const ref of freshRefs) {
+    const primary = keywordsFor(ref.candidate_title)[0] || normalizeTopic(ref.candidate_title).slice(0, 40);
+    if (!primary) continue;
+    const key = hashValue(primary);
+    if (!map.has(key)) map.set(key, { cluster_key: key, cluster_name: ref.candidate_title, linked_news: [], trend_score: 55, discover_potential_score: 62, seo_potential_score: 58, affiliate_potential_score: 35, turkey_interest_score: /türkiye|turkiye|tl|btk/i.test(`${ref.candidate_title} ${ref.summary}`) ? 75 : 50, source_count: 0, signal_count: 0, competitor_count: 0, status: 'fresh_reference', summary: { display_name: ref.candidate_title, sample_topics: [ref.candidate_title] } });
+    const cluster = map.get(key);
+    cluster.linked_news.push({ ...ref, match_score: 1 });
+    cluster.source_count = new Set(cluster.linked_news.map((item) => item.source_name)).size;
+    cluster.signal_count = cluster.linked_news.length;
+    cluster.window_signal_count = cluster.linked_news.length;
+    cluster.latest_signal_at = cluster.linked_news.reduce((latest, item) => item.published_at > latest ? item.published_at : latest, '');
+  }
+  return [...map.values()].sort(sortByTodayPriority).slice(0, limit);
+}
 
 export default async function handler(req, res) {
   try {
     if (String(req.query?.google_news || '') === '1') return await respondGoogleNewsTech(req, res);
+    if (String(req.query?.google_trends || '') === '1') return await respondGoogleTrends(req, res);
 
-    const supabase = getSupabaseAdmin();
     const selectedWindow = parseWindow(req.query?.window || '24h');
     const limit = clamp(Number(req.query?.limit || 12), 1, 24);
     const sinceIso = hoursAgoIso(windowHours(selectedWindow));
     const freshRefs = await fetchFreshReferences(90);
 
-    const { data: signals, error: signalsError } = await supabase
-      .from('trend_signals')
-      .select('normalized_topic,topic_text,detected_at,time_window,market_scope,country_code,source_name,signal_score')
-      .gte('detected_at', sinceIso)
-      .order('detected_at', { ascending: false })
-      .limit(2000);
-
-    if (signalsError) return json(res, 500, { error: signalsError.message });
-
-    const signalGroups = new Map();
-    for (const signal of signals || []) {
-      const normalizedTopic = normalizeTopic(signal.normalized_topic || signal.topic_text || '');
-      if (!normalizedTopic || isShortNoiseTopic(normalizedTopic) || !isTechText(normalizedTopic)) continue;
-      const clusterKey = hashValue(normalizedTopic);
-      if (!signalGroups.has(clusterKey)) signalGroups.set(clusterKey, { cluster_key: clusterKey, normalized_topic: normalizedTopic, signals: [] });
-      signalGroups.get(clusterKey).signals.push(signal);
-    }
-
-    const clusterKeys = [...signalGroups.keys()];
     let decorated = [];
+    try {
+      const supabase = getSupabaseAdmin();
+      const { data: signals, error: signalsError } = await supabase
+        .from('trend_signals')
+        .select('normalized_topic,topic_text,detected_at,time_window,market_scope,country_code,source_name,signal_score')
+        .gte('detected_at', sinceIso)
+        .order('detected_at', { ascending: false })
+        .limit(2000);
 
-    if (clusterKeys.length) {
-      const { data: clusters, error: clustersError } = await supabase
-        .from('trend_clusters')
-        .select('*')
-        .in('cluster_key', clusterKeys)
-        .neq('status', 'archived')
-        .gte('last_seen_at', sinceIso)
-        .limit(150);
+      if (!signalsError) {
+        const signalGroups = new Map();
+        for (const signal of signals || []) {
+          const normalizedTopic = normalizeTopic(signal.normalized_topic || signal.topic_text || '');
+          if (!normalizedTopic || isShortNoiseTopic(normalizedTopic) || !isTechText(normalizedTopic)) continue;
+          const clusterKey = hashValue(normalizedTopic);
+          if (!signalGroups.has(clusterKey)) signalGroups.set(clusterKey, { cluster_key: clusterKey, normalized_topic: normalizedTopic, signals: [] });
+          signalGroups.get(clusterKey).signals.push(signal);
+        }
 
-      if (clustersError) return json(res, 500, { error: clustersError.message });
+        const clusterKeys = [...signalGroups.keys()];
+        if (clusterKeys.length) {
+          const { data: clusters, error: clustersError } = await supabase
+            .from('trend_clusters')
+            .select('*')
+            .in('cluster_key', clusterKeys)
+            .neq('status', 'archived')
+            .gte('last_seen_at', sinceIso)
+            .limit(150);
 
-      decorated = (clusters || [])
-        .map((cluster) => decorateCluster(cluster, signalGroups.get(String(cluster.cluster_key || '')) || { signals: [] }, selectedWindow, freshRefs))
-        .filter((cluster) => Number(cluster.window_signal_count || 0) > 0)
-        .filter((cluster) => isTechText([cluster.cluster_name, ...(cluster.signal_topics || []), ...(cluster.linked_news || []).map((item) => item.candidate_title)].flat().join(' ')))
-        .sort(sortByTodayPriority)
-        .slice(0, limit);
-    }
+          if (!clustersError) {
+            decorated = (clusters || [])
+              .map((cluster) => decorateCluster(cluster, signalGroups.get(String(cluster.cluster_key || '')) || { signals: [] }, selectedWindow, freshRefs))
+              .filter((cluster) => Number(cluster.window_signal_count || 0) > 0)
+              .filter((cluster) => isTechText([cluster.cluster_name, ...(cluster.signal_topics || []), ...(cluster.linked_news || []).map((item) => item.candidate_title)].flat().join(' ')))
+              .sort(sortByTodayPriority)
+              .slice(0, limit);
+          }
+        }
+      }
+    } catch {}
 
     if (decorated.length < Math.min(6, limit)) {
       const fallback = buildClustersFromFreshReferences(freshRefs, limit - decorated.length);
