@@ -110,14 +110,31 @@
     return true;
   }
 
+  function moveFooterToBottom(root, footer) {
+    if (!root || !footer) return;
+    if (root.lastElementChild !== footer) root.appendChild(footer);
+  }
+
   function ensureFooter() {
     const root = document.getElementById('tb-radar-root') || document.querySelector('.tb-page') || document.body;
-    if (!root || document.getElementById('tb-footer-bar')) return;
-    const footer = document.createElement('footer');
-    footer.id = 'tb-footer-bar';
-    footer.className = 'tb-footer-bar';
-    footer.innerHTML = `<div class="tb-footer-title">Bölümler</div><nav class="tb-footer-nav" aria-label="Alt radar sayfaları">${linkHtml()}</nav>`;
-    root.appendChild(footer);
+    if (!root) return;
+    let footer = document.getElementById('tb-footer-bar');
+    if (!footer) {
+      footer = document.createElement('footer');
+      footer.id = 'tb-footer-bar';
+      footer.className = 'tb-footer-bar';
+      footer.innerHTML = `<div class="tb-footer-title">Bölümler</div><nav class="tb-footer-nav" aria-label="Alt radar sayfaları">${linkHtml()}</nav>`;
+      root.appendChild(footer);
+    }
+    moveFooterToBottom(root, footer);
+  }
+
+  function watchFooterOrder() {
+    const root = document.getElementById('tb-radar-root') || document.querySelector('.tb-page') || document.body;
+    if (!root || root.dataset.footerObserver === '1') return;
+    root.dataset.footerObserver = '1';
+    const observer = new MutationObserver(() => ensureFooter());
+    observer.observe(root, { childList: true });
   }
 
   function start() {
@@ -125,7 +142,8 @@
     enhanceHeader();
     ensureNav();
     ensureFooter();
-    window.addEventListener('load', () => { ensureStyle(); enhanceHeader(); ensureNav(); ensureFooter(); });
+    watchFooterOrder();
+    window.addEventListener('load', () => { ensureStyle(); enhanceHeader(); ensureNav(); ensureFooter(); watchFooterOrder(); });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
