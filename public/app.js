@@ -1,14 +1,19 @@
 (() => {
+  const VIEW_KEY = 'tb_news_card_view';
+  const VALID_VIEWS = new Set(['cards-2', 'cards-3', 'cards-4', 'stack', 'compact', 'list']);
+  const savedView = localStorage.getItem(VIEW_KEY);
+
   const state = {
     items: [],
     sources: [],
     sort: 'published_at',
     source: 'all',
-    view: 'cards',
+    view: VALID_VIEWS.has(savedView) ? savedView : 'cards-3',
     page: 1,
     pageSize: 20,
     selected: new Set(),
-    loading: false
+    loading: false,
+    lastError: ''
   };
 
   const esc = (value) => String(value ?? '')
@@ -102,7 +107,7 @@
             <div style="font:700 34px/1 'Fira Sans Condensed',sans-serif;color:#f04a0a">Teknoblog İçerik Radar</div>
             <div style="margin-top:8px;font-size:14px;color:#475569">${esc(todayLabel())}</div>
           </div>
-          <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+          <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:flex-end">
             <label for="tb-sort" style="font-size:13px;font-weight:800">Sıralama</label>
             <select id="tb-sort" style="padding:10px 12px;border:1px solid #d1d5db;border-radius:12px;background:#fff">
               <option value="published_at">En yeni içerikler</option>
@@ -113,14 +118,21 @@
               <option value="social_score">Sosyal ilgi</option>
               <option value="editorial_score">Editoryal öncelik</option>
             </select>
-            <button id="tb-view-cards" type="button" class="tb-small-btn">Kart</button>
-            <button id="tb-view-list" type="button" class="tb-small-btn">Liste</button>
+            <label for="tb-view-select" style="font-size:13px;font-weight:800">Görünüm</label>
+            <select id="tb-view-select" style="padding:10px 12px;border:1px solid #d1d5db;border-radius:12px;background:#fff;font-weight:800;color:#374151">
+              <option value="cards-2">2 sütun</option>
+              <option value="cards-3">3 sütun</option>
+              <option value="cards-4">4 sütun</option>
+              <option value="stack">Alt alta kart</option>
+              <option value="compact">Kompakt kart</option>
+              <option value="list">Liste</option>
+            </select>
             <button id="tb-refresh" type="button" class="tb-primary-btn">İçerikleri Yenile</button>
             <button id="tb-copy-selected" type="button" class="tb-small-btn">Seçilen URL'leri kopyala</button>
           </div>
         </header>
         <div id="tb-status" style="margin-bottom:12px;font-size:14px;color:#475569"></div>
-        <div id="tb-source-tabs" style="display:flex;gap:8px;align-items:center;margin-bottom:16px"></div>
+        <div id="tb-source-tabs" style="display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap"></div>
         <div id="tb-layout" style="display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:20px">
           <main>
             <div id="tb-grid"></div>
@@ -154,6 +166,23 @@
     wrap.innerHTML = `<label for="tb-source-select" style="font-size:13px;font-weight:800;color:#111827;white-space:nowrap">Kaynak</label><select id="tb-source-select" style="min-width:260px;max-width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:12px;background:#fff;font-weight:800;color:#374151">${names.map((name) => `<option value="${esc(name)}"${state.source === name ? ' selected' : ''}>${esc(name === 'all' ? 'Tüm kaynaklar' : name)}</option>`).join('')}</select>`;
   }
 
+  function gridColumnsForView() {
+    if (state.view === 'list' || state.view === 'stack') return '1fr';
+    if (state.view === 'cards-2') return 'repeat(2,minmax(0,1fr))';
+    if (state.view === 'cards-4') return 'repeat(4,minmax(0,1fr))';
+    if (state.view === 'compact') return 'repeat(auto-fill,minmax(220px,1fr))';
+    return 'repeat(3,minmax(0,1fr))';
+  }
+
+  function viewSettings() {
+    if (state.view === 'list') return { image: false, compact: true, clamp: 2, article: 'display:grid;grid-template-columns:minmax(0,1fr);' };
+    if (state.view === 'compact') return { image: false, compact: true, clamp: 2, article: 'display:grid;grid-template-rows:1fr;' };
+    if (state.view === 'stack') return { image: true, compact: false, clamp: 5, article: 'display:grid;grid-template-columns:minmax(260px,420px) minmax(0,1fr);' };
+    if (state.view === 'cards-4') return { image: true, compact: true, clamp: 2, article: 'display:grid;grid-template-rows:auto 1fr;' };
+    if (state.view === 'cards-2') return { image: true, compact: false, clamp: 4, article: 'display:grid;grid-template-rows:auto 1fr;' };
+    return { image: true, compact: false, clamp: 3, article: 'display:grid;grid-template-rows:auto 1fr;' };
+  }
+
   function renderCard(item) {
     const itemUrl = url(item);
     const itemImage = image(item);
@@ -161,17 +190,23 @@
     const date = formatDate(publishedAt(item));
     const age = ageHours(item);
     const stale = age > 24;
-    return `<article style="display:grid;grid-template-rows:auto 1fr;border:1px solid ${stale ? '#fed7aa' : '#dbe3ef'};border-radius:18px;background:#fff;box-shadow:0 6px 18px rgba(9,30,66,.06);overflow:hidden">
-      <div style="position:relative;background:#f3f6fa;aspect-ratio:16/9">
+    const settings = viewSettings();
+    const titleSize = settings.compact ? '18px' : '22px';
+    const padding = settings.compact ? '12px' : '14px';
+    const imageBlock = settings.image ? `<div style="position:relative;background:#f3f6fa;aspect-ratio:16/9">
         ${itemImage ? `<img src="${esc(itemImage)}" alt="${esc(title(item))}" loading="lazy" style="width:100%;height:100%;object-fit:cover" onerror="this.style.display='none'">` : `<div style="display:flex;width:100%;height:100%;align-items:center;justify-content:center;color:#64748b;font-weight:800">Görsel yok</div>`}
         <label style="position:absolute;top:10px;left:10px;background:rgba(255,255,255,.95);border-radius:999px;padding:6px 10px;display:flex;gap:6px;font-size:12px;font-weight:800"><input type="checkbox" data-select-url="${esc(itemUrl)}" ${checked}> Seç</label>
-      </div>
-      <div style="padding:14px;display:flex;flex-direction:column;gap:10px">
+      </div>` : '';
+    const selectInline = settings.image ? '' : `<label style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:999px;padding:6px 10px;display:inline-flex;gap:6px;font-size:12px;font-weight:800;width:max-content"><input type="checkbox" data-select-url="${esc(itemUrl)}" ${checked}> Seç</label>`;
+    return `<article style="${settings.article}border:1px solid ${stale ? '#fed7aa' : '#dbe3ef'};border-radius:18px;background:#fff;box-shadow:0 6px 18px rgba(9,30,66,.06);overflow:hidden">
+      ${imageBlock}
+      <div style="padding:${padding};display:flex;flex-direction:column;gap:10px">
+        ${selectInline}
         <div style="display:flex;gap:6px;flex-wrap:wrap">${scoreBadge('Genel', score(item, 'total_score'), '#c2410c')}${scoreBadge('Discover', score(item, 'discover_score'), '#2563eb')}${scoreBadge('Trafik', score(item, 'traffic_score'), '#15803d')}</div>
-        <h3 style="margin:0;font:700 22px/1.25 'Fira Sans Condensed',sans-serif;color:#111827">${esc(title(item))}</h3>
+        <h3 style="margin:0;font:700 ${titleSize}/1.25 'Fira Sans Condensed',sans-serif;color:#111827">${esc(title(item))}</h3>
         <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:12px;color:#64748b;font-weight:800"><span>${esc(date)}</span><span>${esc(sourceName(item))}</span></div>
         ${stale ? `<div style="font-size:12px;color:#b45309;font-weight:800">24 saatten eski, Discover için kullanılmamalı</div>` : ''}
-        <p style="margin:0;font-size:14px;line-height:1.55;color:#475569;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden">${esc(summary(item))}</p>
+        <p style="margin:0;font-size:14px;line-height:1.55;color:#475569;display:-webkit-box;-webkit-line-clamp:${settings.clamp};-webkit-box-orient:vertical;overflow:hidden">${esc(summary(item))}</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap"><a href="${esc(itemUrl || '#')}" target="_blank" rel="noopener noreferrer" style="padding:10px 12px;border-radius:10px;background:#f04a0a;color:#fff;text-decoration:none;font-size:14px;font-weight:800;${itemUrl ? '' : 'pointer-events:none;opacity:.5'}">Haberi Aç</a><button type="button" data-copy-url="${esc(itemUrl)}" class="tb-small-btn">URL kopyala</button></div>
       </div>
     </article>`;
@@ -182,15 +217,21 @@
     const grid = document.getElementById('tb-grid');
     const status = document.getElementById('tb-status');
     const sort = document.getElementById('tb-sort');
+    const view = document.getElementById('tb-view-select');
     if (sort) sort.value = state.sort;
+    if (view) view.value = state.view;
     renderSourceTabs();
     const all = visibleItems();
     const items = pagedItems();
-    status.textContent = state.sort === 'discover_score' ? `${all.length} içerik listeleniyor, Discover için son 24 saat filtresi aktif` : `${all.length} içerik listeleniyor`;
-    grid.className = state.view;
+    status.textContent = state.lastError
+      ? `Hata: ${state.lastError}`
+      : state.sort === 'discover_score'
+        ? `${all.length} içerik listeleniyor, Discover için son 24 saat filtresi aktif`
+        : `${all.length} içerik listeleniyor`;
+    grid.className = `tb-news-grid ${state.view}`;
     grid.style.display = 'grid';
-    grid.style.gridTemplateColumns = state.view === 'list' ? '1fr' : 'repeat(auto-fit,minmax(300px,1fr))';
-    grid.style.gap = '14px';
+    grid.style.gridTemplateColumns = gridColumnsForView();
+    grid.style.gap = state.view === 'compact' ? '10px' : '14px';
     grid.innerHTML = items.length ? items.map(renderCard).join('') : '<div style="padding:24px;border:1px solid #dbe3ef;border-radius:18px;background:#fff">Henüz içerik yok.</div>';
     renderPagination();
   }
@@ -224,8 +265,14 @@
   }
 
   async function loadRecommendations() {
-    const data = await fetchJson(`/api/recommendations?sort=${encodeURIComponent(state.sort)}&t=${Date.now()}`, { timeoutMs: 25000 });
-    state.items = Array.isArray(data.items) ? data.items : [];
+    try {
+      state.lastError = '';
+      const data = await fetchJson(`/api/recommendations?sort=${encodeURIComponent(state.sort)}&t=${Date.now()}`, { timeoutMs: 25000 });
+      state.items = Array.isArray(data.items) ? data.items : [];
+    } catch (error) {
+      state.items = [];
+      state.lastError = error?.message || String(error);
+    }
     state.page = 1;
     renderItems();
   }
@@ -274,6 +321,12 @@
         state.page = 1;
         renderItems();
       }
+      if (event.target?.id === 'tb-view-select') {
+        const nextView = VALID_VIEWS.has(event.target.value) ? event.target.value : 'cards-3';
+        state.view = nextView;
+        localStorage.setItem(VIEW_KEY, nextView);
+        renderItems();
+      }
       if (event.target?.matches('[data-select-url]')) {
         const value = event.target.getAttribute('data-select-url');
         if (event.target.checked) state.selected.add(value);
@@ -288,8 +341,6 @@
         renderItems();
         return;
       }
-      if (event.target.closest('#tb-view-cards')) { state.view = 'cards'; renderItems(); return; }
-      if (event.target.closest('#tb-view-list')) { state.view = 'list'; renderItems(); return; }
       if (event.target.closest('#tb-refresh')) { refreshContent(); return; }
       const copy = event.target.closest('[data-copy-url]');
       if (copy) {
