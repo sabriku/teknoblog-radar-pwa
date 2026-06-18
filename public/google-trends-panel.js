@@ -80,7 +80,7 @@
       <div class="tb-gt-head">
         <div>
           <h2>${esc(state.sourceLabel)}</h2>
-          <p>Türkiye’de yükselen arama ve teknoloji gündemi sinyallerini izler. Birincil Trends endpoint’i çalışmazsa Google News teknoloji akışıyla yedeklenir.</p>
+          <p>Türkiye’de yükselen arama ve teknoloji gündemi sinyallerini izler. Google Trends verisi mevcut trend-overview API route’u üzerinden alınır.</p>
         </div>
         <button type="button" class="tb-gt-refresh" ${state.loading ? 'disabled' : ''}>Trendleri Yenile</button>
       </div>
@@ -103,7 +103,7 @@
     state.error = '';
     render();
     try {
-      const data = await fetchJson(`/api/google-trends?limit=30&_=${Date.now()}`);
+      const data = await fetchJson(`/api/trend-overview?google_trends=1&limit=30&_=${Date.now()}`);
       state.items = Array.isArray(data.items) ? data.items : [];
       state.refreshedAt = data.refreshed_at || new Date().toISOString();
       state.sourceLabel = data.source || 'Google Trends Türkiye';
@@ -113,7 +113,7 @@
         state.items = (Array.isArray(fallback.items) ? fallback.items : []).map((item) => ({ ...item, from_fallback: true, is_tech: true }));
         state.refreshedAt = fallback.refreshed_at || new Date().toISOString();
         state.sourceLabel = 'Google News Türkiye · Teknoloji yedek akışı';
-        state.error = `Google Trends endpoint’i kullanılamadı; yedek teknoloji akışı gösteriliyor. (${primaryError?.message || 'Bilinmeyen hata'})`;
+        state.error = `Google Trends verisi alınamadı; yedek teknoloji akışı gösteriliyor. (${primaryError?.message || 'Bilinmeyen hata'})`;
       } catch (fallbackError) {
         state.items = [];
         state.error = `Google Trends ve yedek akış alınamadı: ${fallbackError?.message || primaryError?.message || 'Bilinmeyen hata'}`;
