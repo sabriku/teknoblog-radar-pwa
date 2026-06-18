@@ -1,0 +1,15 @@
+name: Deploy Teknoblog Radar
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: Deploy on server
+        run: sudo /usr/local/bin/deploy-teknoblog-radar.sh
