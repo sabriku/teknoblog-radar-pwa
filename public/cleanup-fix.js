@@ -8,8 +8,31 @@
     document.head.appendChild(script);
   }
 
+  function isHomePage() {
+    const path = String(window.location.pathname || '/').replace(/\/+$/, '') || '/';
+    return path === '/' || path === '/index.html';
+  }
+
+  function removeEditorialFromHome() {
+    if (!isHomePage()) return;
+    document.querySelectorAll('#tb-editorial-center').forEach((node) => node.remove());
+  }
+
+  function watchHomeForEditorialLeaks() {
+    if (!isHomePage() || document.body.dataset.editorialHomeGuard === '1') return;
+    document.body.dataset.editorialHomeGuard = '1';
+    removeEditorialFromHome();
+    const observer = new MutationObserver(removeEditorialFromHome);
+    observer.observe(document.body, { childList: true, subtree: true });
+    window.addEventListener('load', removeEditorialFromHome);
+    setTimeout(removeEditorialFromHome, 500);
+    setTimeout(removeEditorialFromHome, 1500);
+    setTimeout(removeEditorialFromHome, 3000);
+  }
+
   function loadNavigationHelpers() {
     loadScriptOnce('tb-main-radar-tabs-loader-v19', '/radar-main-tabs.js?v=20260524-19');
+    watchHomeForEditorialLeaks();
   }
 
   function cleanupBtn() { return document.getElementById('tb-cleanup'); }
