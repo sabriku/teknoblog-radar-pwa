@@ -1,5 +1,5 @@
 (() => {
-  const state = { items: [], loading: false, error: '', refreshedAt: '' };
+  const state = { items: [], loading: false, error: '', refreshedAt: '', sourceLabel: 'Google Trends Türkiye' };
 
   function esc(value) {
     return String(value ?? '')
@@ -32,12 +32,12 @@
       .tb-gt-head h2{font:700 28px/1 'Fira Sans Condensed',sans-serif;margin:0;color:#111827}
       .tb-gt-head p{font-size:13px;color:#64748b;margin:6px 0 0;line-height:1.5}
       .tb-gt-refresh{border:1px solid #f04a0a;background:#fff;color:#f04a0a;border-radius:999px;padding:9px 12px;font-size:12px;font-weight:900;cursor:pointer}
-      .tb-gt-status{font-size:12px;color:#64748b;padding:0 2px}.tb-gt-status[data-error='1']{color:#b91c1c}
+      .tb-gt-refresh:disabled{opacity:.62;cursor:not-allowed}.tb-gt-status{font-size:12px;color:#64748b;padding:0 2px}.tb-gt-status[data-error='1']{color:#b91c1c}
       .tb-gt-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
       .tb-gt-card{border:1px solid #e5e7eb;border-radius:16px;background:#fff;padding:14px;box-shadow:0 4px 12px rgba(15,23,42,.04)}
-      .tb-gt-card h3{font:700 20px/1.25 'Fira Sans Condensed',sans-serif;color:#111827;margin:8px 0}
+      .tb-gt-card h3{font:700 20px/1.25 'Fira Sans Condensed',sans-serif;color:#111827;margin:8px 0;overflow-wrap:anywhere}
       .tb-gt-meta{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}.tb-gt-chip{border:1px solid #e5e7eb;border-radius:999px;background:#f8fafc;color:#475569;padding:5px 8px;font-size:11px;font-weight:800}
-      .tb-gt-chip.hot{border-color:#fdba74;background:#fff7ed;color:#c2410c}.tb-gt-chip.tech{border-color:#93c5fd;background:#eff6ff;color:#1d4ed8}
+      .tb-gt-chip.hot{border-color:#fdba74;background:#fff7ed;color:#c2410c}.tb-gt-chip.tech{border-color:#93c5fd;background:#eff6ff;color:#1d4ed8}.tb-gt-chip.fallback{border-color:#c4b5fd;background:#f5f3ff;color:#6d28d9}
       .tb-gt-summary{font-size:12px;line-height:1.55;color:#475569}.tb-gt-link{display:inline-flex;margin-top:10px;color:#f04a0a;text-decoration:none;font-size:12px;font-weight:900}.tb-gt-link:hover{text-decoration:underline}
       .tb-gt-empty{border:1px dashed #cbd5e1;border-radius:14px;padding:16px;text-align:center;color:#64748b;font-size:13px}
     `;
@@ -47,6 +47,10 @@
   function mount() {
     return document.querySelector('#tb-google-trends-wrap') || document.querySelector('#tb-layout main') || document.querySelector('main');
   }
+
+  function itemUrl(item) { return item.url || item.link || item.source_url || '#'; }
+  function itemScore(item) { return item.trend_score ?? item.total_score ?? item.discover_score ?? 0; }
+  function itemSummary(item) { return item.summary || item.description || item.excerpt || 'Türkiye teknoloji gündeminden yükselen konu.'; }
 
   function render() {
     ensureStyle();
@@ -62,29 +66,36 @@
     const cards = state.items.map((item) => `
       <article class="tb-gt-card">
         <div class="tb-gt-meta">
-          <span class="tb-gt-chip hot">Trend ${esc(item.trend_score || 0)}</span>
-          ${item.is_tech ? '<span class="tb-gt-chip tech">Teknoloji sinyali</span>' : '<span class="tb-gt-chip">Genel trend</span>'}
-          <span class="tb-gt-chip">${esc(fmtDate(item.published_at))}</span>
+          <span class="tb-gt-chip hot">Skor ${esc(itemScore(item))}</span>
+          ${item.from_fallback ? '<span class="tb-gt-chip fallback">Yedek akış</span>' : item.is_tech ? '<span class="tb-gt-chip tech">Teknoloji sinyali</span>' : '<span class="tb-gt-chip">Genel trend</span>'}
+          <span class="tb-gt-chip">${esc(fmtDate(item.published_at || item.created_at || item.updated_at))}</span>
         </div>
         <h3>${esc(item.title)}</h3>
-        <div class="tb-gt-summary">${esc(item.summary || 'Google Trends Türkiye akışında yükselen konu.')}</div>
-        <a class="tb-gt-link" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">Google Trends’te aç</a>
+        <div class="tb-gt-summary">${esc(itemSummary(item))}</div>
+        <a class="tb-gt-link" href="${esc(itemUrl(item))}" target="_blank" rel="noopener noreferrer">Kaynağı aç</a>
       </article>
     `).join('');
 
     wrap.innerHTML = `
       <div class="tb-gt-head">
         <div>
-          <h2>Google Trends Türkiye</h2>
-          <p>Türkiye’de yükselen arama konularını izler. Teknolojiyle ilişkili sinyalleri öne çıkarır; Trend/Karar katmanındaki Supabase kümelerini kullanmaz.</p>
+          <h2>${esc(state.sourceLabel)}</h2>
+          <p>Türkiye’de yükselen arama ve teknoloji gündemi sinyallerini izler. Birincil Trends endpoint’i çalışmazsa Google News teknoloji akışıyla yedeklenir.</p>
         </div>
         <button type="button" class="tb-gt-refresh" ${state.loading ? 'disabled' : ''}>Trendleri Yenile</button>
       </div>
-      <div class="tb-gt-status" data-error="${state.error ? '1' : '0'}">${esc(state.loading ? 'Google Trends akışı yükleniyor...' : state.error || `Son kontrol: ${fmtDate(state.refreshedAt) || 'henüz yok'} · Konu: ${state.items.length}`)}</div>
-      ${cards ? `<div class="tb-gt-grid">${cards}</div>` : '<div class="tb-gt-empty">Google Trends Türkiye akışında gösterilecek teknoloji sinyali bulunamadı.</div>'}
+      <div class="tb-gt-status" data-error="${state.error ? '1' : '0'}">${esc(state.loading ? 'Akış yükleniyor...' : state.error || `Son kontrol: ${fmtDate(state.refreshedAt) || 'henüz yok'} · Konu: ${state.items.length}`)}</div>
+      ${cards ? `<div class="tb-gt-grid">${cards}</div>` : '<div class="tb-gt-empty">Gösterilecek trend veya teknoloji sinyali bulunamadı.</div>'}
     `;
     wrap.querySelector('.tb-gt-refresh')?.addEventListener('click', load);
     return true;
+  }
+
+  async function fetchJson(url) {
+    const res = await fetch(url, { cache: 'no-store', headers: { accept: 'application/json' } });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data?.error) throw new Error(data?.error || `HTTP ${res.status}`);
+    return data;
   }
 
   async function load() {
@@ -92,13 +103,21 @@
     state.error = '';
     render();
     try {
-      const res = await fetch(`/api/google-trends?limit=30&_=${Date.now()}`, { cache: 'no-store', headers: { accept: 'application/json' } });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || data?.error) throw new Error(data?.error || `HTTP ${res.status}`);
+      const data = await fetchJson(`/api/google-trends?limit=30&_=${Date.now()}`);
       state.items = Array.isArray(data.items) ? data.items : [];
       state.refreshedAt = data.refreshed_at || new Date().toISOString();
-    } catch (error) {
-      state.error = `Google Trends verisi alınamadı: ${error?.message || 'Bilinmeyen hata'}`;
+      state.sourceLabel = data.source || 'Google Trends Türkiye';
+    } catch (primaryError) {
+      try {
+        const fallback = await fetchJson(`/api/trend-overview?google_news=1&limit=30&_=${Date.now()}`);
+        state.items = (Array.isArray(fallback.items) ? fallback.items : []).map((item) => ({ ...item, from_fallback: true, is_tech: true }));
+        state.refreshedAt = fallback.refreshed_at || new Date().toISOString();
+        state.sourceLabel = 'Google News Türkiye · Teknoloji yedek akışı';
+        state.error = `Google Trends endpoint’i kullanılamadı; yedek teknoloji akışı gösteriliyor. (${primaryError?.message || 'Bilinmeyen hata'})`;
+      } catch (fallbackError) {
+        state.items = [];
+        state.error = `Google Trends ve yedek akış alınamadı: ${fallbackError?.message || primaryError?.message || 'Bilinmeyen hata'}`;
+      }
     } finally {
       state.loading = false;
       render();
