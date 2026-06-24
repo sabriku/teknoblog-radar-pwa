@@ -95,7 +95,7 @@
         <div class="tb-gt-meta">
           <span class="tb-gt-chip country">${esc(item.country_name || countryLabel(item.country_code))}</span>
           <span class="tb-gt-chip hot">Skor ${esc(itemScore(item))}</span>
-          <span class="tb-gt-chip tech">Bilim ve Teknoloji</span>
+          ${item.from_fallback ? '<span class="tb-gt-chip fallback">Yedek akış</span>' : '<span class="tb-gt-chip tech">Bilim ve Teknoloji</span>'}
           <span class="tb-gt-chip">${esc(item.window_label || windowLabel(state.window))}</span>
           <span class="tb-gt-chip">${esc(fmtDate(item.published_at || item.created_at || item.updated_at))}</span>
         </div>
@@ -133,6 +133,14 @@
     return data;
   }
 
+  async function loadFallback(reason = '') {
+    const fallback = await fetchJson(`/api/trend-overview?google_news=1&limit=30&_=${Date.now()}`);
+    state.items = (Array.isArray(fallback.items) ? fallback.items : []).map((item) => ({ ...item, from_fallback: true, is_tech: true, country_code: 'TR', country_name: 'Türkiye', window_label: windowLabel(state.window) }));
+    state.refreshedAt = fallback.refreshed_at || new Date().toISOString();
+    state.sourceLabel = 'Google News Türkiye · Bilim ve Teknoloji yedek akışı';
+    state.error = reason ? `Google Trends Bilim ve Teknoloji verisi boş döndü; yedek teknoloji akışı gösteriliyor. (${reason})` : '';
+  }
+
   async function load() {
     state.loading = true;
     state.error = '';
@@ -140,18 +148,19 @@
     try {
       const params = new URLSearchParams({ google_trends: '1', limit: '48', geo: state.country, window: state.window, _: String(Date.now()) });
       const data = await fetchJson(`/api/trend-overview?${params.toString()}`);
-      state.items = Array.isArray(data.items) ? data.items : [];
-      state.refreshedAt = data.refreshed_at || new Date().toISOString();
-      state.sourceLabel = data.source || 'Google Trends Bilim ve Teknoloji';
-      if (Array.isArray(data.countries) && data.countries.length) state.countries = [['all', 'Türkiye + dünya'], ...data.countries.map((country) => [country.code, country.name])];
-      if (Array.isArray(data.available_windows) && data.available_windows.length) state.windows = data.available_windows.map((item) => [item.key, item.label]);
+      const items = Array.isArray(data.items) ? data.items : [];
+      if (!items.length) {
+        await loadFallback('empty_trends_response');
+      } else {
+        state.items = items;
+        state.refreshedAt = data.refreshed_at || new Date().toISOString();
+        state.sourceLabel = data.source || 'Google Trends Bilim ve Teknoloji';
+        if (Array.isArray(data.countries) && data.countries.length) state.countries = [['all', 'Türkiye + dünya'], ...data.countries.map((country) => [country.code, country.name])];
+        if (Array.isArray(data.available_windows) && data.available_windows.length) state.windows = data.available_windows.map((item) => [item.key, item.label]);
+      }
     } catch (primaryError) {
       try {
-        const fallback = await fetchJson(`/api/trend-overview?google_news=1&limit=30&_=${Date.now()}`);
-        state.items = (Array.isArray(fallback.items) ? fallback.items : []).map((item) => ({ ...item, from_fallback: true, is_tech: true, country_code: 'TR', country_name: 'Türkiye', window_label: windowLabel(state.window) }));
-        state.refreshedAt = fallback.refreshed_at || new Date().toISOString();
-        state.sourceLabel = 'Google News Türkiye · Bilim ve Teknoloji yedek akışı';
-        state.error = `Google Trends Bilim ve Teknoloji verisi alınamadı; yedek teknoloji akışı gösteriliyor. (${primaryError?.message || 'Bilinmeyen hata'})`;
+        await loadFallback(primaryError?.message || 'Bilinmeyen hata');
       } catch (fallbackError) {
         state.items = [];
         state.error = `Google Trends ve yedek akış alınamadı: ${fallbackError?.message || primaryError?.message || 'Bilinmeyen hata'}`;
