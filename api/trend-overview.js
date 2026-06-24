@@ -134,7 +134,7 @@ function trendScoreFor(item = {}, index = 0, countryPriority = 10) {
 }
 
 function googleTrendsUrl(countryCode = 'TR') {
-  const params = new URLSearchParams({ geo: countryCode, category: '18', cat: '18' });
+  const params = new URLSearchParams({ geo: countryCode });
   return `${GOOGLE_TRENDS_BASE_RSS}?${params.toString()}`;
 }
 
@@ -142,7 +142,6 @@ async function fetchGoogleTrendsCountry(country, limit = 30, selectedWindow = '2
   const raw = await fetchRss(googleTrendsUrl(country.code));
   const seen = new Set();
   const items = [];
-  const hours = windowHours(selectedWindow);
   for (const [index, item] of raw.entries()) {
     const title = safeText(item.title || '');
     const summary = safeText(item.summary || item.description || '');
@@ -151,9 +150,8 @@ async function fetchGoogleTrendsCountry(country, limit = 30, selectedWindow = '2
     const key = `${country.code}::${title}::${url}`;
     const text = `${title} ${summary}`;
     if (!title || seen.has(key)) continue;
-    if (!isTechText(text)) continue;
-    if (!isFresh(published_at, hours)) continue;
     seen.add(key);
+    const isTech = isTechText(text);
     const trendScore = trendScoreFor({ title, summary }, index, country.priority);
     items.push({
       title,
@@ -164,10 +162,10 @@ async function fetchGoogleTrendsCountry(country, limit = 30, selectedWindow = '2
       country_code: country.code,
       country_name: country.name,
       country_priority: country.priority,
-      category: 'Bilim ve Teknoloji',
+      category: isTech ? 'Bilim ve Teknoloji' : 'Google Trends genel trend',
       selected_window: selectedWindow,
       window_label: TREND_WINDOWS.find((item) => item.key === selectedWindow)?.label || selectedWindow,
-      is_tech: true,
+      is_tech: isTech,
       trend_score: trendScore,
       traffic_score: trendScore,
       discover_score: clamp(trendScore + (country.code === 'TR' ? 6 : 0), 1, 100),
@@ -185,9 +183,9 @@ async function fetchGoogleTrends(limit = 30, selectedWindow = '24h', requestedGe
   const list = countries.length ? countries : [GOOGLE_TRENDS_COUNTRIES[0]];
   const perCountryLimit = requestedGeo === 'all' ? Math.max(8, Math.ceil(limit / 2)) : limit;
   const batches = await Promise.allSettled(list.map((country) => fetchGoogleTrendsCountry(country, perCountryLimit, selectedWindow)));
-  return batches
-    .flatMap((result) => result.status === 'fulfilled' ? result.value : [])
-    .sort((a, b) => Number(a.country_priority || 99) - Number(b.country_priority || 99) || Number(b.discover_score || 0) - Number(a.discover_score || 0) || new Date(b.published_at || 0) - new Date(a.published_at || 0))
+  const allItems = batches.flatMap((result) => result.status === 'fulfilled' ? result.value : []);
+  return allItems
+    .sort((a, b) => Number(b.is_tech) - Number(a.is_tech) || Number(a.country_priority || 99) - Number(b.country_priority || 99) || Number(b.discover_score || 0) - Number(a.discover_score || 0) || new Date(b.published_at || 0) - new Date(a.published_at || 0))
     .slice(0, limit);
 }
 
@@ -245,9 +243,10 @@ async function respondGoogleTrends(req, res) {
     window: selectedWindow,
     available_windows: TREND_WINDOWS,
     countries: GOOGLE_TRENDS_COUNTRIES,
-    category: 'Bilim ve Teknoloji',
+    category: 'Bilim ve Teknoloji öncelikli Google Trends',
+    coverage_note: 'Google Trends RSS kategori parametresi desteklemediği için gerçek Trends akışı alınır; Bilim/Teknoloji konuları önceliklendirilir.',
     refreshed_at: new Date().toISOString(),
-    source: geo === 'all' ? 'Google Trends Bilim ve Teknoloji · Türkiye ve dünya' : `Google Trends Bilim ve Teknoloji · ${geo}`,
+    source: geo === 'all' ? 'Google Trends · Türkiye önce, dünya sonra' : `Google Trends · ${geo}`,
     source_url: googleTrendsUrl(geo === 'all' ? 'TR' : geo),
     via: 'trend-overview',
     route: 'google_trends'
