@@ -18,7 +18,7 @@
     ['48h', 'Son 48 saat'],
     ['168h', 'Son 7 gün']
   ];
-  const state = { items: [], loading: false, error: '', refreshedAt: '', sourceLabel: 'Google Trends Bilim ve Teknoloji', country: 'all', window: '24h', countries: COUNTRIES, windows: WINDOWS };
+  const state = { items: [], loading: false, error: '', refreshedAt: '', sourceLabel: 'Bilim ve Teknoloji Trendleri', country: 'all', window: '24h', countries: COUNTRIES, windows: WINDOWS };
 
   function esc(value) {
     return String(value ?? '')
@@ -71,7 +71,7 @@
 
   function itemUrl(item) { return item.url || item.link || item.source_url || '#'; }
   function itemScore(item) { return item.trend_score ?? item.total_score ?? item.discover_score ?? 0; }
-  function itemSummary(item) { return item.summary || item.description || item.excerpt || 'Google Trends Bilim ve Teknoloji kategorisinden yükselen konu.'; }
+  function itemSummary(item) { return item.summary || item.description || item.excerpt || 'Bilim ve teknoloji odağında yükselen konu.'; }
   function countryLabel(code) { return COUNTRIES.find(([value]) => value === code)?.[1] || code || 'Bilinmiyor'; }
   function windowLabel(value) { return WINDOWS.find(([key]) => key === value)?.[1] || value || 'Son 24 saat'; }
 
@@ -95,13 +95,13 @@
         <div class="tb-gt-meta">
           <span class="tb-gt-chip country">${esc(item.country_name || countryLabel(item.country_code))}</span>
           <span class="tb-gt-chip hot">Skor ${esc(itemScore(item))}</span>
-          ${item.from_fallback ? '<span class="tb-gt-chip fallback">Yedek akış</span>' : '<span class="tb-gt-chip tech">Bilim ve Teknoloji</span>'}
+          ${item.from_fallback ? '<span class="tb-gt-chip fallback">Tamamlayıcı akış</span>' : '<span class="tb-gt-chip tech">Bilim ve Teknoloji</span>'}
           <span class="tb-gt-chip">${esc(item.window_label || windowLabel(state.window))}</span>
           <span class="tb-gt-chip">${esc(fmtDate(item.published_at || item.created_at || item.updated_at))}</span>
         </div>
         <h3>${esc(item.title)}</h3>
         <div class="tb-gt-summary">${esc(itemSummary(item))}</div>
-        <a class="tb-gt-link" href="${esc(itemUrl(item))}" target="_blank" rel="noopener noreferrer">Google Trends / Kaynak aç</a>
+        <a class="tb-gt-link" href="${esc(itemUrl(item))}" target="_blank" rel="noopener noreferrer">Kaynağı aç</a>
       </article>
     `).join('');
 
@@ -109,7 +109,7 @@
       <div class="tb-gt-head">
         <div>
           <h2>${esc(state.sourceLabel)}</h2>
-          <p>Bilim ve Teknoloji odağındaki Google Trends sinyalleri önce Türkiye, ardından diğer ülkeler sırasıyla gösterilir. Zaman penceresini değiştirerek kısa veya daha geniş trend görünümü alınabilir.</p>
+          <p>Bu bölüm yalnızca bilim, teknoloji, yapay zeka, mobil, donanım, yazılım, uzay ve siber güvenlik odağındaki trend sinyallerini gösterir. Google Trends RSS içinden bu konular ayıklanır; yeterli eşleşme yoksa bilim-teknoloji haber akışıyla tamamlanır.</p>
         </div>
         <div class="tb-gt-controls">
           <div class="tb-gt-control"><label for="tb-gt-country">Ülke</label><select id="tb-gt-country">${options(state.countries, state.country)}</select></div>
@@ -118,7 +118,7 @@
         </div>
       </div>
       <div class="tb-gt-status" data-error="${state.error ? '1' : '0'}">${esc(state.loading ? 'Akış yükleniyor...' : state.error || `Son kontrol: ${fmtDate(state.refreshedAt) || 'henüz yok'} · Zaman: ${windowLabel(state.window)} · Konu: ${state.items.length}`)}</div>
-      ${cards ? `<div class="tb-gt-grid">${cards}</div>` : '<div class="tb-gt-empty">Seçili zaman penceresinde Bilim ve Teknoloji trendi bulunamadı.</div>'}
+      ${cards ? `<div class="tb-gt-grid">${cards}</div>` : '<div class="tb-gt-empty">Seçili zaman penceresinde bilim ve teknoloji trendi bulunamadı.</div>'}
     `;
     wrap.querySelector('.tb-gt-refresh')?.addEventListener('click', load);
     wrap.querySelector('#tb-gt-country')?.addEventListener('change', (event) => { state.country = event.target.value || 'all'; load(); });
@@ -133,12 +133,12 @@
     return data;
   }
 
-  async function loadFallback(reason = '') {
+  async function loadFallback() {
     const fallback = await fetchJson(`/api/trend-overview?google_news=1&limit=30&_=${Date.now()}`);
     state.items = (Array.isArray(fallback.items) ? fallback.items : []).map((item) => ({ ...item, from_fallback: true, is_tech: true, country_code: 'TR', country_name: 'Türkiye', window_label: windowLabel(state.window) }));
     state.refreshedAt = fallback.refreshed_at || new Date().toISOString();
-    state.sourceLabel = 'Google News Türkiye · Bilim ve Teknoloji yedek akışı';
-    state.error = reason ? `Google Trends Bilim ve Teknoloji verisi boş döndü; yedek teknoloji akışı gösteriliyor. (${reason})` : '';
+    state.sourceLabel = 'Bilim ve Teknoloji Trendleri';
+    state.error = '';
   }
 
   async function load() {
@@ -150,20 +150,20 @@
       const data = await fetchJson(`/api/trend-overview?${params.toString()}`);
       const items = Array.isArray(data.items) ? data.items : [];
       if (!items.length) {
-        await loadFallback('empty_trends_response');
+        await loadFallback();
       } else {
         state.items = items;
         state.refreshedAt = data.refreshed_at || new Date().toISOString();
-        state.sourceLabel = data.source || 'Google Trends Bilim ve Teknoloji';
+        state.sourceLabel = 'Bilim ve Teknoloji Trendleri';
         if (Array.isArray(data.countries) && data.countries.length) state.countries = [['all', 'Türkiye + dünya'], ...data.countries.map((country) => [country.code, country.name])];
         if (Array.isArray(data.available_windows) && data.available_windows.length) state.windows = data.available_windows.map((item) => [item.key, item.label]);
       }
     } catch (primaryError) {
       try {
-        await loadFallback(primaryError?.message || 'Bilinmeyen hata');
+        await loadFallback();
       } catch (fallbackError) {
         state.items = [];
-        state.error = `Google Trends ve yedek akış alınamadı: ${fallbackError?.message || primaryError?.message || 'Bilinmeyen hata'}`;
+        state.error = `Bilim ve teknoloji trend akışı alınamadı: ${fallbackError?.message || primaryError?.message || 'Bilinmeyen hata'}`;
       }
     } finally {
       state.loading = false;
