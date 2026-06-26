@@ -18,7 +18,12 @@
     ['48h', 'Son 48 saat'],
     ['168h', 'Son 7 gün']
   ];
-  const state = { items: [], loading: false, error: '', refreshedAt: '', sourceLabel: 'Bilim ve Teknoloji Trendleri', country: 'all', window: '24h', countries: COUNTRIES, windows: WINDOWS };
+  const CATEGORIES = [
+    ['all', 'Bilim + Teknoloji'],
+    ['science', 'Bilim'],
+    ['technology', 'Teknoloji']
+  ];
+  const state = { items: [], loading: false, error: '', refreshedAt: '', sourceLabel: 'Bilim ve Teknoloji Trendleri', country: 'all', window: '24h', category: 'all', countries: COUNTRIES, windows: WINDOWS, categories: CATEGORIES };
 
   function esc(value) {
     return String(value ?? '')
@@ -32,13 +37,7 @@
   function fmtDate(value) {
     const date = new Date(value || 0);
     if (Number.isNaN(date.getTime())) return '';
-    return new Intl.DateTimeFormat('tr-TR', {
-      day: '2-digit',
-      month: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      timeZone: 'Europe/Istanbul'
-    }).format(date);
+    return new Intl.DateTimeFormat('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Istanbul' }).format(date);
   }
 
   function ensureStyle() {
@@ -51,7 +50,7 @@
       .tb-gt-head h2{font:700 28px/1 'Fira Sans Condensed',sans-serif;margin:0;color:#111827}
       .tb-gt-head p{font-size:13px;color:#64748b;margin:6px 0 0;line-height:1.5;max-width:720px}
       .tb-gt-controls{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;justify-content:flex-end}
-      .tb-gt-control{display:flex;flex-direction:column;gap:5px}.tb-gt-control label{font-size:11px;font-weight:900;color:#334155}.tb-gt-control select{min-width:150px;padding:9px 11px;border:1px solid #d1d5db;border-radius:12px;background:#fff;color:#111827;font-size:12px;font-weight:800}
+      .tb-gt-control{display:flex;flex-direction:column;gap:5px}.tb-gt-control label{font-size:11px;font-weight:900;color:#334155}.tb-gt-control select{min-width:145px;padding:9px 11px;border:1px solid #d1d5db;border-radius:12px;background:#fff;color:#111827;font-size:12px;font-weight:800}
       .tb-gt-refresh{border:1px solid #f04a0a;background:#fff;color:#f04a0a;border-radius:12px;padding:10px 12px;font-size:12px;font-weight:900;cursor:pointer}
       .tb-gt-refresh:disabled{opacity:.62;cursor:not-allowed}.tb-gt-status{font-size:12px;color:#64748b;padding:0 2px}.tb-gt-status[data-error='1']{color:#b91c1c}
       .tb-gt-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
@@ -65,63 +64,54 @@
     document.head.appendChild(style);
   }
 
-  function mount() {
-    return document.querySelector('#tb-google-trends-wrap') || document.querySelector('#tb-layout main') || document.querySelector('main');
-  }
-
-  function itemUrl(item) { return item.url || item.link || item.source_url || '#'; }
+  function mount() { return document.querySelector('#tb-google-trends-wrap') || document.querySelector('#tb-layout main') || document.querySelector('main'); }
+  function itemUrl(item) { return item.category_url || item.url || item.link || item.source_url || '#'; }
   function itemScore(item) { return item.trend_score ?? item.total_score ?? item.discover_score ?? 0; }
-  function itemSummary(item) { return item.summary || item.description || item.excerpt || 'Bilim ve teknoloji odağında yükselen konu.'; }
+  function itemSummary(item) { return item.summary || item.description || item.excerpt || 'Google Trends Bilim ve Teknoloji kategorisinden yükselen konu.'; }
   function countryLabel(code) { return COUNTRIES.find(([value]) => value === code)?.[1] || code || 'Bilinmiyor'; }
   function windowLabel(value) { return WINDOWS.find(([key]) => key === value)?.[1] || value || 'Son 24 saat'; }
-
-  function options(list, current) {
-    return list.map(([value, label]) => `<option value="${esc(value)}"${value === current ? ' selected' : ''}>${esc(label)}</option>`).join('');
-  }
+  function categoryLabel(value) { return CATEGORIES.find(([key]) => key === value)?.[1] || value || 'Bilim + Teknoloji'; }
+  function options(list, current) { return list.map(([value, label]) => `<option value="${esc(value)}"${value === current ? ' selected' : ''}>${esc(label)}</option>`).join(''); }
 
   function render() {
     ensureStyle();
     const target = mount();
     if (!target) return false;
     let wrap = document.getElementById('tb-google-trends-wrap');
-    if (!wrap) {
-      wrap = document.createElement('section');
-      wrap.id = 'tb-google-trends-wrap';
-      target.appendChild(wrap);
-    }
-
+    if (!wrap) { wrap = document.createElement('section'); wrap.id = 'tb-google-trends-wrap'; target.appendChild(wrap); }
     const cards = state.items.map((item) => `
       <article class="tb-gt-card">
         <div class="tb-gt-meta">
           <span class="tb-gt-chip country">${esc(item.country_name || countryLabel(item.country_code))}</span>
           <span class="tb-gt-chip hot">Skor ${esc(itemScore(item))}</span>
-          ${item.from_fallback ? '<span class="tb-gt-chip fallback">Tamamlayıcı akış</span>' : '<span class="tb-gt-chip tech">Bilim ve Teknoloji</span>'}
+          <span class="tb-gt-chip tech">${esc(item.category || categoryLabel(state.category))}</span>
           <span class="tb-gt-chip">${esc(item.window_label || windowLabel(state.window))}</span>
           <span class="tb-gt-chip">${esc(fmtDate(item.published_at || item.created_at || item.updated_at))}</span>
         </div>
         <h3>${esc(item.title)}</h3>
         <div class="tb-gt-summary">${esc(itemSummary(item))}</div>
-        <a class="tb-gt-link" href="${esc(itemUrl(item))}" target="_blank" rel="noopener noreferrer">Kaynağı aç</a>
+        <a class="tb-gt-link" href="${esc(itemUrl(item))}" target="_blank" rel="noopener noreferrer">Google Trends kategorisini aç</a>
       </article>
     `).join('');
-
     wrap.innerHTML = `
       <div class="tb-gt-head">
         <div>
           <h2>${esc(state.sourceLabel)}</h2>
-          <p>Bu bölüm yalnızca bilim, teknoloji, yapay zeka, mobil, donanım, yazılım, uzay ve siber güvenlik odağındaki trend sinyallerini gösterir. Google Trends RSS içinden bu konular ayıklanır; yeterli eşleşme yoksa bilim-teknoloji haber akışıyla tamamlanır.</p>
+          <p>Google Trends kategori URL'leri esas alınır. Türkiye için örnek yapı: geo=TR, category=15 veya category=18 ve seçilen saat penceresi. Önce Türkiye, ardından diğer ülkeler gösterilir.</p>
         </div>
         <div class="tb-gt-controls">
           <div class="tb-gt-control"><label for="tb-gt-country">Ülke</label><select id="tb-gt-country">${options(state.countries, state.country)}</select></div>
+          <div class="tb-gt-control"><label for="tb-gt-category">Kategori</label><select id="tb-gt-category">${options(state.categories, state.category)}</select></div>
           <div class="tb-gt-control"><label for="tb-gt-window">Zaman penceresi</label><select id="tb-gt-window">${options(state.windows, state.window)}</select></div>
           <button type="button" class="tb-gt-refresh" ${state.loading ? 'disabled' : ''}>Trendleri Yenile</button>
         </div>
       </div>
-      <div class="tb-gt-status" data-error="${state.error ? '1' : '0'}">${esc(state.loading ? 'Akış yükleniyor...' : state.error || `Son kontrol: ${fmtDate(state.refreshedAt) || 'henüz yok'} · Zaman: ${windowLabel(state.window)} · Konu: ${state.items.length}`)}</div>
-      ${cards ? `<div class="tb-gt-grid">${cards}</div>` : '<div class="tb-gt-empty">Seçili zaman penceresinde bilim ve teknoloji trendi bulunamadı.</div>'}
+      <div class="tb-gt-status" data-error="${state.error ? '1' : '0'}">${esc(state.loading ? 'Akış yükleniyor...' : state.error || `Son kontrol: ${fmtDate(state.refreshedAt) || 'henüz yok'} · Kategori: ${categoryLabel(state.category)} · Zaman: ${windowLabel(state.window)} · Konu: ${state.items.length}`)}</div>
+      ${cards ? `<div class="tb-gt-grid">${cards}</div>` : '<div class="tb-gt-empty">Seçili kategori ve zaman penceresinde Google Trends verisi bulunamadı.</div>'}
     `;
     wrap.querySelector('.tb-gt-refresh')?.addEventListener('click', load);
     wrap.querySelector('#tb-gt-country')?.addEventListener('change', (event) => { state.country = event.target.value || 'all'; load(); });
+    wrap.querySelector('#tb-gt-category')?.addEventListener('change', (event) => { state.category = event.target.value || 'all'; load(); });
     wrap.querySelector('#tb-gt-window')?.addEventListener('change', (event) => { state.window = event.target.value || '24h'; load(); });
     return true;
   }
@@ -133,49 +123,26 @@
     return data;
   }
 
-  async function loadFallback() {
-    const fallback = await fetchJson(`/api/trend-overview?google_news=1&limit=30&_=${Date.now()}`);
-    state.items = (Array.isArray(fallback.items) ? fallback.items : []).map((item) => ({ ...item, from_fallback: true, is_tech: true, country_code: 'TR', country_name: 'Türkiye', window_label: windowLabel(state.window) }));
-    state.refreshedAt = fallback.refreshed_at || new Date().toISOString();
-    state.sourceLabel = 'Bilim ve Teknoloji Trendleri';
-    state.error = '';
-  }
-
   async function load() {
-    state.loading = true;
-    state.error = '';
-    render();
+    state.loading = true; state.error = ''; render();
     try {
-      const params = new URLSearchParams({ google_trends: '1', limit: '48', geo: state.country, window: state.window, _: String(Date.now()) });
-      const data = await fetchJson(`/api/trend-overview?${params.toString()}`);
-      const items = Array.isArray(data.items) ? data.items : [];
-      if (!items.length) {
-        await loadFallback();
-      } else {
-        state.items = items;
-        state.refreshedAt = data.refreshed_at || new Date().toISOString();
-        state.sourceLabel = 'Bilim ve Teknoloji Trendleri';
-        if (Array.isArray(data.countries) && data.countries.length) state.countries = [['all', 'Türkiye + dünya'], ...data.countries.map((country) => [country.code, country.name])];
-        if (Array.isArray(data.available_windows) && data.available_windows.length) state.windows = data.available_windows.map((item) => [item.key, item.label]);
-      }
-    } catch (primaryError) {
-      try {
-        await loadFallback();
-      } catch (fallbackError) {
-        state.items = [];
-        state.error = `Bilim ve teknoloji trend akışı alınamadı: ${fallbackError?.message || primaryError?.message || 'Bilinmeyen hata'}`;
-      }
+      const params = new URLSearchParams({ limit: '48', geo: state.country, category: state.category, window: state.window, _: String(Date.now()) });
+      const data = await fetchJson(`/api/google-trends-categories?${params.toString()}`);
+      state.items = Array.isArray(data.items) ? data.items : [];
+      state.refreshedAt = data.refreshed_at || new Date().toISOString();
+      state.sourceLabel = data.source || 'Bilim ve Teknoloji Trendleri';
+      if (Array.isArray(data.countries) && data.countries.length) state.countries = [['all', 'Türkiye + dünya'], ...data.countries.map((country) => [country.code, country.name])];
+      if (Array.isArray(data.available_windows) && data.available_windows.length) state.windows = data.available_windows.map((item) => [item.key, item.label]);
+      if (Array.isArray(data.categories) && data.categories.length) state.categories = [['all', 'Bilim + Teknoloji'], ...data.categories.map((item) => [item.key, item.name])];
+    } catch (error) {
+      state.items = [];
+      state.error = `Google Trends kategori akışı alınamadı: ${error?.message || 'Bilinmeyen hata'}`;
     } finally {
-      state.loading = false;
-      render();
+      state.loading = false; render();
     }
   }
 
-  function start() {
-    if (!render()) return setTimeout(start, 200);
-    load();
-  }
-
+  function start() { if (!render()) return setTimeout(start, 200); load(); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
   else start();
 })();
