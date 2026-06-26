@@ -23,15 +23,10 @@
     ['science', 'Bilim'],
     ['technology', 'Teknoloji']
   ];
-  const state = { items: [], loading: false, error: '', refreshedAt: '', sourceLabel: 'Bilim ve Teknoloji Trendleri', country: 'all', window: '24h', category: 'all', countries: COUNTRIES, windows: WINDOWS, categories: CATEGORIES };
+  const state = { items: [], loading: false, error: '', refreshedAt: '', sourceLabel: 'Google Trends Bilim ve Teknoloji', country: 'all', window: '24h', category: 'all', countries: COUNTRIES, windows: WINDOWS, categories: CATEGORIES };
 
   function esc(value) {
-    return String(value ?? '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
+    return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
   function fmtDate(value) {
@@ -57,7 +52,7 @@
       .tb-gt-card{border:1px solid #e5e7eb;border-radius:16px;background:#fff;padding:14px;box-shadow:0 4px 12px rgba(15,23,42,.04);border-top:4px solid #f04a0a}
       .tb-gt-card h3{font:700 20px/1.25 'Fira Sans Condensed',sans-serif;color:#111827;margin:8px 0;overflow-wrap:anywhere}
       .tb-gt-meta{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}.tb-gt-chip{border:1px solid #e5e7eb;border-radius:999px;background:#f8fafc;color:#475569;padding:5px 8px;font-size:11px;font-weight:800}
-      .tb-gt-chip.hot{border-color:#fdba74;background:#fff7ed;color:#c2410c}.tb-gt-chip.tech{border-color:#93c5fd;background:#eff6ff;color:#1d4ed8}.tb-gt-chip.fallback{border-color:#c4b5fd;background:#f5f3ff;color:#6d28d9}.tb-gt-chip.country{border-color:#fed7aa;background:#fff7ed;color:#9a3412}
+      .tb-gt-chip.hot{border-color:#fdba74;background:#fff7ed;color:#c2410c}.tb-gt-chip.tech{border-color:#93c5fd;background:#eff6ff;color:#1d4ed8}.tb-gt-chip.country{border-color:#fed7aa;background:#fff7ed;color:#9a3412}
       .tb-gt-summary{font-size:12px;line-height:1.55;color:#475569}.tb-gt-link{display:inline-flex;margin-top:10px;color:#f04a0a;text-decoration:none;font-size:12px;font-weight:900}.tb-gt-link:hover{text-decoration:underline}
       .tb-gt-empty{border:1px dashed #cbd5e1;border-radius:14px;padding:16px;text-align:center;color:#64748b;font-size:13px}
     `;
@@ -126,11 +121,11 @@
   async function load() {
     state.loading = true; state.error = ''; render();
     try {
-      const params = new URLSearchParams({ limit: '48', geo: state.country, category: state.category, window: state.window, _: String(Date.now()) });
-      const data = await fetchJson(`/api/google-trends-categories?${params.toString()}`);
+      const params = new URLSearchParams({ google_trends: '1', limit: '48', geo: state.country, category: state.category, window: state.window, _: String(Date.now()) });
+      const data = await fetchJson(`/api/trend-overview?${params.toString()}`);
       state.items = Array.isArray(data.items) ? data.items : [];
       state.refreshedAt = data.refreshed_at || new Date().toISOString();
-      state.sourceLabel = data.source || 'Bilim ve Teknoloji Trendleri';
+      state.sourceLabel = data.source || 'Google Trends Bilim ve Teknoloji';
       if (Array.isArray(data.countries) && data.countries.length) state.countries = [['all', 'Türkiye + dünya'], ...data.countries.map((country) => [country.code, country.name])];
       if (Array.isArray(data.available_windows) && data.available_windows.length) state.windows = data.available_windows.map((item) => [item.key, item.label]);
       if (Array.isArray(data.categories) && data.categories.length) state.categories = [['all', 'Bilim + Teknoloji'], ...data.categories.map((item) => [item.key, item.name])];
