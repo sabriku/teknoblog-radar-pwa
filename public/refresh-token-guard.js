@@ -1,5 +1,4 @@
 (() => {
-  const DEFAULT_TOKEN = 'tb-radar-2026-X7p9K2mQ4vL8cR1nZ5sT';
   const STORAGE_KEYS = [
     'tb_radar_cron_token',
     'tb_radar_token',
@@ -13,7 +12,7 @@
       if (value && value.trim()) return value.trim();
     }
     if (window.TB_RADAR_TOKEN && String(window.TB_RADAR_TOKEN).trim()) return String(window.TB_RADAR_TOKEN).trim();
-    return DEFAULT_TOKEN;
+    return '';
   }
 
   function saveToken(token) {
@@ -49,11 +48,33 @@
     }
   }
 
+  async function softRefreshOnly() {
+    await Promise.allSettled([
+      fetchJson(`/api/recommendations?sort=discover_score&t=${Date.now()}`, 30000),
+      fetchJson(`/api/sources?t=${Date.now()}`, 20000),
+      fetchJson(`/api/trend-overview?google_news=1&limit=20&t=${Date.now()}`, 30000)
+    ]);
+  }
+
   async function runWithToken(token) {
-    saveToken(token);
-    const encoded = encodeURIComponent(token);
-    await fetchJson(`/api/ingest?token=${encoded}&source_limit=40&item_limit=30&t=${Date.now()}`, 120000);
-    await fetchJson(`/api/score?token=${encoded}&t=${Date.now()}`, 120000);
+    if (token) saveToken(token);
+    const cleanToken = String(token || '').trim();
+    if (!cleanToken) {
+      await softRefreshOnly();
+      return { mode: 'soft' };
+    }
+    const encoded = encodeURIComponent(cleanToken);
+    try {
+      await fetchJson(`/api/ingest?token=${encoded}&source_limit=40&item_limit=30&t=${Date.now()}`, 120000);
+      await fetchJson(`/api/score?token=${encoded}&t=${Date.now()}`, 120000);
+    } catch (error) {
+      if (error?.status === 404) {
+        await softRefreshOnly();
+        return { mode: 'soft' };
+      }
+      throw error;
+    }
+    return { mode: 'full' };
   }
 
   async function guardedRefresh(event) {
@@ -67,19 +88,19 @@
     const oldText = button.textContent;
     button.disabled = true;
     button.textContent = 'Yenileniyor...';
-    status('Daha fazla kaynak taranıyor, içerikler yenileniyor...');
+    status('Akış yenileniyor...');
 
     try {
-      await runWithToken(getStoredToken());
-      status('İçerikler güncellendi. Sayfa yenileniyor...');
+      const result = await runWithToken(getStoredToken());
+      status(result?.mode === 'soft' ? 'Akış güncellendi. Sayfa yenileniyor...' : 'İçerikler güncellendi. Sayfa yenileniyor...');
       setTimeout(() => window.location.reload(), 600);
     } catch (error) {
       if (error?.status === 401 || /yetkisiz|unauthorized/i.test(String(error?.message || ''))) {
-        const entered = window.prompt('CRON_TOKEN değeri değişmiş görünüyor. Yeni tokenı girin', localStorage.getItem('tb_radar_cron_token') || DEFAULT_TOKEN);
+        const entered = window.prompt('CRON_TOKEN değeri değişmiş görünüyor. Yeni tokenı girin', localStorage.getItem('tb_radar_cron_token') || '');
         if (entered && entered.trim()) {
           try {
-            await runWithToken(entered.trim());
-            status('İçerikler güncellendi. Sayfa yenileniyor...');
+            const result = await runWithToken(entered.trim());
+            status(result?.mode === 'soft' ? 'Akış güncellendi. Sayfa yenileniyor...' : 'İçerikler güncellendi. Sayfa yenileniyor...');
             setTimeout(() => window.location.reload(), 600);
             return;
           } catch (retryError) {
