@@ -4,6 +4,7 @@ import { Pool } from 'pg';
 
 let pool = null;
 let schemaReady = false;
+let dbDisabledReason = '';
 
 function readFileIfPossible(path) {
   try { return fs.readFileSync(path, 'utf8').trim(); } catch { return ''; }
@@ -44,14 +45,19 @@ function databaseUrl() {
 
 function db() {
   const connectionString = databaseUrl();
-  if (!connectionString) throw new Error('Yerel PostgreSQL bağlantısı bulunamadı veya geçersiz. RADAR_DATABASE_URL / DATABASE_URL postgres:// biçiminde olmalı.');
+  if (!connectionString) {
+    dbDisabledReason = 'Yerel PostgreSQL bağlantısı bulunamadı; geçici bellek uyumluluk katmanı kullanılıyor.';
+    return null;
+  }
   if (!pool) pool = new Pool({ connectionString, max: 8, idleTimeoutMillis: 30000, connectionTimeoutMillis: 6000 });
   return pool;
 }
 
 async function ensureSchema() {
-  if (schemaReady) return;
-  await db().query(`
+  if (schemaReady) return true;
+  const client = db();
+  if (!client) return false;
+  await client.query(`
     CREATE TABLE IF NOT EXISTS sources (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -139,7 +145,41 @@ async function ensureSchema() {
     CREATE INDEX IF NOT EXISTS idx_trend_signals_detected ON trend_signals(detected_at DESC);
   `);
   schemaReady = true;
+  return true;
 }
+
+export function hashValue(value) { return createHash('sha1').update(String(value)).digest('hex'); }
+
+function now() { return new Date().toISOString(); }
+
+function fallbackSource(id, name, rss, site, priority = 70, type = 'news', market = 'global') {
+  return { id, name, feed_url: rss, rss_url: rss, site_url: site, source_type: type, market_relevance: market, priority_weight: priority, trust_score: 75, is_active: true, created_at: now(), updated_at: now() };
+}
+
+const DEFAULT_MEMORY_SOURCES = [
+  fallbackSource('teknoblog', 'Teknoblog', 'https://www.teknoblog.com/feed/', 'https://www.teknoblog.com', 100, 'owned', 'local'),
+  fallbackSource('log', 'LOG', 'https://www.log.com.tr/feed/', 'https://www.log.com.tr', 90, 'competitor', 'local'),
+  fallbackSource('shiftdelete', 'ShiftDelete.Net', 'https://shiftdelete.net/feed', 'https://shiftdelete.net', 86, 'competitor', 'local'),
+  fallbackSource('donanimhaber', 'DonanımHaber', 'https://www.donanimhaber.com/rss/tum/', 'https://www.donanimhaber.com', 84, 'competitor', 'local'),
+  fallbackSource('webtekno', 'Webtekno', 'https://www.webtekno.com/rss.xml', 'https://www.webtekno.com', 78, 'competitor', 'local'),
+  fallbackSource('webrazzi', 'Webrazzi', 'https://webrazzi.com/feed/', 'https://webrazzi.com', 74, 'news', 'local'),
+  fallbackSource('the-verge', 'The Verge', 'https://www.theverge.com/rss/index.xml', 'https://www.theverge.com', 88),
+  fallbackSource('engadget', 'Engadget', 'https://www.engadget.com/rss.xml', 'https://www.engadget.com', 86),
+  fallbackSource('techcrunch', 'TechCrunch', 'https://techcrunch.com/feed/', 'https://techcrunch.com', 82),
+  fallbackSource('ars-technica', 'Ars Technica', 'https://feeds.arstechnica.com/arstechnica/index', 'https://arstechnica.com', 80),
+  fallbackSource('9to5mac', '9to5Mac', 'https://9to5mac.com/feed/', 'https://9to5mac.com', 79),
+  fallbackSource('android-police', 'Android Police', 'https://www.androidpolice.com/feed/', 'https://www.androidpolice.com', 77),
+  fallbackSource('bleepingcomputer', 'BleepingComputer', 'https://www.bleepingcomputer.com/feed/', 'https://www.bleepingcomputer.com', 76),
+  fallbackSource('windows-central', 'Windows Central', 'https://www.windowscentral.com/rss', 'https://www.windowscentral.com', 72),
+  fallbackSource('macrumors', 'MacRumors', 'https://www.macrumors.com/macrumors.xml', 'https://www.macrumors.com', 72)
+];
+
+const memory = {
+  sources: [...DEFAULT_MEMORY_SOURCES],
+  raw_feed_items: [],
+  topic_candidates: [],
+  trend_signals: []
+};
 
 function idFor(table, row = {}) {
   if (row.id) return String(row.id);
@@ -164,6 +204,7 @@ function normalizeRow(table, row = {}) {
     next.site_url = normalizeOptionalUrl(next.site_url);
     if (next.priority_weight != null) next.priority_weight = Number(next.priority_weight) || 0;
     if (next.trust_score != null) next.trust_score = Number(next.trust_score) || 0;
+    if (next.is_active == null) next.is_active = true;
   }
   if ((table === 'raw_feed_items' || table === 'topic_candidates') && next.published_at === '') next.published_at = null;
   if (table === 'raw_feed_items') {
@@ -176,6 +217,7 @@ function normalizeRow(table, row = {}) {
     if (!next.candidate_hash) next.candidate_hash = hashValue(`${next.title || ''}|${next.url || ''}`);
     if (!next.canonical_url && next.url) next.canonical_url = next.url;
     if (!next.link && next.url) next.link = next.url;
+    if (!next.status) next.status = 'active';
   }
   return next;
 }
@@ -191,6 +233,31 @@ function safeCol(table, col) {
   const clean = String(col || '').trim();
   if (!COLS[table]?.includes(clean)) throw new Error(`Unsupported column ${table}.${clean}`);
   return clean;
+}
+
+function valueTime(value) { const time = new Date(value || 0).getTime(); return Number.isFinite(time) ? time : 0; }
+
+function memoryMatches(row, filters = []) {
+  for (const f of filters) {
+    if (f.type === 'eq' && String(row[f.column] ?? '') !== String(f.value ?? '')) return false;
+    if (f.type === 'gte' && valueTime(row[f.column]) < valueTime(f.value)) return false;
+    if (f.type === 'in' && !Array.isArray(f.values) || (f.type === 'in' && !f.values.map(String).includes(String(row[f.column] ?? '')))) return false;
+    if (f.type === 'or') {
+      const ok = String(f.raw || '').split(',').some((expr) => {
+        const match = expr.trim().match(/^([a-zA-Z0-9_]+)\.gte\.(.+)$/);
+        return match ? valueTime(row[match[1]]) >= valueTime(match[2]) : false;
+      });
+      if (!ok) return false;
+    }
+  }
+  return true;
+}
+
+function selectColumns(row, columns, table) {
+  if (!columns || columns === '*') return { ...row };
+  const out = {};
+  for (const col of String(columns).split(',').map((c) => c.trim()).filter(Boolean)) out[safeCol(table, col)] = row[col];
+  return out;
 }
 
 class PgQueryBuilder {
@@ -209,11 +276,17 @@ class PgQueryBuilder {
   then(resolve, reject) { return this.execute().then(resolve, reject); }
   catch(reject) { return this.execute().catch(reject); }
   async execute() {
-    await ensureSchema();
-    if (this.action === 'insert') return this.execInsert();
-    if (this.action === 'update') return this.execUpdate();
-    if (this.action === 'delete') return this.execDelete();
-    return this.execSelect();
+    try {
+      const ready = await ensureSchema();
+      if (!ready) return this.execMemory();
+      if (this.action === 'insert') return this.execInsert();
+      if (this.action === 'update') return this.execUpdate();
+      if (this.action === 'delete') return this.execDelete();
+      return this.execSelect();
+    } catch (error) {
+      dbDisabledReason = error?.message || String(error);
+      return this.execMemory();
+    }
   }
   selectedColumns() {
     if (!this.columns || this.columns === '*') return '*';
@@ -277,6 +350,52 @@ class PgQueryBuilder {
     const result = await db().query(`DELETE FROM ${this.table}${where.sql} RETURNING *`, where.params);
     return { data: this.singleRow ? (result.rows[0] || null) : result.rows, error: null };
   }
+  async execMemory() {
+    const tableRows = memory[this.table] || [];
+    if (this.action === 'select') {
+      let rows = tableRows.filter((row) => memoryMatches(row, this.filters));
+      for (const order of [...this.orders].reverse()) {
+        rows = rows.sort((a, b) => {
+          const av = a[order.column]; const bv = b[order.column];
+          const diff = typeof av === 'number' || typeof bv === 'number' ? Number(av || 0) - Number(bv || 0) : valueTime(av) - valueTime(bv) || String(av || '').localeCompare(String(bv || ''), 'tr');
+          return order.ascending ? diff : -diff;
+        });
+      }
+      if (this.rowLimit) rows = rows.slice(0, this.rowLimit);
+      const data = rows.map((row) => selectColumns(row, this.columns, this.table));
+      return { data: this.singleRow ? (data[0] || null) : data, error: null };
+    }
+    if (this.action === 'insert') {
+      const rows = (Array.isArray(this.payload) ? this.payload : [this.payload]).map((row) => ({ created_at: now(), updated_at: now(), ...normalizeRow(this.table, row || {}) }));
+      const inserted = [];
+      for (const row of rows) {
+        const key = this.table === 'raw_feed_items' && row.content_hash ? 'content_hash' : this.table === 'raw_feed_items' && row.url_hash ? 'url_hash' : this.table === 'topic_candidates' && row.candidate_hash ? 'candidate_hash' : 'id';
+        const index = tableRows.findIndex((item) => String(item[key] || '') === String(row[key] || ''));
+        if (index >= 0) tableRows[index] = { ...tableRows[index], ...row, updated_at: now() };
+        else tableRows.push(row);
+        inserted.push(index >= 0 ? tableRows[index] : row);
+      }
+      return { data: this.singleRow ? (inserted[0] || null) : inserted, error: null };
+    }
+    if (this.action === 'update') {
+      const patch = normalizeRow(this.table, this.payload || {});
+      const changed = [];
+      for (let i = 0; i < tableRows.length; i += 1) {
+        if (memoryMatches(tableRows[i], this.filters)) {
+          tableRows[i] = { ...tableRows[i], ...patch, updated_at: now() };
+          changed.push(tableRows[i]);
+        }
+      }
+      return { data: this.singleRow ? (changed[0] || null) : changed, error: null };
+    }
+    if (this.action === 'delete') {
+      const kept = []; const deleted = [];
+      for (const row of tableRows) memoryMatches(row, this.filters) ? deleted.push(row) : kept.push(row);
+      memory[this.table] = kept;
+      return { data: this.singleRow ? (deleted[0] || null) : deleted, error: null };
+    }
+    return { data: this.singleRow ? null : [], error: null };
+  }
 }
 
 export function getSupabaseAdmin() {
@@ -299,7 +418,6 @@ export function safeText(value) {
   return decodeHtml(String(value).replace(/<!\[CDATA\[(.*?)\]\]>/gs, '$1').replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim();
 }
 
-export function hashValue(value) { return createHash('sha1').update(String(value)).digest('hex'); }
 export function chooseFeedUrl(source = {}) { return normalizeOptionalUrl(source.rss_url || source.feed_url || ''); }
 
 function firstMatch(pattern, text = '') { const match = String(text || '').match(pattern); return match ? (match[1] || '').trim() : ''; }
