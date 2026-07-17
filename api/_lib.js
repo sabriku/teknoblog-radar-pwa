@@ -15,13 +15,36 @@ export function getEnv(name) {
   return value;
 }
 
+function extractPostgresUrl(value = '') {
+  let text = String(value || '').trim();
+  if (!text) return '';
+  text = text.replace(/^export\s+/i, '').trim();
+  const envMatch = text.match(/(?:RADAR_DATABASE_URL|DATABASE_URL)\s*=\s*['"]?([^'"\n\r]+)['"]?/i);
+  if (envMatch) text = envMatch[1].trim();
+  const urlMatch = text.match(/postgres(?:ql)?:\/\/[^\s'"`]+/i);
+  if (urlMatch) text = urlMatch[0].trim();
+  text = text.replace(/^['"]|['"]$/g, '').trim();
+  if (!/^postgres(?:ql)?:\/\//i.test(text)) return '';
+  try { new URL(text); return text; } catch { return ''; }
+}
+
 function databaseUrl() {
-  return process.env.RADAR_DATABASE_URL || process.env.DATABASE_URL || readFileIfPossible('/var/www/teknoblog-radar/.database_url') || readFileIfPossible('/root/radar_database_url.txt') || '';
+  const candidates = [
+    process.env.RADAR_DATABASE_URL,
+    readFileIfPossible('/var/www/teknoblog-radar/.database_url'),
+    readFileIfPossible('/root/radar_database_url.txt'),
+    process.env.DATABASE_URL
+  ];
+  for (const candidate of candidates) {
+    const parsed = extractPostgresUrl(candidate);
+    if (parsed) return parsed;
+  }
+  return '';
 }
 
 function db() {
   const connectionString = databaseUrl();
-  if (!connectionString) throw new Error('Yerel PostgreSQL bağlantısı bulunamadı. RADAR_DATABASE_URL veya DATABASE_URL gerekli.');
+  if (!connectionString) throw new Error('Yerel PostgreSQL bağlantısı bulunamadı veya geçersiz. RADAR_DATABASE_URL / DATABASE_URL postgres:// biçiminde olmalı.');
   if (!pool) pool = new Pool({ connectionString, max: 8, idleTimeoutMillis: 30000, connectionTimeoutMillis: 6000 });
   return pool;
 }
@@ -124,12 +147,21 @@ function idFor(table, row = {}) {
   return hashValue(`${table}:${seed}`);
 }
 
+function normalizeOptionalUrl(value = '') {
+  const text = String(value || '').trim();
+  if (!text || text === 'undefined' || text === 'null') return '';
+  if (/^https?:\/\//i.test(text)) return text;
+  if (/^\/\//.test(text)) return `https:${text}`;
+  return '';
+}
+
 function normalizeRow(table, row = {}) {
   const next = { ...row };
   if (!next.id) next.id = idFor(table, next);
   if (table === 'sources') {
-    if (!next.rss_url && next.feed_url) next.rss_url = next.feed_url;
-    if (!next.feed_url && next.rss_url) next.feed_url = next.rss_url;
+    next.rss_url = normalizeOptionalUrl(next.rss_url || next.feed_url);
+    next.feed_url = normalizeOptionalUrl(next.feed_url || next.rss_url);
+    next.site_url = normalizeOptionalUrl(next.site_url);
     if (next.priority_weight != null) next.priority_weight = Number(next.priority_weight) || 0;
     if (next.trust_score != null) next.trust_score = Number(next.trust_score) || 0;
   }
@@ -268,7 +300,7 @@ export function safeText(value) {
 }
 
 export function hashValue(value) { return createHash('sha1').update(String(value)).digest('hex'); }
-export function chooseFeedUrl(source = {}) { return source.rss_url || source.feed_url || ''; }
+export function chooseFeedUrl(source = {}) { return normalizeOptionalUrl(source.rss_url || source.feed_url || ''); }
 
 function firstMatch(pattern, text = '') { const match = String(text || '').match(pattern); return match ? (match[1] || '').trim() : ''; }
 function firstSrcFromSrcset(value = '') { const first = String(value).split(',')[0] || ''; return (first.trim().split(/\s+/)[0] || '').trim(); }
