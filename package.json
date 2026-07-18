@@ -8,5 +8,9 @@
   "dependencies": {
     "dotenv": "^16.4.7",
     "pg": "^8.13.1"
+  },
+  "scripts": {
+    "check": "node --check server.mjs && node --check api/_lib.js",
+    "smoke": "node scripts/smoke-local.mjs"
   }
 }

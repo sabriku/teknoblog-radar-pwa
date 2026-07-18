@@ -4,6 +4,7 @@ import { Pool } from 'pg';
 
 let pool = null;
 let schemaReady = false;
+let schemaPromise = null;
 let dbDisabledReason = '';
 
 function readFileIfPossible(path) {
@@ -26,7 +27,23 @@ function extractPostgresUrl(value = '') {
   if (urlMatch) text = urlMatch[0].trim();
   text = text.replace(/^['"]|['"]$/g, '').trim();
   if (!/^postgres(?:ql)?:\/\//i.test(text)) return '';
-  try { new URL(text); return text; } catch { return ''; }
+  const acceptLocal = (candidate) => {
+    const parsed = new URL(candidate);
+    if (!['127.0.0.1', 'localhost', '::1'].includes(parsed.hostname)) return '';
+    return candidate;
+  };
+  try { return acceptLocal(text); } catch {
+    // Passwords produced by `openssl rand -base64` may contain URL-reserved
+    // characters. Repair the common unescaped connection-string form.
+    const match = text.match(/^(postgres(?:ql)?:\/\/)([^:/@]+):(.+)@([^/]+)(\/[^?\s]*(?:\?[^\s]*)?)$/i);
+    if (!match) return '';
+    try {
+      const user = encodeURIComponent(decodeURIComponent(match[2]));
+      const password = encodeURIComponent(decodeURIComponent(match[3]));
+      const repaired = `${match[1]}${user}:${password}@${match[4]}${match[5]}`;
+      return acceptLocal(repaired);
+    } catch { return ''; }
+  }
 }
 
 function databaseUrl() {
@@ -46,10 +63,13 @@ function databaseUrl() {
 function db() {
   const connectionString = databaseUrl();
   if (!connectionString) {
-    dbDisabledReason = 'Yerel PostgreSQL bağlantısı bulunamadı; geçici bellek uyumluluk katmanı kullanılıyor.';
+    dbDisabledReason = 'Yerel PostgreSQL bağlantısı bulunamadı. RADAR_DATABASE_URL veya /root/radar_database_url.txt kontrol edilmeli.';
     return null;
   }
-  if (!pool) pool = new Pool({ connectionString, max: 8, idleTimeoutMillis: 30000, connectionTimeoutMillis: 6000 });
+  if (!pool) {
+    pool = new Pool({ connectionString, max: 8, idleTimeoutMillis: 30000, connectionTimeoutMillis: 6000 });
+    pool.on('error', (error) => { dbDisabledReason = error?.message || String(error); });
+  }
   return pool;
 }
 
@@ -57,95 +77,31 @@ async function ensureSchema() {
   if (schemaReady) return true;
   const client = db();
   if (!client) return false;
-  await client.query(`
-    CREATE TABLE IF NOT EXISTS sources (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      feed_url TEXT,
-      rss_url TEXT,
-      site_url TEXT,
-      description TEXT,
-      source_type TEXT DEFAULT 'news',
-      market_relevance TEXT DEFAULT 'global',
-      priority_weight INTEGER DEFAULT 50,
-      trust_score INTEGER DEFAULT 70,
-      is_active BOOLEAN DEFAULT TRUE,
-      created_at TIMESTAMPTZ DEFAULT NOW(),
-      updated_at TIMESTAMPTZ DEFAULT NOW()
-    );
-    CREATE TABLE IF NOT EXISTS raw_feed_items (
-      id TEXT PRIMARY KEY,
-      source_id TEXT,
-      source_name TEXT,
-      source_url TEXT,
-      title TEXT NOT NULL,
-      url TEXT NOT NULL,
-      canonical_url TEXT,
-      link TEXT,
-      summary TEXT,
-      description TEXT,
-      excerpt TEXT,
-      image_url TEXT,
-      thumbnail TEXT,
-      image TEXT,
-      published_at TIMESTAMPTZ,
-      content_hash TEXT UNIQUE,
-      url_hash TEXT UNIQUE,
-      created_at TIMESTAMPTZ DEFAULT NOW(),
-      updated_at TIMESTAMPTZ DEFAULT NOW()
-    );
-    CREATE TABLE IF NOT EXISTS topic_candidates (
-      id TEXT PRIMARY KEY,
-      raw_feed_item_id TEXT,
-      source_id TEXT,
-      source_name TEXT,
-      title TEXT NOT NULL,
-      item_title TEXT,
-      feed_title TEXT,
-      summary TEXT,
-      description TEXT,
-      excerpt TEXT,
-      url TEXT NOT NULL,
-      canonical_url TEXT,
-      link TEXT,
-      image_url TEXT,
-      thumbnail TEXT,
-      image TEXT,
-      candidate_hash TEXT UNIQUE,
-      content_type_hint TEXT,
-      total_score INTEGER DEFAULT 0,
-      traffic_score INTEGER DEFAULT 0,
-      conversion_score INTEGER DEFAULT 0,
-      discover_score INTEGER DEFAULT 0,
-      social_score INTEGER DEFAULT 0,
-      editorial_score INTEGER DEFAULT 0,
-      status TEXT DEFAULT 'active',
-      published_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ DEFAULT NOW(),
-      updated_at TIMESTAMPTZ DEFAULT NOW()
-    );
-    CREATE TABLE IF NOT EXISTS trend_signals (
-      id TEXT PRIMARY KEY,
-      source_name TEXT,
-      topic_text TEXT NOT NULL,
-      normalized_topic TEXT,
-      country_code TEXT,
-      category TEXT,
-      signal_score INTEGER DEFAULT 0,
-      detected_at TIMESTAMPTZ DEFAULT NOW(),
-      payload JSONB DEFAULT '{}'::jsonb,
-      created_at TIMESTAMPTZ DEFAULT NOW(),
-      updated_at TIMESTAMPTZ DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_sources_priority ON sources(priority_weight DESC, name ASC);
-    CREATE INDEX IF NOT EXISTS idx_raw_items_created ON raw_feed_items(created_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_raw_items_published ON raw_feed_items(published_at DESC NULLS LAST);
-    CREATE INDEX IF NOT EXISTS idx_candidates_status_created ON topic_candidates(status, created_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_candidates_status_published ON topic_candidates(status, published_at DESC NULLS LAST);
-    CREATE INDEX IF NOT EXISTS idx_trend_signals_detected ON trend_signals(detected_at DESC);
-  `);
-  schemaReady = true;
+  if (!schemaPromise) {
+    schemaPromise = (async () => {
+      const schemaSql = fs.readFileSync(new URL('../sql/local_postgres.sql', import.meta.url), 'utf8');
+      const seedSql = fs.readFileSync(new URL('../sql/local_seed.sql', import.meta.url), 'utf8');
+      await client.query(schemaSql);
+      await client.query(seedSql);
+      schemaReady = true;
+      dbDisabledReason = '';
+      return true;
+    })().catch((error) => {
+      schemaPromise = null;
+      throw error;
+    });
+  }
+  return schemaPromise;
+}
+
+export async function initializeDatabase() {
+  const ready = await ensureSchema();
+  if (!ready) throw new Error(dbDisabledReason || 'Yerel PostgreSQL bağlantısı bulunamadı.');
   return true;
+}
+
+export function databaseStatus() {
+  return { configured: Boolean(databaseUrl()), ready: schemaReady, error: dbDisabledReason || null };
 }
 
 export function hashValue(value) { return createHash('sha1').update(String(value)).digest('hex'); }
@@ -178,8 +134,15 @@ const memory = {
   sources: [...DEFAULT_MEMORY_SOURCES],
   raw_feed_items: [],
   topic_candidates: [],
-  trend_signals: []
+  pipeline_runs: [],
+  trend_signals: [],
+  trend_clusters: [],
+  trend_news_links: [],
+  editor_actions: [],
+  source_blacklist_terms: []
 };
+
+const DATABASE_GENERATED_IDS = new Set(['pipeline_runs', 'trend_clusters', 'trend_news_links', 'editor_actions', 'source_blacklist_terms']);
 
 function idFor(table, row = {}) {
   if (row.id) return String(row.id);
@@ -197,7 +160,7 @@ function normalizeOptionalUrl(value = '') {
 
 function normalizeRow(table, row = {}) {
   const next = { ...row };
-  if (!next.id) next.id = idFor(table, next);
+  if (!next.id && !DATABASE_GENERATED_IDS.has(table)) next.id = idFor(table, next);
   if (table === 'sources') {
     next.rss_url = normalizeOptionalUrl(next.rss_url || next.feed_url);
     next.feed_url = normalizeOptionalUrl(next.feed_url || next.rss_url);
@@ -226,7 +189,12 @@ const COLS = {
   sources: ['id','name','feed_url','rss_url','site_url','description','source_type','market_relevance','priority_weight','trust_score','is_active','created_at','updated_at'],
   raw_feed_items: ['id','source_id','source_name','source_url','title','url','canonical_url','link','summary','description','excerpt','image_url','thumbnail','image','published_at','content_hash','url_hash','created_at','updated_at'],
   topic_candidates: ['id','raw_feed_item_id','source_id','source_name','title','item_title','feed_title','summary','description','excerpt','url','canonical_url','link','image_url','thumbnail','image','candidate_hash','content_type_hint','total_score','traffic_score','conversion_score','discover_score','social_score','editorial_score','status','published_at','created_at','updated_at'],
-  trend_signals: ['id','source_name','topic_text','normalized_topic','country_code','category','signal_score','detected_at','payload','created_at','updated_at']
+  pipeline_runs: ['id','started_at','finished_at','status','ingested_count','processed_count','notes','created_at'],
+  trend_signals: ['id','signal_hash','source_type','source_name','market_scope','country_code','category','topic_text','normalized_topic','signal_score','time_window','detected_at','signal_payload','payload','created_at','updated_at'],
+  trend_clusters: ['id','cluster_key','cluster_name','market_scope','country_code','source_count','signal_count','competitor_count','turkey_interest_score','early_signal_score','trend_score','discover_potential_score','seo_potential_score','affiliate_potential_score','recommendation_type','status','summary','first_seen_at','last_seen_at','created_at','updated_at'],
+  trend_news_links: ['id','cluster_id','topic_candidate_id','raw_feed_item_id','candidate_url','candidate_title','source_name','match_score','created_at'],
+  editor_actions: ['id','candidate_id','action_type','payload','created_at'],
+  source_blacklist_terms: ['id','term','is_active','created_at']
 };
 
 function safeCol(table, col) {
@@ -261,9 +229,10 @@ function selectColumns(row, columns, table) {
 }
 
 class PgQueryBuilder {
-  constructor(table) { this.table = table; this.action = 'select'; this.columns = '*'; this.filters = []; this.orders = []; this.rowLimit = null; this.payload = null; this.returning = false; this.singleRow = false; }
-  select(columns = '*') { this.columns = columns || '*'; this.returning = this.action !== 'select'; return this; }
+  constructor(table) { this.table = table; this.action = 'select'; this.columns = '*'; this.filters = []; this.orders = []; this.rowLimit = null; this.rowOffset = 0; this.payload = null; this.returning = false; this.singleRow = false; this.maybeSingleRow = false; this.countMode = null; this.headOnly = false; this.conflictColumns = null; }
+  select(columns = '*', options = {}) { this.columns = columns || '*'; this.returning = this.action !== 'select'; this.countMode = options?.count || null; this.headOnly = Boolean(options?.head); return this; }
   insert(payload) { this.action = 'insert'; this.payload = payload; return this; }
+  upsert(payload, options = {}) { this.action = 'upsert'; this.payload = payload; this.conflictColumns = options?.onConflict || null; return this; }
   update(payload) { this.action = 'update'; this.payload = payload; return this; }
   delete() { this.action = 'delete'; return this; }
   eq(column, value) { this.filters.push({ type: 'eq', column, value }); return this; }
@@ -272,20 +241,22 @@ class PgQueryBuilder {
   or(raw = '') { this.filters.push({ type: 'or', raw }); return this; }
   order(column, options = {}) { this.orders.push({ column, ascending: options?.ascending !== false }); return this; }
   limit(value) { this.rowLimit = Math.max(0, Number(value) || 0); return this; }
+  range(from, to) { this.rowOffset = Math.max(0, Number(from) || 0); this.rowLimit = Math.max(0, (Number(to) || 0) - this.rowOffset + 1); return this; }
   single() { this.singleRow = true; return this; }
+  maybeSingle() { this.maybeSingleRow = true; return this; }
   then(resolve, reject) { return this.execute().then(resolve, reject); }
   catch(reject) { return this.execute().catch(reject); }
   async execute() {
     try {
       const ready = await ensureSchema();
-      if (!ready) return this.execMemory();
-      if (this.action === 'insert') return this.execInsert();
+      if (!ready) return { data: (this.singleRow || this.maybeSingleRow) ? null : [], error: { message: dbDisabledReason || 'Yerel PostgreSQL bağlantısı bulunamadı.' }, count: null };
+      if (this.action === 'insert' || this.action === 'upsert') return this.execInsert();
       if (this.action === 'update') return this.execUpdate();
       if (this.action === 'delete') return this.execDelete();
       return this.execSelect();
     } catch (error) {
       dbDisabledReason = error?.message || String(error);
-      return this.execMemory();
+      return { data: (this.singleRow || this.maybeSingleRow) ? null : [], error: { message: dbDisabledReason }, count: null };
     }
   }
   selectedColumns() {
@@ -313,11 +284,21 @@ class PgQueryBuilder {
   }
   async execSelect() {
     const where = this.whereParts(1);
+    if (this.headOnly) {
+      const result = await db().query(`SELECT COUNT(*)::int AS count FROM ${this.table}${where.sql}`, where.params);
+      return { data: null, error: null, count: Number(result.rows[0]?.count || 0) };
+    }
     const orderSql = this.orders.length ? ` ORDER BY ${this.orders.map((o) => `${safeCol(this.table, o.column)} ${o.ascending ? 'ASC' : 'DESC'} NULLS LAST`).join(',')}` : '';
     const limitSql = this.rowLimit ? ` LIMIT ${Number(this.rowLimit)}` : '';
-    const result = await db().query(`SELECT ${this.selectedColumns()} FROM ${this.table}${where.sql}${orderSql}${limitSql}`, where.params);
-    const data = this.singleRow ? (result.rows[0] || null) : result.rows;
-    return { data, error: null };
+    const offsetSql = this.rowOffset ? ` OFFSET ${Number(this.rowOffset)}` : '';
+    const result = await db().query(`SELECT ${this.selectedColumns()} FROM ${this.table}${where.sql}${orderSql}${limitSql}${offsetSql}`, where.params);
+    const data = (this.singleRow || this.maybeSingleRow) ? (result.rows[0] || null) : result.rows;
+    let count = null;
+    if (this.countMode) {
+      const countResult = await db().query(`SELECT COUNT(*)::int AS count FROM ${this.table}${where.sql}`, where.params);
+      count = Number(countResult.rows[0]?.count || 0);
+    }
+    return { data, error: null, count };
   }
   async execInsert() {
     const rows = (Array.isArray(this.payload) ? this.payload : [this.payload]).map((row) => normalizeRow(this.table, row || {}));
@@ -327,8 +308,10 @@ class PgQueryBuilder {
       const vals = cols.map((c) => row[c]);
       const placeholders = vals.map((_, i) => `$${i + 1}`).join(',');
       const updates = cols.filter((c) => c !== 'id').map((c) => `${c}=EXCLUDED.${c}`).join(',');
-      const conflict = this.table === 'raw_feed_items' && row.content_hash ? 'content_hash' : this.table === 'raw_feed_items' && row.url_hash ? 'url_hash' : this.table === 'topic_candidates' && row.candidate_hash ? 'candidate_hash' : 'id';
-      const sql = `INSERT INTO ${this.table}(${cols.join(',')}) VALUES(${placeholders}) ON CONFLICT(${conflict}) DO UPDATE SET ${updates || 'updated_at=NOW()'} RETURNING *`;
+      const inferredConflict = this.table === 'raw_feed_items' && row.content_hash ? 'content_hash' : this.table === 'raw_feed_items' && row.url_hash ? 'url_hash' : this.table === 'topic_candidates' && row.candidate_hash ? 'candidate_hash' : this.table === 'trend_signals' && row.signal_hash ? 'signal_hash' : this.table === 'trend_clusters' && row.cluster_key ? 'cluster_key' : row.id ? 'id' : '';
+      const conflict = String(this.conflictColumns || inferredConflict || '').split(',').map((c) => c.trim()).filter(Boolean).map((c) => safeCol(this.table, c)).join(',');
+      const conflictSql = conflict ? ` ON CONFLICT(${conflict}) DO UPDATE SET ${updates || `${safeCol(this.table, 'id')}=EXCLUDED.${safeCol(this.table, 'id')}`}` : '';
+      const sql = `INSERT INTO ${this.table}(${cols.join(',')}) VALUES(${placeholders})${conflictSql} RETURNING *`;
       const result = await db().query(sql, vals);
       inserted.push(result.rows[0]);
     }
@@ -342,13 +325,14 @@ class PgQueryBuilder {
     const vals = cols.map((c) => row[c]);
     const set = cols.map((c, i) => `${c}=$${i + 1}`).join(',');
     const where = this.whereParts(vals.length + 1);
-    const result = await db().query(`UPDATE ${this.table} SET ${set}, updated_at=NOW()${where.sql} RETURNING *`, [...vals, ...where.params]);
-    return { data: this.singleRow ? (result.rows[0] || null) : result.rows, error: null };
+    const touchUpdated = COLS[this.table].includes('updated_at') && !cols.includes('updated_at') ? ', updated_at=NOW()' : '';
+    const result = await db().query(`UPDATE ${this.table} SET ${set}${touchUpdated}${where.sql} RETURNING *`, [...vals, ...where.params]);
+    return { data: (this.singleRow || this.maybeSingleRow) ? (result.rows[0] || null) : result.rows, error: null };
   }
   async execDelete() {
     const where = this.whereParts(1);
     const result = await db().query(`DELETE FROM ${this.table}${where.sql} RETURNING *`, where.params);
-    return { data: this.singleRow ? (result.rows[0] || null) : result.rows, error: null };
+    return { data: (this.singleRow || this.maybeSingleRow) ? (result.rows[0] || null) : result.rows, error: null };
   }
   async execMemory() {
     const tableRows = memory[this.table] || [];
@@ -361,12 +345,17 @@ class PgQueryBuilder {
           return order.ascending ? diff : -diff;
         });
       }
+      if (this.rowOffset) rows = rows.slice(this.rowOffset);
       if (this.rowLimit) rows = rows.slice(0, this.rowLimit);
       const data = rows.map((row) => selectColumns(row, this.columns, this.table));
-      return { data: this.singleRow ? (data[0] || null) : data, error: null };
+      return { data: (this.singleRow || this.maybeSingleRow) ? (data[0] || null) : data, error: null, count: this.countMode ? rows.length : null };
     }
-    if (this.action === 'insert') {
-      const rows = (Array.isArray(this.payload) ? this.payload : [this.payload]).map((row) => ({ created_at: now(), updated_at: now(), ...normalizeRow(this.table, row || {}) }));
+    if (this.action === 'insert' || this.action === 'upsert') {
+      const rows = (Array.isArray(this.payload) ? this.payload : [this.payload]).map((row) => {
+        const normalized = normalizeRow(this.table, row || {});
+        if (!normalized.id) normalized.id = idFor(this.table, normalized);
+        return { created_at: now(), updated_at: now(), ...normalized };
+      });
       const inserted = [];
       for (const row of rows) {
         const key = this.table === 'raw_feed_items' && row.content_hash ? 'content_hash' : this.table === 'raw_feed_items' && row.url_hash ? 'url_hash' : this.table === 'topic_candidates' && row.candidate_hash ? 'candidate_hash' : 'id';
@@ -375,7 +364,7 @@ class PgQueryBuilder {
         else tableRows.push(row);
         inserted.push(index >= 0 ? tableRows[index] : row);
       }
-      return { data: this.singleRow ? (inserted[0] || null) : inserted, error: null };
+      return { data: (this.singleRow || this.maybeSingleRow) ? (inserted[0] || null) : inserted, error: null };
     }
     if (this.action === 'update') {
       const patch = normalizeRow(this.table, this.payload || {});
@@ -386,13 +375,13 @@ class PgQueryBuilder {
           changed.push(tableRows[i]);
         }
       }
-      return { data: this.singleRow ? (changed[0] || null) : changed, error: null };
+      return { data: (this.singleRow || this.maybeSingleRow) ? (changed[0] || null) : changed, error: null };
     }
     if (this.action === 'delete') {
       const kept = []; const deleted = [];
       for (const row of tableRows) memoryMatches(row, this.filters) ? deleted.push(row) : kept.push(row);
       memory[this.table] = kept;
-      return { data: this.singleRow ? (deleted[0] || null) : deleted, error: null };
+      return { data: (this.singleRow || this.maybeSingleRow) ? (deleted[0] || null) : deleted, error: null };
     }
     return { data: this.singleRow ? null : [], error: null };
   }

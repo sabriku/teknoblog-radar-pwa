@@ -1,24 +1,32 @@
 # Kurulum Rehberi
 
-## Supabase
-SQL Editor'da sırayla çalıştırın:
-1. `sql/schema.sql`
-2. `sql/seed.sql`
+## Yerel PostgreSQL
 
-Eski kurulumu düzeltmek için bunun yerine:
-1. `sql/schema_compat_patch.sql`
-2. `sql/seed.sql`
-3. `sql/ui_upgrade.sql`
+Uygulama yalnızca sunucudaki yerel PostgreSQL'i kullanır. Bağlantı adresi şu kaynaklardan ilk geçerli olanından okunur:
 
-## Vercel environment variables
-- SUPABASE_URL
-- SUPABASE_ANON_KEY
-- SUPABASE_SERVICE_ROLE_KEY
-- CRON_TOKEN
+1. `RADAR_DATABASE_URL`
+2. `/var/www/teknoblog-radar/.database_url`
+3. `/root/radar_database_url.txt`
+4. `DATABASE_URL`
 
-## Test
-- `/api/health`
-- `/api/run-pipeline?token=CRON_TOKEN`
+Yalnızca `127.0.0.1`, `localhost` veya `::1` hedefleri kabul edilir. Başlangıçta `sql/local_postgres.sql` idempotent olarak uygulanır ve `sql/local_seed.sql` eksik kaynakları ekler.
 
-## Cron
-Vercel Hobby kısıtı nedeniyle otomasyonu `sql/supabase_cron_setup.sql` ile Supabase tarafına taşıyın.
+## Environment variables
+
+- `RADAR_DATABASE_URL`
+- `CRON_TOKEN`
+- `SLACK_KAYNAK_WEBHOOK_URL`
+
+## Canlı test
+
+```bash
+RADAR_BASE_URL=http://127.0.0.1:3000 node --import dotenv/config scripts/smoke-local.mjs
+```
+
+Ingest ve score kontrollerini de çalıştırmak için:
+
+```bash
+RADAR_BASE_URL=http://127.0.0.1:3000 RADAR_SMOKE_MUTATIONS=1 node --import dotenv/config scripts/smoke-local.mjs
+```
+
+GitHub Actions deploy işi bu testi otomatik çalıştırır.

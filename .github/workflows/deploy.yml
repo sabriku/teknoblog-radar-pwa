@@ -13,3 +13,17 @@ jobs:
     steps:
       - name: Deploy on server
         run: sudo /usr/local/bin/deploy-teknoblog-radar.sh
+
+      - name: Verify PostgreSQL-backed live endpoints
+        working-directory: /var/www/teknoblog-radar
+        env:
+          RADAR_BASE_URL: http://127.0.0.1:3000
+          RADAR_SMOKE_MUTATIONS: '1'
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if node --import dotenv/config scripts/smoke-local.mjs; then
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1

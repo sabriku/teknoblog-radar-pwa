@@ -1,26 +1,25 @@
 # Teknoblog Radar
 
-Vercel, GitHub ve Supabase üzerinde çalışan editör odaklı bir PWA.
+Yerel PostgreSQL ve Node.js üzerinde çalışan editör odaklı PWA.
 
 ## İçerik
-- Mobil uyumlu öneri paneli
+
 - Discover, trafik, dönüşüm, sosyal ve editoryal skora göre sıralama
-- Tıklanabilir haber linkleri
-- Tek tek URL kopyalama
-- Çoklu seçimle toplu URL kopyalama
-- Yeni RSS kaynağı ekleme
-- Feed görselini çekme
-- PWA, manifest ve service worker
-- Supabase tabanlı veri modeli
-- Vercel serverless API uçları
+- RSS ingest ve puanlama pipeline'ı
+- Google News ve Google Trends radarları
+- Kaynak yönetimi ve otomatik seed
+- Haber görselleri ve Slack paylaşımı
+- Yerel PostgreSQL üzerinde kalıcı haber, trend ve pipeline kayıtları
 
-## Kurulum özeti
-1. `sql/schema.sql`
-2. `sql/seed.sql`
-3. Vercel env değişkenleri
-4. `/api/health`
-5. `/api/run-pipeline?token=...`
+## Veri katmanı
 
-Eski veya yarım kurulumu uyarlamak için:
-- `sql/schema_compat_patch.sql`
-- gerekirse `sql/ui_upgrade.sql`
+Supabase kullanılmaz. Eski API dosyalarının sorgu sözleşmesi `api/_lib.js` içindeki PostgreSQL adaptörüyle korunur. Şema ve seed uygulama başlangıcında idempotent biçimde hazırlanır.
+
+## Kontrol
+
+```bash
+npm run check
+npm run smoke
+```
+
+Ayrıntılar için `INSTALL_GUIDE.md` dosyasına bakın.
