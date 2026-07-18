@@ -376,7 +376,17 @@ class PgQueryBuilder {
     return { data, error: null };
   }
   async execUpdate() {
-    const row = normalizeRow(this.table, this.payload || {});
+    const original = this.payload || {};
+    const row = normalizeRow(this.table, original);
+    const generatedIdentityColumns = {
+      raw_feed_items: ['id', 'content_hash', 'url_hash'],
+      topic_candidates: ['id', 'candidate_hash'],
+      trend_signals: ['id', 'signal_hash'],
+      trend_clusters: ['id', 'cluster_key']
+    }[this.table] || ['id'];
+    for (const column of generatedIdentityColumns) {
+      if (!Object.prototype.hasOwnProperty.call(original, column)) delete row[column];
+    }
     const cols = Object.keys(row).filter((c) => c !== 'id' && COLS[this.table]?.includes(c));
     if (!cols.length) return { data: this.singleRow ? null : [], error: null };
     const vals = cols.map((c) => row[c]);
