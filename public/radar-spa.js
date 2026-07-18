@@ -78,6 +78,8 @@
     }
     if (active === 'google-news') localStorage.setItem('tb_google_news_open', '1');
 
+    window.dispatchEvent(new CustomEvent('tb-spa-tab-change', { detail: { tab: active } }));
+
     if (push && window.location.hash !== `#${active}`) {
       history.replaceState(null, '', `#${active}`);
     }
