@@ -238,6 +238,8 @@ async function syncGsc() {
       google_news_clicks=EXCLUDED.google_news_clicks,google_news_impressions=EXCLUDED.google_news_impressions,web_clicks=EXCLUDED.web_clicks,web_impressions=EXCLUDED.web_impressions,observed_at=NOW(),payload=EXCLUDED.payload`,
     [item.url, item.discover?.clicks || 0, item.discover?.impressions || 0, item.discover?.ctr || 0, item.googleNews?.clicks || 0, item.googleNews?.impressions || 0, item.web?.clicks || 0, item.web?.impressions || 0, JSON.stringify(item)]);
   }
+  await queryLocal(`UPDATE published_performance p SET title=t.title,published_at=t.published_at
+    FROM teknoblog_content t WHERE p.url=t.url AND (p.title IS NULL OR p.title='')`);
   return combined.size;
 }
 
@@ -261,11 +263,21 @@ async function runAlerts() {
     ...stale.map((item) => ({ type: 'queue_stale', key: `queue:${item.id}:${new Date().toISOString().slice(0,10)}`, title: item.title, payload: item }))
   ];
   let created = 0;
+  const newAlerts = [];
   for (const alert of alerts) {
     const result = await queryLocal(`INSERT INTO smart_alerts(alert_key,alert_type,title,payload) VALUES($1,$2,$3,$4) ON CONFLICT(alert_key) DO NOTHING RETURNING id`, [alert.key, alert.type, alert.title, JSON.stringify(alert.payload)]);
     created += result.rowCount;
+    if (result.rowCount) newAlerts.push({ id: result.rows[0].id, ...alert });
   }
-  return { candidates: alerts.length, created };
+  const webhook = process.env.SLACK_KAYNAK_WEBHOOK_URL || process.env.SLACK_WEBHOOK_URL || '';
+  if (webhook && newAlerts.length) {
+    const lines = ['*Teknoblog Radar · Akıllı Uyarılar*', ...newAlerts.slice(0, 12).map((alert) => `• ${alert.type === 'momentum' ? 'Hızlanıyor' : 'Bekliyor'}: ${alert.title}`)];
+    const response = await fetch(webhook, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: lines.join('\n') }) });
+    if (response.ok) {
+      await queryLocal(`UPDATE smart_alerts SET status='sent',sent_at=NOW() WHERE id=ANY($1::bigint[])`, [newAlerts.map((alert) => alert.id)]);
+    }
+  }
+  return { candidates: alerts.length, created, slack_sent: Boolean(webhook && newAlerts.length) };
 }
 
 async function maintenance() {

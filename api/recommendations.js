@@ -1,4 +1,4 @@
-import { getSupabaseAdmin, json } from './_lib.js';
+import { getSupabaseAdmin, json, queryLocal } from './_lib.js';
 import opportunityRadar from './opportunity-radar.js';
 
 const HARD_NOISE_PATTERNS = [
@@ -216,7 +216,13 @@ function computedTotalScore(item = {}, scores = {}) {
   );
 }
 
-function withRadarScores(item = {}) {
+function learnedPerformanceBoost(item = {}, learnedTerms = new Map()) {
+  if (!learnedTerms.size) return 0;
+  const words = [...new Set(textOf(item).replace(/[^a-z0-9çğıöşü\s]/gi, ' ').split(/\s+/).filter((word) => word.length >= 4))];
+  return Math.min(8, Math.round(words.sort((a, b) => (learnedTerms.get(b) || 0) - (learnedTerms.get(a) || 0)).slice(0, 3).reduce((sum, word) => sum + (learnedTerms.get(word) || 0), 0)));
+}
+
+function withRadarScores(item = {}, learnedTerms = new Map()) {
   const originalScores = {
     original_discover_score: scoreValue(item, 'discover_score'),
     original_traffic_score: scoreValue(item, 'traffic_score'),
@@ -225,7 +231,8 @@ function withRadarScores(item = {}) {
     original_social_score: scoreValue(item, 'social_score'),
     original_total_score: scoreValue(item, 'total_score')
   };
-  const discover = computedDiscoverScore(item);
+  const learningBoost = learnedPerformanceBoost(item, learnedTerms);
+  const discover = clampScore(computedDiscoverScore(item) + learningBoost);
   const traffic = computedTrafficScore(item, discover);
   const editorial = computedEditorialScore(item, discover);
   const conversion = computedConversionScore(item, discover, traffic);
@@ -248,6 +255,7 @@ function withRadarScores(item = {}) {
   if (DISCOVER_PATTERNS.some((pattern) => pattern.test(textOf(item)))) reasons.push({ signal: 'discover_intent', impact: 12, label: 'Discover ilgisi taşıyan konu veya marka sinyali' });
   if (TRAFFIC_PATTERNS.some((pattern) => pattern.test(textOf(item)))) reasons.push({ signal: 'search_intent', impact: 10, label: 'Arama ve trafik niyeti mevcut' });
   if (item.image_url || item.image || item.thumbnail) reasons.push({ signal: 'image', impact: 6, label: 'Haber görseli mevcut' });
+  if (learningBoost > 0) reasons.push({ signal: 'performance_learning', impact: learningBoost, label: 'Geçmiş Teknoblog Discover performansından öğrenilen konu sinyali' });
   if (isHardNoise(item)) reasons.push({ signal: 'noise', impact: -40, label: 'Gürültü filtresi riski' });
   return {
     ...item,
@@ -260,6 +268,7 @@ function withRadarScores(item = {}) {
     radar_total_score: total,
     score_confidence: confidence,
     score_reasons: reasons,
+    performance_learning_boost: learningBoost,
     discover_score: discover,
     traffic_score: traffic,
     editorial_score: editorial,
@@ -344,6 +353,17 @@ export default async function handler(req, res) {
 
     const sourceMap = new Map((sources || []).map((source) => [String(source.id), source.name || '']));
     const rawMap = new Map((rawItems || []).map((item) => [String(item.id), item]));
+    const learnedTerms = new Map();
+    try {
+      const learned = await queryLocal(`SELECT title,discover_clicks,discover_impressions,discover_ctr FROM published_performance
+        WHERE title IS NOT NULL AND title<>'' AND discover_impressions>0 ORDER BY observed_at DESC LIMIT 300`);
+      for (const row of learned.rows) {
+        const weight = Math.min(3, Math.log1p(Number(row.discover_impressions || 0)) / 3 + Number(row.discover_ctr || 0) * 8 + Math.log1p(Number(row.discover_clicks || 0)) / 2);
+        for (const word of [...new Set(String(row.title).toLowerCase().replace(/[^a-z0-9çğıöşü\s]/gi, ' ').split(/\s+/).filter((item) => item.length >= 4))]) {
+          learnedTerms.set(word, Math.max(learnedTerms.get(word) || 0, weight));
+        }
+      }
+    } catch {}
 
     const candidateItems = (candidates || [])
       .map((item) => normalizeCandidate(item, sourceMap, rawMap))
@@ -358,7 +378,7 @@ export default async function handler(req, res) {
       .filter((item) => !isTrendFeedItem(item))
       .filter((item) => hasTechSignal(item) || ageHours(item) <= 48);
 
-    let enriched = dedupeItems([...candidateItems, ...rawFallback]).map(withRadarScores);
+    let enriched = dedupeItems([...candidateItems, ...rawFallback]).map((item) => withRadarScores(item, learnedTerms));
 
     if (discoverMode) {
       enriched = enriched.filter((item) => ageHours(item) <= 24);
@@ -376,6 +396,7 @@ export default async function handler(req, res) {
         raw_fallback_count: rawFallback.length,
         returned_count: Math.min(enriched.length, 500),
         scoring_model: 'calibrated_v2',
+        performance_learning_terms: learnedTerms.size,
         normalized_scores: ['total_score', 'traffic_score', 'conversion_score', 'discover_score', 'social_score', 'editorial_score']
       }
     });
