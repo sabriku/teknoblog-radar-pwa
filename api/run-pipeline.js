@@ -23,8 +23,8 @@ async function runIngestBatches(baseUrl, token) {
   let totalUpdated = 0;
   let batches = 0;
 
-  while (batches < 10) {
-    const ingestResp = await fetch(`${baseUrl}/api/ingest?token=${encodeURIComponent(token)}&source_limit=${sourceLimit}&source_offset=${offset}&item_limit=10`);
+  while (batches < 12) {
+    const ingestResp = await fetch(`${baseUrl}/api/ingest?token=${encodeURIComponent(token)}&source_limit=${sourceLimit}&source_offset=${offset}&item_limit=20`);
     const ingestParsed = await parseResponseSafe(ingestResp);
 
     if (!ingestResp.ok || !ingestParsed.ok) {
@@ -85,7 +85,10 @@ export default async function handler(req, res) {
       });
     }
 
-    const baseUrl = `https://${req.headers.host}`;
+    const forwardedProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
+    const protocol = forwardedProto || (req.socket?.encrypted ? 'https' : 'http');
+    const host = req.headers.host || '127.0.0.1:3000';
+    const baseUrl = `${protocol}://${host}`;
     const ingestResult = await runIngestBatches(baseUrl, expected);
 
     if (!ingestResult.ok) {
