@@ -96,15 +96,15 @@ function ageHours(item = {}) {
 
 function freshnessScore(item = {}) {
   const hours = ageHours(item);
-  if (hours <= 2) return 34;
-  if (hours <= 6) return 30;
-  if (hours <= 12) return 25;
-  if (hours <= 24) return 20;
-  if (hours <= 36) return 6;
-  if (hours <= 48) return -8;
-  if (hours <= 72) return -24;
-  if (hours <= 168) return -58;
-  return -100;
+  if (hours <= 2) return 100;
+  if (hours <= 6) return 92;
+  if (hours <= 12) return 82;
+  if (hours <= 24) return 70;
+  if (hours <= 36) return 50;
+  if (hours <= 48) return 35;
+  if (hours <= 72) return 20;
+  if (hours <= 168) return 8;
+  return 0;
 }
 
 function titleQualityScore(item = {}) {
@@ -125,46 +125,106 @@ function patternScore(item = {}, patterns = [], weight = 24) {
   return patterns.some((pattern) => pattern.test(text)) ? weight : 0;
 }
 
+function rawOrDefault(item = {}, key, fallback) {
+  const raw = scoreValue(item, key);
+  return raw > 0 ? raw : fallback;
+}
+
+function normalizedTitleQuality(item = {}) {
+  return clampScore((Math.max(0, titleQualityScore(item)) / 55) * 100);
+}
+
+function binarySignal(item = {}, patterns = [], low = 20) {
+  return patternScore(item, patterns, 100) || low;
+}
+
 function computedDiscoverScore(item = {}) {
-  const raw = scoreValue(item, 'discover_score');
-  const total = scoreValue(item, 'total_score');
-  const traffic = scoreValue(item, 'traffic_score');
-  const editorial = scoreValue(item, 'editorial_score');
-  return clampScore(Math.max(raw, Math.round(raw * 0.34 + total * 0.16 + traffic * 0.12 + editorial * 0.10 + titleQualityScore(item) + freshnessScore(item))));
+  const raw = rawOrDefault(item, 'discover_score', 34);
+  const freshness = freshnessScore(item);
+  const titleQuality = normalizedTitleQuality(item);
+  const discoverIntent = binarySignal(item, DISCOVER_PATTERNS, 22);
+  const techRelevance = hasTechSignal(item) ? 88 : 32;
+  return clampScore(
+    raw * 0.38 +
+    freshness * 0.24 +
+    titleQuality * 0.18 +
+    discoverIntent * 0.12 +
+    techRelevance * 0.08
+  );
 }
 
 function computedTrafficScore(item = {}, discover = computedDiscoverScore(item)) {
-  const raw = scoreValue(item, 'traffic_score');
-  const total = scoreValue(item, 'total_score');
-  return clampScore(Math.max(raw, Math.round(raw * 0.42 + total * 0.14 + discover * 0.25 + patternScore(item, TRAFFIC_PATTERNS, 26) + Math.max(0, freshnessScore(item) * 0.35))));
+  const raw = rawOrDefault(item, 'traffic_score', 38);
+  const trafficIntent = binarySignal(item, TRAFFIC_PATTERNS, 24);
+  const techRelevance = hasTechSignal(item) ? 88 : 32;
+  return clampScore(
+    raw * 0.42 +
+    trafficIntent * 0.23 +
+    discover * 0.15 +
+    freshnessScore(item) * 0.12 +
+    techRelevance * 0.08
+  );
 }
 
 function computedEditorialScore(item = {}, discover = computedDiscoverScore(item)) {
-  const raw = scoreValue(item, 'editorial_score');
-  return clampScore(Math.max(raw, Math.round(raw * 0.48 + discover * 0.22 + titleQualityScore(item) * 0.75 + (hasTechSignal(item) ? 12 : 0) + Math.max(0, freshnessScore(item) * 0.25))));
+  const raw = rawOrDefault(item, 'editorial_score', 36);
+  const techRelevance = hasTechSignal(item) ? 90 : 28;
+  return clampScore(
+    raw * 0.45 +
+    discover * 0.15 +
+    normalizedTitleQuality(item) * 0.16 +
+    techRelevance * 0.16 +
+    freshnessScore(item) * 0.08
+  );
 }
 
 function computedConversionScore(item = {}, discover = computedDiscoverScore(item), traffic = computedTrafficScore(item, discover)) {
-  const raw = scoreValue(item, 'conversion_score');
-  return clampScore(Math.max(raw, Math.round(raw * 0.48 + traffic * 0.16 + discover * 0.08 + patternScore(item, CONVERSION_PATTERNS, 30) + (/fiyat|indirim|kampanya|satış|tl|stok/i.test(textOf(item)) ? 12 : 0) + Math.max(0, freshnessScore(item) * 0.15))));
+  const raw = rawOrDefault(item, 'conversion_score', 24);
+  const commercialIntent = binarySignal(item, CONVERSION_PATTERNS, 12);
+  return clampScore(
+    raw * 0.48 +
+    commercialIntent * 0.28 +
+    traffic * 0.10 +
+    discover * 0.05 +
+    freshnessScore(item) * 0.09
+  );
 }
 
 function computedSocialScore(item = {}, discover = computedDiscoverScore(item)) {
-  const raw = scoreValue(item, 'social_score');
-  return clampScore(Math.max(raw, Math.round(raw * 0.45 + discover * 0.18 + patternScore(item, SOCIAL_PATTERNS, 28) + (/(tepki|iddia|yasak|sızıntı|viral|gündem|kriz)/i.test(textOf(item)) ? 12 : 0) + Math.max(0, freshnessScore(item) * 0.20))));
+  const raw = rawOrDefault(item, 'social_score', 26);
+  const socialIntent = binarySignal(item, SOCIAL_PATTERNS, 18);
+  return clampScore(
+    raw * 0.46 +
+    socialIntent * 0.25 +
+    discover * 0.15 +
+    freshnessScore(item) * 0.14
+  );
 }
 
 function computedTotalScore(item = {}, scores = {}) {
-  const raw = scoreValue(item, 'total_score');
   const discover = scores.discover ?? computedDiscoverScore(item);
   const traffic = scores.traffic ?? computedTrafficScore(item, discover);
   const editorial = scores.editorial ?? computedEditorialScore(item, discover);
   const conversion = scores.conversion ?? computedConversionScore(item, discover, traffic);
   const social = scores.social ?? computedSocialScore(item, discover);
-  return clampScore(Math.max(raw, Math.round(raw * 0.24 + discover * 0.24 + traffic * 0.22 + editorial * 0.16 + conversion * 0.07 + social * 0.07)));
+  return clampScore(
+    discover * 0.27 +
+    traffic * 0.25 +
+    editorial * 0.22 +
+    conversion * 0.13 +
+    social * 0.13
+  );
 }
 
 function withRadarScores(item = {}) {
+  const originalScores = {
+    original_discover_score: scoreValue(item, 'discover_score'),
+    original_traffic_score: scoreValue(item, 'traffic_score'),
+    original_editorial_score: scoreValue(item, 'editorial_score'),
+    original_conversion_score: scoreValue(item, 'conversion_score'),
+    original_social_score: scoreValue(item, 'social_score'),
+    original_total_score: scoreValue(item, 'total_score')
+  };
   const discover = computedDiscoverScore(item);
   const traffic = computedTrafficScore(item, discover);
   const editorial = computedEditorialScore(item, discover);
@@ -173,6 +233,7 @@ function withRadarScores(item = {}) {
   const total = computedTotalScore(item, { discover, traffic, editorial, conversion, social });
   return {
     ...item,
+    ...originalScores,
     radar_discover_score: discover,
     radar_traffic_score: traffic,
     radar_editorial_score: editorial,
@@ -294,6 +355,7 @@ export default async function handler(req, res) {
         candidate_count: candidateItems.length,
         raw_fallback_count: rawFallback.length,
         returned_count: Math.min(enriched.length, 500),
+        scoring_model: 'calibrated_v2',
         normalized_scores: ['total_score', 'traffic_score', 'conversion_score', 'discover_score', 'social_score', 'editorial_score']
       }
     });
