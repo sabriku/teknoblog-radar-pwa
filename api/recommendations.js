@@ -1,5 +1,6 @@
 import { getSupabaseAdmin, json, queryLocal } from './_lib.js';
 import opportunityRadar from './opportunity-radar.js';
+import { loadIntelligenceModel, predictWithModel, savePredictions } from './_intelligence-model.js';
 
 const HARD_NOISE_PATTERNS = [
   /hull\s*city/i, /polonya/i, /voleybol/i, /futbol/i, /basketbol/i, /\bkupa\b/i,
@@ -222,7 +223,7 @@ function learnedPerformanceBoost(item = {}, learnedTerms = new Map()) {
   return Math.min(8, Math.round(words.sort((a, b) => (learnedTerms.get(b) || 0) - (learnedTerms.get(a) || 0)).slice(0, 3).reduce((sum, word) => sum + (learnedTerms.get(word) || 0), 0)));
 }
 
-function withRadarScores(item = {}, learnedTerms = new Map()) {
+function withRadarScores(item = {}, learnedTerms = new Map(), modelRow = null) {
   const originalScores = {
     original_discover_score: scoreValue(item, 'discover_score'),
     original_traffic_score: scoreValue(item, 'traffic_score'),
@@ -231,10 +232,13 @@ function withRadarScores(item = {}, learnedTerms = new Map()) {
     original_social_score: scoreValue(item, 'social_score'),
     original_total_score: scoreValue(item, 'total_score')
   };
-  const learningBoost = learnedPerformanceBoost(item, learnedTerms);
-  const discover = clampScore(computedDiscoverScore(item) + learningBoost);
+  const learningBoost = modelRow ? 0 : learnedPerformanceBoost(item, learnedTerms);
+  const heuristicDiscover = clampScore(computedDiscoverScore(item) + learningBoost);
+  const heuristicEditorial = computedEditorialScore(item, heuristicDiscover);
+  const prediction = predictWithModel(item, modelRow, { discover: heuristicDiscover, editorial: heuristicEditorial, news: heuristicEditorial });
+  const discover = clampScore(heuristicDiscover * 0.55 + prediction.discover_probability * 0.45);
   const traffic = computedTrafficScore(item, discover);
-  const editorial = computedEditorialScore(item, discover);
+  const editorial = clampScore(computedEditorialScore(item, discover) * 0.72 + prediction.news_probability * 0.28);
   const conversion = computedConversionScore(item, discover, traffic);
   const social = computedSocialScore(item, discover);
   const total = computedTotalScore(item, { discover, traffic, editorial, conversion, social });
@@ -256,6 +260,7 @@ function withRadarScores(item = {}, learnedTerms = new Map()) {
   if (TRAFFIC_PATTERNS.some((pattern) => pattern.test(textOf(item)))) reasons.push({ signal: 'search_intent', impact: 10, label: 'Arama ve trafik niyeti mevcut' });
   if (item.image_url || item.image || item.thumbnail) reasons.push({ signal: 'image', impact: 6, label: 'Haber görseli mevcut' });
   if (learningBoost > 0) reasons.push({ signal: 'performance_learning', impact: learningBoost, label: 'Geçmiş Teknoblog Discover performansından öğrenilen konu sinyali' });
+  for (const reason of prediction.reasons.slice(0, 3)) reasons.push({ signal: `intelligence_${reason.channel}`, impact: reason.impact, label: `${reason.channel === 'discover' ? 'Discover' : 'Google News'} geçmişi: ${reason.label}` });
   if (isHardNoise(item)) reasons.push({ signal: 'noise', impact: -40, label: 'Gürültü filtresi riski' });
   return {
     ...item,
@@ -269,6 +274,13 @@ function withRadarScores(item = {}, learnedTerms = new Map()) {
     score_confidence: confidence,
     score_reasons: reasons,
     performance_learning_boost: learningBoost,
+    intelligence_model_version: prediction.model_version,
+    discover_probability: prediction.discover_probability,
+    news_probability: prediction.news_probability,
+    intelligence_confidence: prediction.confidence,
+    expected_clicks_low: prediction.expected_clicks_low,
+    expected_clicks_high: prediction.expected_clicks_high,
+    intelligence_reasons: prediction.reasons,
     discover_score: discover,
     traffic_score: traffic,
     editorial_score: editorial,
@@ -354,6 +366,7 @@ export default async function handler(req, res) {
     const sourceMap = new Map((sources || []).map((source) => [String(source.id), source.name || '']));
     const rawMap = new Map((rawItems || []).map((item) => [String(item.id), item]));
     const learnedTerms = new Map();
+    let intelligenceModel = null;
     try {
       const learned = await queryLocal(`SELECT title,discover_clicks,discover_impressions,discover_ctr FROM published_performance
         WHERE title IS NOT NULL AND title<>'' AND discover_impressions>0 ORDER BY observed_at DESC LIMIT 300`);
@@ -364,6 +377,7 @@ export default async function handler(req, res) {
         }
       }
     } catch {}
+    try { intelligenceModel = await loadIntelligenceModel(); } catch {}
 
     const candidateItems = (candidates || [])
       .map((item) => normalizeCandidate(item, sourceMap, rawMap))
@@ -378,13 +392,16 @@ export default async function handler(req, res) {
       .filter((item) => !isTrendFeedItem(item))
       .filter((item) => hasTechSignal(item) || ageHours(item) <= 48);
 
-    let enriched = dedupeItems([...candidateItems, ...rawFallback]).map((item) => withRadarScores(item, learnedTerms));
+    let enriched = dedupeItems([...candidateItems, ...rawFallback]).map((item) => withRadarScores(item, learnedTerms, intelligenceModel));
 
     if (discoverMode) {
       enriched = enriched.filter((item) => ageHours(item) <= 24);
     }
 
     enriched.sort((a, b) => compareItems(a, b, sortKey));
+    if (intelligenceModel) {
+      try { await savePredictions(enriched, intelligenceModel.model_version); } catch {}
+    }
 
     return json(res, 200, {
       items: enriched.slice(0, 500),
@@ -395,7 +412,9 @@ export default async function handler(req, res) {
         candidate_count: candidateItems.length,
         raw_fallback_count: rawFallback.length,
         returned_count: Math.min(enriched.length, 500),
-        scoring_model: 'calibrated_v2',
+        scoring_model: intelligenceModel ? 'intelligence_v1' : 'calibrated_v2',
+        intelligence_model_version: intelligenceModel?.model_version || null,
+        intelligence_sample_count: intelligenceModel?.sample_count || 0,
         performance_learning_terms: learnedTerms.size,
         normalized_scores: ['total_score', 'traffic_score', 'conversion_score', 'discover_score', 'social_score', 'editorial_score']
       }

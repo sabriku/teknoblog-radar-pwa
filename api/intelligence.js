@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import { createHash } from 'node:crypto';
 import { json, queryLocal, safeText, nowIso } from './_lib.js';
 import { getGoogleConfig, googleAccessToken } from './_google-auth.js';
+import { loadIntelligenceModel, trainIntelligenceModel } from './_intelligence-model.js';
 
 const STOP = new Set('ve veya ile için bir bu şu daha yeni son ilk olan olarak göre sonra önce hakkında üzerinde geliyor geldi olacak oldu neden nasıl hangi ne zaman teknoloji tech says report reportedly could may its the and for from with that this have has will into over after before'.split(' '));
 
@@ -45,7 +46,7 @@ async function syncTeknoblog() {
     url.searchParams.set('_embed', '1');
     const response = await fetch(url, { headers: { 'user-agent': 'TeknoblogRadarBot/2.0' }, signal: AbortSignal.timeout(15000) });
     if (!response.ok) throw new Error(`Teknoblog API HTTP ${response.status}`);
-    totalPages = Math.min(5, Number(response.headers.get('x-wp-totalpages') || 1));
+    totalPages = Math.min(20, Number(response.headers.get('x-wp-totalpages') || 1));
     const posts = await response.json();
     for (const post of posts || []) {
       const image = post?._embedded?.['wp:featuredmedia']?.[0]?.source_url || '';
@@ -176,6 +177,7 @@ async function performanceSection() {
   const discoverItems = ranked.filter((item) => Number(item.discover_impressions) > 0 || Number(item.discover_clicks) > 0).sort((a, b) => b.discover_strength - a.discover_strength || new Date(b.published_at) - new Date(a.published_at)).slice(0, 30);
   const newsItems = ranked.filter((item) => Number(item.google_news_impressions) > 0 || Number(item.google_news_clicks) > 0).sort((a, b) => b.news_strength - a.news_strength || new Date(b.published_at) - new Date(a.published_at)).slice(0, 30);
   const config = await getGoogleConfig();
+  const activeModel = await loadIntelligenceModel();
   const configured = Boolean(config.site_url && config.client_id && config.client_secret && config.refresh_token);
   return {
     configured, items, discover_items: discoverItems, news_items: newsItems,
@@ -186,6 +188,7 @@ async function performanceSection() {
       news_clicks: ranked.reduce((sum, item) => sum + (Number(item.google_news_clicks) || 0), 0),
       news_impressions: ranked.reduce((sum, item) => sum + (Number(item.google_news_impressions) || 0), 0)
     },
+    model: activeModel ? { model_version: activeModel.model_version, trained_at: activeModel.trained_at, sample_count: activeModel.sample_count, discover_positive_rate: activeModel.discover_positive_rate, news_positive_rate: activeModel.news_positive_rate, metrics: activeModel.metrics } : null,
     note: configured ? null : 'Google Search Console bağlantısını bu ekrandan güvenli biçimde kurabilirsiniz.'
   };
 }
@@ -235,19 +238,33 @@ async function syncGsc() {
   const token = await googleAccessToken();
   if (!site || !token) throw new Error('Search Console bağlantı bilgileri eksik.');
   const end = new Date();
-  const start = new Date(Date.now() - 7 * 86400000);
+  const existing = await queryLocal(`SELECT MAX(snapshot_date) AS latest FROM performance_snapshots`);
+  const historyDays = existing.rows[0]?.latest ? 8 : 90;
+  const start = new Date(Date.now() - historyDays * 86400000);
   const fmt = (date) => date.toISOString().slice(0, 10);
   const combined = new Map();
+  const snapshots = [];
   for (const type of ['discover', 'googleNews', 'web']) {
-    const response = await fetch(`https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(site)}/searchAnalytics/query`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ startDate: fmt(start), endDate: fmt(end), dimensions: ['page'], type, dataState: 'all', rowLimit: 25000 }) });
+    const response = await fetch(`https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(site)}/searchAnalytics/query`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ startDate: fmt(start), endDate: fmt(end), dimensions: ['date','page'], type, dataState: 'all', rowLimit: 25000 }) });
     const data = await response.json();
     if (!response.ok) throw new Error(data?.error?.message || `Search Console ${type} HTTP ${response.status}`);
     for (const row of data.rows || []) {
-      const url = row.keys?.[0]; if (!url) continue;
+      const snapshotDate = row.keys?.[0]; const url = row.keys?.[1]; if (!url || !snapshotDate) continue;
+      snapshots.push({ url, snapshot_date: snapshotDate, search_type: type, clicks: row.clicks || 0, impressions: row.impressions || 0, ctr: row.ctr || 0, position: row.position || 0 });
       const current = combined.get(url) || { url };
-      current[type] = { clicks: row.clicks || 0, impressions: row.impressions || 0, ctr: row.ctr || 0 };
+      const aggregate = current[type] || { clicks: 0, impressions: 0, ctr: 0 };
+      aggregate.clicks += row.clicks || 0; aggregate.impressions += row.impressions || 0;
+      aggregate.ctr = aggregate.impressions ? aggregate.clicks / aggregate.impressions : 0;
+      current[type] = aggregate;
       combined.set(url, current);
     }
+  }
+  for (let offset = 0; offset < snapshots.length; offset += 1000) {
+    const chunk = snapshots.slice(offset, offset + 1000);
+    await queryLocal(`INSERT INTO performance_snapshots(url,snapshot_date,search_type,clicks,impressions,ctr,position,synced_at)
+      SELECT x.url,x.snapshot_date,x.search_type,x.clicks,x.impressions,x.ctr,x.position,NOW()
+      FROM jsonb_to_recordset($1::jsonb) AS x(url text,snapshot_date date,search_type text,clicks float,impressions float,ctr float,position float)
+      ON CONFLICT(url,snapshot_date,search_type) DO UPDATE SET clicks=EXCLUDED.clicks,impressions=EXCLUDED.impressions,ctr=EXCLUDED.ctr,position=EXCLUDED.position,synced_at=NOW()`, [JSON.stringify(chunk)]);
   }
   for (const item of combined.values()) {
     await queryLocal(`INSERT INTO published_performance(url,discover_clicks,discover_impressions,discover_ctr,google_news_clicks,google_news_impressions,web_clicks,web_impressions,observed_at,payload)
@@ -260,7 +277,8 @@ async function syncGsc() {
     FROM teknoblog_content t
     WHERE regexp_replace(p.url,'/+$','')=regexp_replace(t.url,'/+$','')
       AND (p.title IS NULL OR p.title='' OR p.published_at IS NULL)`);
-  return combined.size;
+  const trained = await trainIntelligenceModel();
+  return { urls: combined.size, snapshots: snapshots.length, history_days: historyDays, trained };
 }
 
 async function queueAction(body) {
@@ -272,6 +290,7 @@ async function queueAction(body) {
     priority=EXCLUDED.priority,notes=EXCLUDED.notes,assigned_to=EXCLUDED.assigned_to,updated_at=NOW(),
     completed_at=CASE WHEN EXCLUDED.status='published' THEN NOW() ELSE editorial_queue.completed_at END RETURNING *`,
   [body.candidate_id || null, body.title || 'Başlıksız', url, body.source_name || '', body.image_url || '', body.status || 'new', clamp(body.priority || 50), body.notes || '', body.assigned_to || '']);
+  await queryLocal(`INSERT INTO editorial_feedback(url,decision,notes) VALUES($1,$2,$3)`,[url,body.status||'new',body.notes||'']);
   return result.rows[0];
 }
 
@@ -347,6 +366,7 @@ export default async function handler(req, res) {
     if (!authorized(req)) return json(res, 401, { error: 'Yetkisiz istek' });
     if (body.action === 'sync_teknoblog') return json(res, 200, { ok: true, stored: await syncTeknoblog() });
     if (body.action === 'sync_gsc') return json(res, 200, { ok: true, stored: await syncGsc() });
+    if (body.action === 'train_model') return json(res, 200, { ok: true, model: await trainIntelligenceModel() });
     if (body.action === 'run_alerts') return json(res, 200, { ok: true, ...(await runAlerts()) });
     if (body.action === 'maintenance') return json(res, 200, { ok: true, ...(await maintenance()) });
     if (body.action === 'check_images') return json(res, 200, { ok: true, items: await checkImages() });

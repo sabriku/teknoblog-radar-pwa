@@ -215,6 +215,7 @@
       <div style="padding:${padding};display:flex;flex-direction:column;gap:10px">
         ${selectInline}
         <div style="display:flex;gap:6px;flex-wrap:wrap">${scoreBadge('Genel', score(item, 'total_score'), '#c2410c', '★')}${scoreBadge('Discover', score(item, 'discover_score'), '#2563eb', 'G')}${scoreBadge('Trafik', score(item, 'traffic_score'), '#15803d', '↗')}${scoreBadge('Güven', score(item, 'score_confidence'), '#6d28d9', '✓')}</div>
+        ${item.discover_probability != null ? `<div style="display:flex;gap:6px;flex-wrap:wrap;background:#f8fafc;border:1px solid #e2e8f0;border-radius:11px;padding:8px;font-size:11px;font-weight:900;color:#334155"><span>✨ Discover olasılığı %${Number(item.discover_probability)}</span><span>📰 News %${Number(item.news_probability||0)}</span><span>🎯 Model güveni %${Number(item.intelligence_confidence||0)}</span><span>Beklenen tıklama ${Number(item.expected_clicks_low||0)}–${Number(item.expected_clicks_high||0)}</span></div>` : ''}
         <h3 style="margin:0;font:700 ${titleSize}/1.25 'Fira Sans Condensed',sans-serif;color:#111827">${esc(title(item))}</h3>
         <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:12px;color:#64748b;font-weight:800"><span>🕒 ${esc(date)}</span><span>🏷 ${esc(sourceName(item))}</span></div>
         ${stale ? `<div style="font-size:12px;color:#b45309;font-weight:800">⚠ 24 saatten eski, Discover için kullanılmamalı</div>` : ''}

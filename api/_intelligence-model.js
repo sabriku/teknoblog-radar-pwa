@@ -1,0 +1,118 @@
+import { queryLocal } from './_lib.js';
+
+const STOP = new Set('acaba ama ancak artık ayrıca aynı başka bazı ben bir biz bu çok da daha de dedi diye en gibi göre hem her hiç için ile ise kadar ki mı mi mu mü nasıl ne neden o olan olarak oldu önce sonra şu ve veya yeni yine zaman the and for from into over after before says report reportedly'.split(' '));
+const ENTITY_GROUPS = {
+  apple: /apple|iphone|ipad|macbook|macos|ios|vision pro/i,
+  google: /google|android|pixel|gemini|chrome|youtube|wear os/i,
+  samsung: /samsung|galaxy|one ui/i,
+  ai: /yapay zeka|artificial intelligence|openai|chatgpt|gemini|claude|copilot/i,
+  microsoft: /microsoft|windows|xbox|copilot/i,
+  social: /whatsapp|instagram|facebook|meta|tiktok|youtube|telegram/i,
+  chip: /nvidia|amd|intel|qualcomm|snapdragon|mediatek|işlemci|çip|chip|gpu|cpu/i,
+  china_mobile: /xiaomi|huawei|honor|oppo|vivo|oneplus/i,
+  security: /güvenlik|siber|hack|veri sızıntısı|açık|malware|zararlı/i,
+  gaming: /playstation|xbox|nintendo|steam|oyun/i
+};
+const TYPE_GROUPS = {
+  update: /güncelleme|update|beta|sürüm|yaması|patch|hangi modeller|alacak/i,
+  launch: /tanıttı|duyurdu|açıkladı|yayınladı|piyasaya çıktı|launch|unveil|introduc/i,
+  leak: /sızıntı|iddia|ortaya çıktı|görüntülendi|leak|rumor|reportedly/i,
+  price: /fiyat|indirim|kampanya|zam|satış|ön sipariş|stok|tl/i,
+  guide: /nasıl|rehber|hangi|liste|karşılaştırma|en iyi/i,
+  regulation: /yasak|ceza|dava|düzenleme|regülasyon|mahkeme/i
+};
+
+function clean(value=''){return String(value).toLocaleLowerCase('tr-TR').replace(/[^a-z0-9çğıöşü\s]/gi,' ').replace(/\s+/g,' ').trim()}
+function sigmoid(value){return 1/(1+Math.exp(-Math.max(-12,Math.min(12,value))))}
+function logit(value){const p=Math.max(.02,Math.min(.98,Number(value)||.02));return Math.log(p/(1-p))}
+function clamp(value,min=0,max=100){return Math.max(min,Math.min(max,value))}
+
+export function extractIntelligenceFeatures(item={}) {
+  const title=clean(item.title||''); const body=clean([item.title,item.summary,item.excerpt,item.description].filter(Boolean).join(' '));
+  const features=[]; const labels={};const entities=[];const types=[];
+  for(const [key,pattern] of Object.entries(ENTITY_GROUPS))if(pattern.test(body)){features.push(`entity:${key}`);labels[`entity:${key}`]=key;entities.push(key)}
+  for(const [key,pattern] of Object.entries(TYPE_GROUPS))if(pattern.test(body)){features.push(`type:${key}`);labels[`type:${key}`]=key;types.push(key)}
+  for(const entity of entities.slice(0,3))for(const type of types.slice(0,2)){features.push(`topic:${entity}+${type}`);labels[`topic:${entity}+${type}`]=`${entity} · ${type}`}
+  if(item.image_url||item.image||item.thumbnail){features.push('quality:image');labels['quality:image']='görsel var'}
+  if(String(item.source_name||'').toLowerCase().includes('teknoblog')){features.push('source:owned');labels['source:owned']='Teknoblog'}
+  const terms=[...new Set(title.split(' ').filter((word)=>word.length>=4&&!STOP.has(word)&&!/^[0-9]+$/.test(word)))].slice(0,12);
+  for(const term of terms){features.push(`term:${term}`);labels[`term:${term}`]=term}
+  return {features:[...new Set(features)],labels};
+}
+
+function buildChannel(samples,channel) {
+  const positiveKey=channel==='discover'?'discover_positive':'news_positive';
+  const globalWeight=samples.reduce((sum,s)=>sum+s.weight,0)||1;
+  const globalPositive=samples.reduce((sum,s)=>sum+(s[positiveKey]?s.weight:0),0);
+  const globalRate=(globalPositive+2)/(globalWeight+4);
+  const stats=new Map();
+  for(const sample of samples)for(const feature of sample.features){const row=stats.get(feature)||{total:0,positive:0};row.total+=sample.weight;if(sample[positiveKey])row.positive+=sample.weight;stats.set(feature,row)}
+  const features={};
+  for(const [feature,row] of stats){if(row.total<1.5)continue;const rate=(row.positive+globalRate*4)/(row.total+4);features[feature]={rate,total:Math.round(row.total*10)/10,lift:Math.round((logit(rate)-logit(globalRate))*1000)/1000}}
+  return {global_rate:globalRate,features};
+}
+
+function evaluateChannel(channel,samples,positiveKey) {
+  if(!samples.length)return{accuracy:0,precision:0,recall:0,brier:0,samples:0};
+  let correct=0,tp=0,fp=0,fn=0,brier=0;
+  for(const sample of samples){const probability=channelPrediction(channel,sample.features,channel.global_rate*100).probability;const predicted=probability>=.5;const actual=Boolean(sample[positiveKey]);if(predicted===actual)correct++;if(predicted&&actual)tp++;if(predicted&&!actual)fp++;if(!predicted&&actual)fn++;brier+=(probability-(actual?1:0))**2}
+  return{accuracy:Math.round(correct/samples.length*100),precision:Math.round(tp/Math.max(1,tp+fp)*100),recall:Math.round(tp/Math.max(1,tp+fn)*100),brier:Math.round(brier/samples.length*1000)/1000,samples:samples.length};
+}
+
+export async function trainIntelligenceModel() {
+  const result=await queryLocal(`SELECT t.url,t.title,t.excerpt,t.image_url,t.published_at,
+    COALESCE(SUM(s.clicks) FILTER(WHERE s.search_type='discover'),0)::float AS discover_clicks,
+    COALESCE(SUM(s.impressions) FILTER(WHERE s.search_type='discover'),0)::float AS discover_impressions,
+    COALESCE(SUM(s.clicks) FILTER(WHERE s.search_type='googleNews'),0)::float AS news_clicks,
+    COALESCE(SUM(s.impressions) FILTER(WHERE s.search_type='googleNews'),0)::float AS news_impressions
+    FROM teknoblog_content t LEFT JOIN performance_snapshots s ON regexp_replace(s.url,'/+$','')=regexp_replace(t.url,'/+$','')
+    WHERE t.published_at BETWEEN NOW()-INTERVAL '180 days' AND NOW()-INTERVAL '3 days'
+    GROUP BY t.url,t.title,t.excerpt,t.image_url,t.published_at ORDER BY t.published_at DESC LIMIT 2500`);
+  const samples=result.rows.map((row)=>{const age=Math.max(0,(Date.now()-new Date(row.published_at).getTime())/86400000);return{...row,...extractIntelligenceFeatures(row),weight:Math.pow(.5,age/75),discover_positive:Number(row.discover_impressions)>=100||Number(row.discover_clicks)>=3,news_positive:Number(row.news_impressions)>=50||Number(row.news_clicks)>=2}});
+  const validationSize=samples.length>=40?Math.max(8,Math.floor(samples.length*.2)):0;
+  const validation=samples.slice(0,validationSize);const training=validationSize?samples.slice(validationSize):samples;
+  const discover=buildChannel(training,'discover'); const news=buildChannel(training,'news');
+  const positiveDiscover=samples.filter(s=>s.discover_positive);const positiveNews=samples.filter(s=>s.news_positive);
+  const avg=(items,key)=>items.length?items.reduce((sum,item)=>sum+Number(item[key]||0),0)/items.length:0;
+  const evaluation={discover:evaluateChannel(discover,validation,'discover_positive'),news:evaluateChannel(news,validation,'news_positive')};
+  const model={discover,news,clicks:{discover_avg:avg(positiveDiscover,'discover_clicks'),news_avg:avg(positiveNews,'news_clicks')}};
+  const version=`intel-${new Date().toISOString().slice(0,10)}-${Date.now().toString(36)}`;
+  await queryLocal(`UPDATE intelligence_models SET status='retired' WHERE status='active'`);
+  const metrics={discover_positive:positiveDiscover.length,news_positive:positiveNews.length,feature_count_discover:Object.keys(discover.features).length,feature_count_news:Object.keys(news.features).length,evaluation};
+  await queryLocal(`INSERT INTO intelligence_models(model_version,status,sample_count,discover_positive_rate,news_positive_rate,metrics,model)
+    VALUES($1,'active',$2,$3,$4,$5,$6)`,[version,samples.length,discover.global_rate,news.global_rate,JSON.stringify(metrics),JSON.stringify(model)]);
+  return {model_version:version,sample_count:samples.length,discover_positive_rate:discover.global_rate,news_positive_rate:news.global_rate,metrics};
+}
+
+export async function loadIntelligenceModel() {
+  const result=await queryLocal(`SELECT * FROM intelligence_models WHERE status='active' ORDER BY trained_at DESC LIMIT 1`);
+  return result.rows[0]||null;
+}
+
+function channelPrediction(channel,features,heuristic) {
+  if(!channel)return{probability:clamp(heuristic)/100,evidence:[]};
+  let value=logit(channel.global_rate);const evidence=[];
+  for(const feature of features){const stat=channel.features?.[feature];if(!stat)continue;const strength=Math.min(1,Number(stat.total||0)/12);const effect=clamp(Number(stat.lift||0),-1.3,1.3)*strength;evidence.push({feature,effect,total:stat.total,rate:stat.rate});}
+  evidence.sort((a,b)=>Math.abs(b.effect)-Math.abs(a.effect));for(const row of evidence.slice(0,7))value+=row.effect*.55;
+  const learned=sigmoid(value);return{probability:learned*.72+(clamp(heuristic)/100)*.28,evidence:evidence.slice(0,5)};
+}
+
+export function predictWithModel(item={},modelRow=null,heuristics={}) {
+  const {features,labels}=extractIntelligenceFeatures(item);const model=modelRow?.model||{};
+  const discover=channelPrediction(model.discover,features,heuristics.discover||50);const news=channelPrediction(model.news,features,heuristics.news||heuristics.editorial||45);
+  const matched=new Set([...discover.evidence,...news.evidence].map(r=>r.feature)).size;const samples=Number(modelRow?.sample_count||0);
+  const confidence=Math.round(clamp(30+Math.min(38,samples/8)+Math.min(24,matched*4),30,92));
+  const reasons=[...discover.evidence.map(r=>({channel:'discover',label:labels[r.feature]||r.feature,impact:Math.round(r.effect*12)})),...news.evidence.map(r=>({channel:'news',label:labels[r.feature]||r.feature,impact:Math.round(r.effect*10)}))].sort((a,b)=>Math.abs(b.impact)-Math.abs(a.impact)).slice(0,6);
+  const expected=Math.max(0,(Number(model.clicks?.discover_avg||0)*discover.probability+Number(model.clicks?.news_avg||0)*news.probability));
+  return{model_version:modelRow?.model_version||'heuristic-fallback',discover_probability:Math.round(discover.probability*100),news_probability:Math.round(news.probability*100),confidence,expected_clicks_low:Math.round(expected*.55),expected_clicks_high:Math.round(expected*1.55),reasons,features};
+}
+
+export async function savePredictions(items=[],modelVersion='') {
+  const payload=items.filter(i=>i.url).slice(0,200).map(i=>({url:i.url,candidate_id:i.id?String(i.id):null,model_version:modelVersion,discover_probability:i.discover_probability||0,news_probability:i.news_probability||0,confidence:i.intelligence_confidence||0,expected_clicks_low:i.expected_clicks_low||0,expected_clicks_high:i.expected_clicks_high||0,reasons:i.intelligence_reasons||[]}));
+  if(!payload.length)return 0;
+  const result=await queryLocal(`INSERT INTO content_predictions(url,candidate_id,model_version,discover_probability,news_probability,confidence,expected_clicks_low,expected_clicks_high,reasons)
+    SELECT x.url,x.candidate_id,x.model_version,x.discover_probability,x.news_probability,x.confidence,x.expected_clicks_low,x.expected_clicks_high,x.reasons
+    FROM jsonb_to_recordset($1::jsonb) AS x(url text,candidate_id text,model_version text,discover_probability float,news_probability float,confidence int,expected_clicks_low int,expected_clicks_high int,reasons jsonb)
+    ON CONFLICT(url,model_version) DO UPDATE SET discover_probability=EXCLUDED.discover_probability,news_probability=EXCLUDED.news_probability,confidence=EXCLUDED.confidence,expected_clicks_low=EXCLUDED.expected_clicks_low,expected_clicks_high=EXCLUDED.expected_clicks_high,reasons=EXCLUDED.reasons,predicted_at=NOW()`,[JSON.stringify(payload)]);
+  return result.rowCount;
+}

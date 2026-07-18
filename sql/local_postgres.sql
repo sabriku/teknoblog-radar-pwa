@@ -244,6 +244,54 @@ CREATE TABLE IF NOT EXISTS app_secrets (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS performance_snapshots (
+  id BIGSERIAL PRIMARY KEY,
+  url TEXT NOT NULL,
+  snapshot_date DATE NOT NULL,
+  search_type TEXT NOT NULL,
+  clicks DOUBLE PRECISION NOT NULL DEFAULT 0,
+  impressions DOUBLE PRECISION NOT NULL DEFAULT 0,
+  ctr DOUBLE PRECISION NOT NULL DEFAULT 0,
+  position DOUBLE PRECISION NOT NULL DEFAULT 0,
+  synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(url,snapshot_date,search_type)
+);
+
+CREATE TABLE IF NOT EXISTS intelligence_models (
+  id BIGSERIAL PRIMARY KEY,
+  model_version TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL DEFAULT 'active',
+  trained_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  sample_count INTEGER NOT NULL DEFAULT 0,
+  discover_positive_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
+  news_positive_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
+  metrics JSONB NOT NULL DEFAULT '{}'::jsonb,
+  model JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE TABLE IF NOT EXISTS content_predictions (
+  id BIGSERIAL PRIMARY KEY,
+  url TEXT NOT NULL,
+  candidate_id TEXT,
+  model_version TEXT NOT NULL,
+  discover_probability DOUBLE PRECISION NOT NULL DEFAULT 0,
+  news_probability DOUBLE PRECISION NOT NULL DEFAULT 0,
+  confidence INTEGER NOT NULL DEFAULT 0,
+  expected_clicks_low INTEGER NOT NULL DEFAULT 0,
+  expected_clicks_high INTEGER NOT NULL DEFAULT 0,
+  reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
+  predicted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(url,model_version)
+);
+
+CREATE TABLE IF NOT EXISTS editorial_feedback (
+  id BIGSERIAL PRIMARY KEY,
+  url TEXT NOT NULL,
+  decision TEXT NOT NULL,
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 ALTER TABLE sources ADD COLUMN IF NOT EXISTS description TEXT;
 ALTER TABLE sources ADD COLUMN IF NOT EXISTS rss_url TEXT;
 ALTER TABLE sources ADD COLUMN IF NOT EXISTS site_url TEXT;
@@ -307,3 +355,7 @@ CREATE INDEX IF NOT EXISTS idx_teknoblog_content_published ON teknoblog_content(
 CREATE INDEX IF NOT EXISTS idx_teknoblog_content_search ON teknoblog_content USING GIN (to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(excerpt,'')));
 CREATE INDEX IF NOT EXISTS idx_performance_observed ON published_performance(observed_at DESC);
 CREATE INDEX IF NOT EXISTS idx_smart_alerts_status ON smart_alerts(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_performance_snapshots_date ON performance_snapshots(snapshot_date DESC,search_type);
+CREATE INDEX IF NOT EXISTS idx_performance_snapshots_url ON performance_snapshots(url,snapshot_date DESC);
+CREATE INDEX IF NOT EXISTS idx_predictions_probability ON content_predictions(discover_probability DESC,news_probability DESC);
+CREATE INDEX IF NOT EXISTS idx_feedback_url ON editorial_feedback(url,created_at DESC);
