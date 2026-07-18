@@ -1,0 +1,20 @@
+name: Refresh Teknoblog Radar
+
+on:
+  schedule:
+    - cron: '12 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: teknoblog-radar-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: self-hosted
+    steps:
+      - name: Refresh RSS ingest and scores
+        working-directory: /var/www/teknoblog-radar
+        env:
+          RADAR_BASE_URL: http://127.0.0.1:3000
+        run: node --import dotenv/config scripts/refresh-local.mjs

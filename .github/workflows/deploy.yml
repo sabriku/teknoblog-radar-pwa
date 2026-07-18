@@ -27,3 +27,9 @@ jobs:
             sleep 2
           done
           exit 1
+
+      - name: Populate local PostgreSQL from all active sources
+        working-directory: /var/www/teknoblog-radar
+        env:
+          RADAR_BASE_URL: http://127.0.0.1:3000
+        run: node --import dotenv/config scripts/refresh-local.mjs

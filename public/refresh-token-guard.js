@@ -65,8 +65,23 @@
     }
     const encoded = encodeURIComponent(cleanToken);
     try {
-      await fetchJson(`/api/ingest?token=${encoded}&source_limit=40&item_limit=30&t=${Date.now()}`, 120000);
-      await fetchJson(`/api/score?token=${encoded}&t=${Date.now()}`, 120000);
+      let sourceOffset = 0;
+      const sourceLimit = 4;
+      for (let batch = 0; batch < 12; batch += 1) {
+        status(`RSS kaynakları yenileniyor (${batch + 1})...`);
+        const result = await fetchJson(`/api/ingest?token=${encoded}&source_limit=${sourceLimit}&source_offset=${sourceOffset}&item_limit=20&t=${Date.now()}`, 90000);
+        if (!result?.has_more) break;
+        sourceOffset += sourceLimit;
+      }
+
+      let scoreOffset = 0;
+      const scoreLimit = 120;
+      for (let batch = 0; batch < 20; batch += 1) {
+        status(`Haberler puanlanıyor (${batch + 1})...`);
+        const result = await fetchJson(`/api/score-batch?token=${encoded}&offset=${scoreOffset}&limit=${scoreLimit}&t=${Date.now()}`, 90000);
+        if (!result?.has_more || result?.stopped_early) break;
+        scoreOffset += scoreLimit;
+      }
     } catch (error) {
       if (error?.status === 404) {
         await softRefreshOnly();

@@ -40,7 +40,7 @@ async function runIngestBatches(baseUrl, token) {
     totalUpdated += Number(data.updated || 0);
     batches += 1;
 
-    if (!data.has_more || Number(data.processed_sources || 0) < sourceLimit) {
+    if (!data.has_more) {
       break;
     }
 
