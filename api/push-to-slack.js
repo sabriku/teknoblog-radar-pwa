@@ -26,23 +26,27 @@ function normalizeUrl(value = '') {
 }
 
 async function readSharedSentUrls(supabase) {
-  const { data, error } = await supabase
-    .from('pipeline_runs')
-    .select('id,notes')
-    .eq('status', SHARED_STATUS)
-    .order('id', { ascending: false })
-    .limit(1);
-
-  if (error) throw new Error(error.message);
-  const row = Array.isArray(data) ? (data[0] || null) : null;
-  if (!row) return { rowId: null, urls: [] };
-
   try {
-    const parsed = JSON.parse(String(row.notes || '[]'));
-    const urls = Array.isArray(parsed) ? parsed.map(normalizeUrl).filter(Boolean) : [];
-    return { rowId: row.id, urls };
+    const { data, error } = await supabase
+      .from('pipeline_runs')
+      .select('id,notes')
+      .eq('status', SHARED_STATUS)
+      .order('id', { ascending: false })
+      .limit(1);
+
+    if (error) return { rowId: null, urls: [] };
+    const row = Array.isArray(data) ? (data[0] || null) : null;
+    if (!row) return { rowId: null, urls: [] };
+
+    try {
+      const parsed = JSON.parse(String(row.notes || '[]'));
+      const urls = Array.isArray(parsed) ? parsed.map(normalizeUrl).filter(Boolean) : [];
+      return { rowId: row.id, urls };
+    } catch {
+      return { rowId: row.id, urls: [] };
+    }
   } catch {
-    return { rowId: row.id, urls: [] };
+    return { rowId: null, urls: [] };
   }
 }
 
@@ -56,14 +60,18 @@ async function writeSharedSentUrls(supabase, rowId, urls) {
     notes: JSON.stringify(normalized)
   };
 
-  if (rowId) {
-    const { error } = await supabase.from('pipeline_runs').update(payload).eq('id', rowId);
-    if (!error) return normalized;
-  }
+  try {
+    if (rowId) {
+      const { error } = await supabase.from('pipeline_runs').update(payload).eq('id', rowId);
+      if (!error) return normalized;
+    }
 
-  const { error } = await supabase.from('pipeline_runs').insert(payload);
-  if (error) throw new Error(error.message);
-  return normalized;
+    const { error } = await supabase.from('pipeline_runs').insert(payload);
+    if (error) return normalized;
+    return normalized;
+  } catch {
+    return normalized;
+  }
 }
 
 export default async function handler(req, res) {
