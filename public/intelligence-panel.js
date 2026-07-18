@@ -21,6 +21,12 @@
     if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
     return data;
   }
+  async function google(path = '', options = {}) {
+    const response = await fetch(`/api/google-auth${path}`, { cache: 'no-store', ...options });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    return data;
+  }
   const img = (item) => item?.image_url ? `<img class="tb-i-img" src="${esc(item.image_url)}" alt="" loading="lazy" onerror="this.hidden=true">` : '';
   const pill = (text, cls = '') => `<span class="tb-i-pill ${cls}">${esc(text)}</span>`;
   const empty = (text) => `<div class="tb-i-empty">${esc(text)}</div>`;
@@ -49,7 +55,9 @@
     return `<div class="tb-i-progress"><i style="width:${Math.round(done / Math.max(1, items.length) * 100)}%"></i></div><p>${done}/${items.length} tamamlandı</p><div class="tb-i-table">${items.map((i) => `<div>${i.image_url ? `<img src="${esc(i.image_url)}" loading="lazy" onerror="this.hidden=true">` : ''}<b>${esc(i.title)}</b>${pill(i.status)}${pill(`Öncelik ${i.priority}`)}<span>${esc(i.source_name || '')} · ${fmt(i.created_at)}</span><nav><a href="${esc(i.url)}" target="_blank">Kaynak</a>${['approved', 'writing', 'published', 'waiting', 'skipped'].map((status) => `<button data-status="${status}" data-item='${esc(JSON.stringify(i))}'>${status}</button>`).join('')}</nav></div>`).join('')}</div>`;
   }
   function performance(data) {
-    if (!data.configured) return `<div class="tb-i-callout"><b>Search Console bağlantısı bekleniyor.</b><p>${esc(data.note || '')}</p><p>Bağlantı kurulduğunda gerçek Discover, Google News ve web sonuçları puanlama geri bildirimine dönüşecek.</p></div>`;
+    const oauth = data.oauth || {};
+    if (!oauth.configured) return `<div class="tb-i-callout"><b>Google Search Console'u bağla</b><p>OAuth bilgileri yerel PostgreSQL'de şifreli saklanır. Radar yalnızca Search Console verilerini okur.</p><div class="tb-i-form"><label>OAuth Client ID<input id="tb-google-client-id" autocomplete="off" placeholder="…apps.googleusercontent.com"></label><label>OAuth Client Secret<input id="tb-google-client-secret" type="password" autocomplete="new-password"></label><label>Search Console mülkü<input id="tb-google-site" value="${esc(oauth.site_url || 'sc-domain:teknoblog.com')}"></label><label>Yetkili yönlendirme adresi<input value="${esc(oauth.redirect_uri || '')}" readonly></label><button data-google-save>Kaydet ve Google ile bağlan</button></div></div>`;
+    if (!oauth.connected) return `<div class="tb-i-callout"><b>OAuth uygulaması hazır.</b><p>Search Console okuma iznini vermek için Google hesabınızla bağlantıyı tamamlayın.</p><button data-google-connect>Google ile bağlan</button><p>Search Console mülkü: ${esc(oauth.site_url || '')}</p></div>`;
     return `<button data-action="sync_gsc">Search Console'u eşzamanla</button>${data.items?.length ? `<div class="tb-i-table">${data.items.map((i) => `<div><b>${esc(i.title || i.url)}</b>${pill(`Discover ${i.discover_clicks}/${i.discover_impressions}`)}${pill(`News ${i.google_news_clicks}/${i.google_news_impressions}`)}<span>${fmt(i.observed_at)}</span></div>`).join('')}</div>` : empty('Henüz performans verisi yok.')}`;
   }
   function lab(data) {
@@ -75,13 +83,16 @@
   }
   function render() {
     const root = document.getElementById('tb-intelligence-root'); if (!root) return;
-    root.innerHTML = `<style>.tb-i-head{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}.tb-i-tabs,.tb-i-actions,.tb-i-card .tb-i-actions{display:flex;gap:7px;flex-wrap:wrap}.tb-i-tabs{margin:14px 0;overflow:auto}.tb-i-tabs button,.tb-i-actions button,.tb-i-actions a,.tb-i-card button,.tb-i-card a,.tb-i-table button,.tb-i-table a{border:1px solid #c7d2fe;background:#fff;color:#3730a3;border-radius:10px;padding:8px 10px;font-size:12px;font-weight:800;text-decoration:none;cursor:pointer}.tb-i-tabs button.on{background:#4338ca;color:#fff}.tb-i-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:12px 0}.tb-i-metrics>div{border:1px solid #e2e8f0;border-radius:15px;padding:13px;background:#f8fafc}.tb-i-metrics b{font-size:25px;display:block;color:#111827}.tb-i-metrics span,.tb-i-card p,.tb-i-table span{font-size:12px;color:#64748b}.tb-i-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}.tb-i-card{border:1px solid #e2e8f0;border-radius:17px;overflow:hidden;background:#fff}.tb-i-img{width:100%;aspect-ratio:16/9;object-fit:cover;background:#f1f5f9}.tb-i-body{padding:13px}.tb-i-card h3{font-size:18px;line-height:1.25;margin:8px 0}.tb-i-pill{display:inline-block;border-radius:999px;padding:4px 7px;margin:2px;background:#eef2ff;color:#3730a3;font-size:10px;font-weight:900}.tb-i-pill.hot{background:#ffedd5;color:#c2410c}.tb-i-table{display:grid;gap:8px}.tb-i-table>div{display:grid;grid-template-columns:auto auto auto 1fr;gap:8px;align-items:center;border:1px solid #e2e8f0;border-radius:13px;padding:10px}.tb-i-table img{width:70px;height:46px;object-fit:cover;border-radius:8px}.tb-i-table nav{grid-column:1/-1;display:flex;gap:5px;flex-wrap:wrap}.tb-i-empty,.tb-i-callout{padding:16px;border:1px dashed #c7d2fe;border-radius:14px;color:#64748b;background:#f8fafc}.tb-i-progress{height:10px;background:#e2e8f0;border-radius:999px;overflow:hidden}.tb-i-progress i{display:block;height:100%;background:#4f46e5}@media(max-width:700px){.tb-i-table>div{grid-template-columns:1fr}.tb-i-table nav{grid-column:1}.tb-i-grid{grid-template-columns:1fr}}</style><div class="tb-i-head"><div><h2>🧠 Radar Intelligence</h2><p>Karar, iş akışı ve sistem sağlığı tek yerde.</p></div><button data-reload>Yenile</button></div><div class="tb-i-tabs">${Object.entries(sections).map(([key, [label]]) => `<button class="${key === state.tab ? 'on' : ''}" data-i-tab="${key}">${label}</button>`).join('')}</div><div id="tb-i-content">${content()}</div>`;
+    root.innerHTML = `<style>.tb-i-head{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}.tb-i-tabs,.tb-i-actions,.tb-i-card .tb-i-actions{display:flex;gap:7px;flex-wrap:wrap}.tb-i-tabs{margin:14px 0;overflow:auto}.tb-i-tabs button,.tb-i-actions button,.tb-i-actions a,.tb-i-card button,.tb-i-card a,.tb-i-table button,.tb-i-table a,.tb-i-callout button{border:1px solid #c7d2fe;background:#fff;color:#3730a3;border-radius:10px;padding:8px 10px;font-size:12px;font-weight:800;text-decoration:none;cursor:pointer}.tb-i-tabs button.on{background:#4338ca;color:#fff}.tb-i-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:12px 0}.tb-i-metrics>div{border:1px solid #e2e8f0;border-radius:15px;padding:13px;background:#f8fafc}.tb-i-metrics b{font-size:25px;display:block;color:#111827}.tb-i-metrics span,.tb-i-card p,.tb-i-table span{font-size:12px;color:#64748b}.tb-i-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}.tb-i-card{border:1px solid #e2e8f0;border-radius:17px;overflow:hidden;background:#fff}.tb-i-img{width:100%;aspect-ratio:16/9;object-fit:cover;background:#f1f5f9}.tb-i-body{padding:13px}.tb-i-card h3{font-size:18px;line-height:1.25;margin:8px 0}.tb-i-pill{display:inline-block;border-radius:999px;padding:4px 7px;margin:2px;background:#eef2ff;color:#3730a3;font-size:10px;font-weight:900}.tb-i-pill.hot{background:#ffedd5;color:#c2410c}.tb-i-table{display:grid;gap:8px}.tb-i-table>div{display:grid;grid-template-columns:auto auto auto 1fr;gap:8px;align-items:center;border:1px solid #e2e8f0;border-radius:13px;padding:10px}.tb-i-table img{width:70px;height:46px;object-fit:cover;border-radius:8px}.tb-i-table nav{grid-column:1/-1;display:flex;gap:5px;flex-wrap:wrap}.tb-i-empty,.tb-i-callout{padding:16px;border:1px dashed #c7d2fe;border-radius:14px;color:#64748b;background:#f8fafc}.tb-i-form{display:grid;grid-template-columns:repeat(2,minmax(220px,1fr));gap:10px;margin-top:14px}.tb-i-form label{display:grid;gap:5px;font-size:12px;font-weight:800;color:#334155}.tb-i-form input{border:1px solid #cbd5e1;border-radius:10px;padding:10px;background:#fff;min-width:0}.tb-i-form button{align-self:end}.tb-i-progress{height:10px;background:#e2e8f0;border-radius:999px;overflow:hidden}.tb-i-progress i{display:block;height:100%;background:#4f46e5}@media(max-width:700px){.tb-i-table>div,.tb-i-form{grid-template-columns:1fr}.tb-i-table nav{grid-column:1}.tb-i-grid{grid-template-columns:1fr}}</style><div class="tb-i-head"><div><h2>🧠 Radar Intelligence</h2><p>Karar, iş akışı ve sistem sağlığı tek yerde.</p></div><button data-reload>Yenile</button></div><div class="tb-i-tabs">${Object.entries(sections).map(([key, [label]]) => `<button class="${key === state.tab ? 'on' : ''}" data-i-tab="${key}">${label}</button>`).join('')}</div><div id="tb-i-content">${content()}</div>`;
   }
   async function load(tab = state.tab, force = false) {
     state.tab = tab; state.error = '';
     if (state.data[tab] && !force) { render(); return; }
     state.loading = true; render();
-    try { state.data[tab] = await get(sections[tab][1]); } catch (e) { state.error = e.message || String(e); }
+    try {
+      state.data[tab] = await get(sections[tab][1]);
+      if (tab === 'performance') state.data[tab].oauth = await google();
+    } catch (e) { state.error = e.message || String(e); }
     finally { state.loading = false; render(); }
   }
   document.addEventListener('click', async (event) => {
@@ -91,9 +102,21 @@
     if (queued) { try { await post({ action: 'queue_upsert', ...JSON.parse(queued.dataset.queue || queued.dataset.addQueue) }); queued.textContent = 'Eklendi'; state.data.queue = null; } catch (e) { alert(e.message); } return; }
     const status = event.target.closest('[data-status]');
     if (status) { try { await post({ action: 'queue_upsert', ...JSON.parse(status.dataset.item), status: status.dataset.status }); await load('queue', true); } catch (e) { alert(e.message); } return; }
+    const connect = event.target.closest('[data-google-connect]');
+    if (connect) { try { const data = await google('?action=start'); window.open(data.auth_url, 'tbGoogleOAuth', 'width=620,height=760'); } catch (e) { alert(e.message); } return; }
+    const save = event.target.closest('[data-google-save]');
+    if (save) {
+      save.disabled = true;
+      try {
+        await google('', { method: 'POST', headers: { 'content-type': 'application/json', 'x-cron-token': token() }, body: JSON.stringify({ client_id: document.getElementById('tb-google-client-id')?.value || '', client_secret: document.getElementById('tb-google-client-secret')?.value || '', site_url: document.getElementById('tb-google-site')?.value || 'sc-domain:teknoblog.com' }) });
+        const data = await google('?action=start'); window.open(data.auth_url, 'tbGoogleOAuth', 'width=620,height=760');
+      } catch (e) { alert(e.message); } finally { save.disabled = false; }
+      return;
+    }
     const action = event.target.closest('[data-action]');
     if (action) { action.disabled = true; try { await post({ action: action.dataset.action }, true); state.data = {}; await load(state.tab, true); } catch (e) { alert(e.message); } finally { action.disabled = false; } }
   });
+  window.addEventListener('message', (event) => { if (event.origin === location.origin && event.data?.type === 'tb-gsc-connected') load('performance', true); });
   function start() { render(); load('today'); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true }); else start();
 })();

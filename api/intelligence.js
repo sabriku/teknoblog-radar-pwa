@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { createHash } from 'node:crypto';
 import { json, queryLocal, safeText, nowIso } from './_lib.js';
+import { getGoogleConfig, googleAccessToken } from './_google-auth.js';
 
 const STOP = new Set('ve veya ile için bir bu şu daha yeni son ilk olan olarak göre sonra önce hakkında üzerinde geliyor geldi olacak oldu neden nasıl hangi ne zaman teknoloji tech says report reportedly could may its the and for from with that this have has will into over after before'.split(' '));
 
@@ -160,8 +161,9 @@ async function queueSection() {
 
 async function performanceSection() {
   const rows = (await queryLocal(`SELECT * FROM published_performance ORDER BY observed_at DESC LIMIT 300`)).rows;
-  const configured = Boolean(process.env.GSC_SITE_URL && (process.env.GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN || process.env.GOOGLE_REFRESH_TOKEN));
-  return { configured, items: rows, note: configured ? null : 'GSC_SITE_URL ve Google OAuth bilgileri tanımlandığında otomatik öğrenme etkinleşir.' };
+  const config = await getGoogleConfig();
+  const configured = Boolean(config.site_url && config.client_id && config.client_secret && config.refresh_token);
+  return { configured, items: rows, note: configured ? null : 'Google Search Console bağlantısını bu ekrandan güvenli biçimde kurabilirsiniz.' };
 }
 
 async function scoringLabSection() {
@@ -203,17 +205,9 @@ async function summarySection() {
   return { ...counts.rows[0], queue_progress: { total: queue.length, completed: queue.filter((item) => item.status === 'published').length }, unhealthy_sources: health.filter((item) => Number(item.quality_score) < 45).slice(0, 10), rising_clusters: clusters.filter((item) => item.momentum_score >= 60).slice(0, 8), performance_configured: performance.configured, disk: diskStatus(), generated_at: nowIso() };
 }
 
-async function googleAccessToken() {
-  if (process.env.GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN) return process.env.GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN;
-  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET || !process.env.GOOGLE_REFRESH_TOKEN) return '';
-  const response = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: process.env.GOOGLE_CLIENT_ID, client_secret: process.env.GOOGLE_CLIENT_SECRET, refresh_token: process.env.GOOGLE_REFRESH_TOKEN, grant_type: 'refresh_token' }) });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error_description || data.error || 'Google OAuth başarısız');
-  return data.access_token || '';
-}
-
 async function syncGsc() {
-  const site = process.env.GSC_SITE_URL || '';
+  const config = await getGoogleConfig();
+  const site = config.site_url || '';
   const token = await googleAccessToken();
   if (!site || !token) throw new Error('Search Console bağlantı bilgileri eksik.');
   const end = new Date();
