@@ -312,6 +312,58 @@ class PgQueryBuilder {
       const cols = Object.keys(row).filter((c) => COLS[this.table]?.includes(c));
       const vals = cols.map((c) => row[c]);
       const placeholders = vals.map((_, i) => `$${i + 1}`).join(',');
+      if (this.table === 'raw_feed_items') {
+        const first = await db().query(
+          `INSERT INTO raw_feed_items(${cols.join(',')}) VALUES(${placeholders}) ON CONFLICT DO NOTHING RETURNING *`,
+          vals
+        );
+        if (first.rows[0]) {
+          inserted.push(first.rows[0]);
+          continue;
+        }
+        const existing = await db().query(`SELECT id FROM raw_feed_items
+          WHERE ($1::text IS NOT NULL AND id=$1)
+             OR ($2::text IS NOT NULL AND content_hash=$2)
+             OR ($3::text IS NOT NULL AND url_hash=$3)
+          ORDER BY created_at DESC LIMIT 1`, [row.id || null, row.content_hash || null, row.url_hash || null]);
+        if (!existing.rows[0]) throw new Error('Çakışan RSS kaydı bulunamadı.');
+        const mutable = cols.filter((c) => !['id', 'created_at', 'updated_at'].includes(c));
+        const updateValues = mutable.map((c) => row[c]);
+        const updateSql = mutable.map((c, index) => {
+          if (['image_url', 'thumbnail', 'image', 'summary', 'description', 'excerpt'].includes(c)) {
+            return `${c}=COALESCE(NULLIF($${index + 1}::text,''),${c})`;
+          }
+          if (c === 'published_at') return `${c}=COALESCE($${index + 1},${c})`;
+          return `${c}=$${index + 1}`;
+        }).join(',');
+        const updated = await db().query(`UPDATE raw_feed_items SET ${updateSql},updated_at=NOW()
+          WHERE id=$${updateValues.length + 1} RETURNING *`, [...updateValues, existing.rows[0].id]);
+        inserted.push(updated.rows[0]);
+        continue;
+      }
+      if (this.table === 'topic_candidates') {
+        const first = await db().query(
+          `INSERT INTO topic_candidates(${cols.join(',')}) VALUES(${placeholders}) ON CONFLICT DO NOTHING RETURNING *`,
+          vals
+        );
+        if (first.rows[0]) {
+          inserted.push(first.rows[0]);
+          continue;
+        }
+        const existing = await db().query(`SELECT id FROM topic_candidates
+          WHERE ($1::text IS NOT NULL AND id=$1)
+             OR ($2::text IS NOT NULL AND candidate_hash=$2)
+             OR ($3::text IS NOT NULL AND raw_feed_item_id=$3)
+          ORDER BY created_at DESC LIMIT 1`, [row.id || null, row.candidate_hash || null, row.raw_feed_item_id || null]);
+        if (!existing.rows[0]) throw new Error('Çakışan aday kaydı bulunamadı.');
+        const mutable = cols.filter((c) => !['id', 'created_at', 'updated_at'].includes(c));
+        const updateValues = mutable.map((c) => row[c]);
+        const updateSql = mutable.map((c, index) => `${c}=$${index + 1}`).join(',');
+        const updated = await db().query(`UPDATE topic_candidates SET ${updateSql},updated_at=NOW()
+          WHERE id=$${updateValues.length + 1} RETURNING *`, [...updateValues, existing.rows[0].id]);
+        inserted.push(updated.rows[0]);
+        continue;
+      }
       const updates = cols.filter((c) => c !== 'id').map((c) => `${c}=EXCLUDED.${c}`).join(',');
       const inferredConflict = this.table === 'raw_feed_items' && row.content_hash ? 'content_hash' : this.table === 'raw_feed_items' && row.url_hash ? 'url_hash' : this.table === 'topic_candidates' && row.candidate_hash ? 'candidate_hash' : this.table === 'trend_signals' && row.signal_hash ? 'signal_hash' : this.table === 'trend_clusters' && row.cluster_key ? 'cluster_key' : row.id ? 'id' : '';
       const conflict = String(this.conflictColumns || inferredConflict || '').split(',').map((c) => c.trim()).filter(Boolean).map((c) => safeCol(this.table, c)).join(',');

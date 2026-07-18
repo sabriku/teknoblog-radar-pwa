@@ -46,14 +46,16 @@ function normalizeImageUrl(url = '', baseUrl = '') {
   }
 }
 
-async function recordSourceHealth(source, { ok, error = '', fetched = 0, images = 0, latency = 0 }) {
+async function recordSourceHealth(source, { ok, error = '', fetched = 0, images = 0, latency = 0, status = '', inserted = 0, updated = 0, duplicates = 0 }) {
   const quality = clampHealth((ok ? 45 : 10) + Math.min(25, fetched * 2) + Math.min(15, images * 3) + (latency < 3000 ? 10 : latency < 6000 ? 5 : 0));
-  await queryLocal(`INSERT INTO source_health(source_id,last_attempt_at,last_success_at,last_error,consecutive_failures,fetched_count,image_count,avg_latency_ms,quality_score,updated_at)
-    VALUES($1,NOW(),CASE WHEN $2 THEN NOW() ELSE NULL END,$3,CASE WHEN $2 THEN 0 ELSE 1 END,$4,$5,$6,$7,NOW())
+  const finalStatus = status || (ok ? (inserted || updated ? 'updated' : 'no_new_items') : 'fetch_error');
+  await queryLocal(`INSERT INTO source_health(source_id,last_attempt_at,last_success_at,last_error,consecutive_failures,fetched_count,image_count,avg_latency_ms,quality_score,last_status,inserted_count,updated_count,duplicate_count,updated_at)
+    VALUES($1,NOW(),CASE WHEN $2 THEN NOW() ELSE NULL END,$3,CASE WHEN $2 THEN 0 ELSE 1 END,$4,$5,$6,$7,$8,$9,$10,$11,NOW())
     ON CONFLICT(source_id) DO UPDATE SET last_attempt_at=NOW(),last_success_at=CASE WHEN $2 THEN NOW() ELSE source_health.last_success_at END,
     last_error=$3,consecutive_failures=CASE WHEN $2 THEN 0 ELSE source_health.consecutive_failures+1 END,
     fetched_count=$4,image_count=$5,avg_latency_ms=CASE WHEN source_health.avg_latency_ms=0 THEN $6 ELSE ROUND((source_health.avg_latency_ms+$6)/2.0)::int END,
-    quality_score=$7,updated_at=NOW()`, [source.id, ok, error, fetched, images, latency, quality]);
+    quality_score=$7,last_status=$8,inserted_count=$9,updated_count=$10,duplicate_count=$11,updated_at=NOW()`,
+    [source.id, ok, error, fetched, images, latency, quality, finalStatus, inserted, updated, duplicates]);
 }
 
 function clampHealth(value) { return Math.max(0, Math.min(100, Math.round(Number(value) || 0))); }
@@ -130,7 +132,7 @@ export default async function handler(req, res) {
 
       if (!feedUrl) {
         debug.push({ source: source.name, status: 'skipped', reason: 'No feed URL' });
-        await recordSourceHealth(source, { ok: false, error: 'No feed URL', latency: Date.now() - sourceStartedAt });
+        await recordSourceHealth(source, { ok: false, error: 'No feed URL', status: 'configuration_error', latency: Date.now() - sourceStartedAt });
         continue;
       }
 
@@ -151,12 +153,21 @@ export default async function handler(req, res) {
 
         if (!response.ok) {
           debug.push({ source: source.name, status: 'http_error', feedUrl, code: response.status });
-          await recordSourceHealth(source, { ok: false, error: `HTTP ${response.status}`, latency: Date.now() - sourceStartedAt });
+          await recordSourceHealth(source, { ok: false, error: `HTTP ${response.status}`, status: [401, 403, 429].includes(response.status) ? 'blocked' : 'http_error', latency: Date.now() - sourceStartedAt });
           continue;
         }
 
         const xml = await response.text();
-        const items = parseFeedItems(xml).slice(0, itemLimit);
+        const parsedItems = parseFeedItems(xml).slice(0, itemLimit);
+        const seenFeedUrls = new Set();
+        const items = parsedItems.filter((item) => {
+          const url = safeText(item.url || item.link);
+          if (!url) return false;
+          const key = hashValue(url);
+          if (seenFeedUrls.has(key)) return false;
+          seenFeedUrls.add(key);
+          return true;
+        });
         processed_sources += 1;
         let ogLookups = 0;
         let insertErrors = 0;
@@ -164,6 +175,7 @@ export default async function handler(req, res) {
         let selectErrors = 0;
         let insertedForSource = 0;
         let updatedForSource = 0;
+        let duplicateForSource = parsedItems.length - items.length;
         let sampleError = '';
 
         debug.push({ source: source.name, status: 'fetched', feedUrl, count: items.length });
@@ -180,12 +192,15 @@ export default async function handler(req, res) {
 
           if (!title || !url) continue;
 
-          const { data: existing, error: existingError } = await supabase
-            .from('raw_feed_items')
-            .select('id,image_url,summary,published_at')
-            .eq('content_hash', content_hash)
-            .limit(1);
-
+          let existing = [];
+          let existingError = null;
+          try {
+            existing = (await queryLocal(`SELECT id,image_url,summary,published_at FROM raw_feed_items
+              WHERE content_hash=$1 OR url_hash=$2 OR id=$3 ORDER BY created_at DESC LIMIT 1`,
+              [content_hash, url_hash, hashValue(`raw_feed_items:${content_hash}`)])).rows;
+          } catch (error) {
+            existingError = error;
+          }
           if (existingError) {
             selectErrors += 1;
             if (!sampleError) sampleError = existingError.message || 'select failed';
@@ -200,6 +215,7 @@ export default async function handler(req, res) {
           }
 
           if (current) {
+            duplicateForSource += 1;
             const patch = {};
             if (image_url && !current.image_url) patch.image_url = image_url;
             if (summary && (!current.summary || current.summary.length < summary.length)) patch.summary = summary;
@@ -259,7 +275,18 @@ export default async function handler(req, res) {
           selectErrors,
           error: sampleError || ''
         });
-        await recordSourceHealth(source, { ok: true, fetched: items.length, images: imageCount, latency: Date.now() - sourceStartedAt });
+        const databaseOk = insertErrors === 0 && updateErrors === 0 && selectErrors === 0;
+        await recordSourceHealth(source, {
+          ok: databaseOk,
+          error: databaseOk ? '' : sampleError || 'database_error',
+          fetched: items.length,
+          images: imageCount,
+          latency: Date.now() - sourceStartedAt,
+          status: databaseOk ? (insertedForSource || updatedForSource ? 'updated' : 'no_new_items') : 'database_error',
+          inserted: insertedForSource,
+          updated: updatedForSource,
+          duplicates: duplicateForSource
+        });
       } catch (error) {
         debug.push({
           source: source.name,

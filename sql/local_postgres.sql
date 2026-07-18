@@ -175,6 +175,10 @@ CREATE TABLE IF NOT EXISTS source_health (
   image_count INTEGER NOT NULL DEFAULT 0,
   avg_latency_ms INTEGER NOT NULL DEFAULT 0,
   quality_score INTEGER NOT NULL DEFAULT 50,
+  last_status TEXT NOT NULL DEFAULT 'unknown',
+  inserted_count INTEGER NOT NULL DEFAULT 0,
+  updated_count INTEGER NOT NULL DEFAULT 0,
+  duplicate_count INTEGER NOT NULL DEFAULT 0,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -273,6 +277,8 @@ CREATE TABLE IF NOT EXISTS content_predictions (
   id BIGSERIAL PRIMARY KEY,
   url TEXT NOT NULL,
   candidate_id TEXT,
+  title TEXT,
+  source_name TEXT,
   model_version TEXT NOT NULL,
   discover_probability DOUBLE PRECISION NOT NULL DEFAULT 0,
   news_probability DOUBLE PRECISION NOT NULL DEFAULT 0,
@@ -280,6 +286,7 @@ CREATE TABLE IF NOT EXISTS content_predictions (
   expected_clicks_low INTEGER NOT NULL DEFAULT 0,
   expected_clicks_high INTEGER NOT NULL DEFAULT 0,
   reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
+  features JSONB NOT NULL DEFAULT '[]'::jsonb,
   predicted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(url,model_version)
 );
@@ -287,9 +294,31 @@ CREATE TABLE IF NOT EXISTS content_predictions (
 CREATE TABLE IF NOT EXISTS editorial_feedback (
   id BIGSERIAL PRIMARY KEY,
   url TEXT NOT NULL,
+  title TEXT,
+  source_name TEXT,
   decision TEXT NOT NULL,
   notes TEXT,
+  features JSONB NOT NULL DEFAULT '[]'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS prediction_outcomes (
+  id BIGSERIAL PRIMARY KEY,
+  prediction_url TEXT NOT NULL,
+  published_url TEXT NOT NULL,
+  model_version TEXT,
+  match_score DOUBLE PRECISION NOT NULL DEFAULT 0,
+  discover_probability DOUBLE PRECISION NOT NULL DEFAULT 0,
+  news_probability DOUBLE PRECISION NOT NULL DEFAULT 0,
+  discover_clicks DOUBLE PRECISION NOT NULL DEFAULT 0,
+  discover_impressions DOUBLE PRECISION NOT NULL DEFAULT 0,
+  news_clicks DOUBLE PRECISION NOT NULL DEFAULT 0,
+  news_impressions DOUBLE PRECISION NOT NULL DEFAULT 0,
+  expected_clicks_low INTEGER NOT NULL DEFAULT 0,
+  expected_clicks_high INTEGER NOT NULL DEFAULT 0,
+  matched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  observed_at TIMESTAMPTZ,
+  UNIQUE(prediction_url,published_url)
 );
 
 ALTER TABLE sources ADD COLUMN IF NOT EXISTS description TEXT;
@@ -326,6 +355,17 @@ ALTER TABLE topic_candidates ADD COLUMN IF NOT EXISTS thumbnail TEXT;
 ALTER TABLE topic_candidates ADD COLUMN IF NOT EXISTS image TEXT;
 ALTER TABLE topic_candidates ADD COLUMN IF NOT EXISTS candidate_hash TEXT;
 
+ALTER TABLE source_health ADD COLUMN IF NOT EXISTS last_status TEXT DEFAULT 'unknown';
+ALTER TABLE source_health ADD COLUMN IF NOT EXISTS inserted_count INTEGER DEFAULT 0;
+ALTER TABLE source_health ADD COLUMN IF NOT EXISTS updated_count INTEGER DEFAULT 0;
+ALTER TABLE source_health ADD COLUMN IF NOT EXISTS duplicate_count INTEGER DEFAULT 0;
+ALTER TABLE content_predictions ADD COLUMN IF NOT EXISTS title TEXT;
+ALTER TABLE content_predictions ADD COLUMN IF NOT EXISTS source_name TEXT;
+ALTER TABLE content_predictions ADD COLUMN IF NOT EXISTS features JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE editorial_feedback ADD COLUMN IF NOT EXISTS title TEXT;
+ALTER TABLE editorial_feedback ADD COLUMN IF NOT EXISTS source_name TEXT;
+ALTER TABLE editorial_feedback ADD COLUMN IF NOT EXISTS features JSONB DEFAULT '[]'::jsonb;
+
 ALTER TABLE trend_signals ADD COLUMN IF NOT EXISTS signal_hash TEXT;
 ALTER TABLE trend_signals ADD COLUMN IF NOT EXISTS source_type TEXT;
 ALTER TABLE trend_signals ADD COLUMN IF NOT EXISTS market_scope TEXT DEFAULT 'global';
@@ -359,3 +399,5 @@ CREATE INDEX IF NOT EXISTS idx_performance_snapshots_date ON performance_snapsho
 CREATE INDEX IF NOT EXISTS idx_performance_snapshots_url ON performance_snapshots(url,snapshot_date DESC);
 CREATE INDEX IF NOT EXISTS idx_predictions_probability ON content_predictions(discover_probability DESC,news_probability DESC);
 CREATE INDEX IF NOT EXISTS idx_feedback_url ON editorial_feedback(url,created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_prediction_outcomes_published ON prediction_outcomes(published_url,observed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_prediction_outcomes_model ON prediction_outcomes(model_version,matched_at DESC);

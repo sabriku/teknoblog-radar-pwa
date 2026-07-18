@@ -1,6 +1,6 @@
 import { getSupabaseAdmin, json, queryLocal } from './_lib.js';
 import opportunityRadar from './opportunity-radar.js';
-import { loadIntelligenceModel, predictWithModel, savePredictions } from './_intelligence-model.js';
+import { loadIntelligenceModel, modelInfluence, predictWithModel, primaryTopicKey, savePredictions } from './_intelligence-model.js';
 
 const HARD_NOISE_PATTERNS = [
   /hull\s*city/i, /polonya/i, /voleybol/i, /futbol/i, /basketbol/i, /\bkupa\b/i,
@@ -236,9 +236,17 @@ function withRadarScores(item = {}, learnedTerms = new Map(), modelRow = null) {
   const heuristicDiscover = clampScore(computedDiscoverScore(item) + learningBoost);
   const heuristicEditorial = computedEditorialScore(item, heuristicDiscover);
   const prediction = predictWithModel(item, modelRow, { discover: heuristicDiscover, editorial: heuristicEditorial, news: heuristicEditorial });
-  const discover = clampScore(heuristicDiscover * 0.55 + prediction.discover_probability * 0.45);
+  const discoverWeight = modelRow ? modelInfluence(modelRow, 'discover', .45) : 0;
+  const newsWeight = modelRow ? modelInfluence(modelRow, 'news', .28) : 0;
+  const editorialWeight = prediction.editorial_probability != null ? Math.min(.2, modelInfluence(modelRow, 'editorial', 0)) : 0;
+  const discover = clampScore(heuristicDiscover * (1 - discoverWeight) + prediction.discover_probability * discoverWeight);
   const traffic = computedTrafficScore(item, discover);
-  const editorial = clampScore(computedEditorialScore(item, discover) * 0.72 + prediction.news_probability * 0.28);
+  const editorialBase = computedEditorialScore(item, discover);
+  const editorial = clampScore(
+    editorialBase * Math.max(0, 1 - newsWeight - editorialWeight) +
+    prediction.news_probability * newsWeight +
+    Number(prediction.editorial_probability || editorialBase) * editorialWeight
+  );
   const conversion = computedConversionScore(item, discover, traffic);
   const social = computedSocialScore(item, discover);
   const total = computedTotalScore(item, { discover, traffic, editorial, conversion, social });
@@ -277,10 +285,13 @@ function withRadarScores(item = {}, learnedTerms = new Map(), modelRow = null) {
     intelligence_model_version: prediction.model_version,
     discover_probability: prediction.discover_probability,
     news_probability: prediction.news_probability,
+    editorial_probability: prediction.editorial_probability,
     intelligence_confidence: prediction.confidence,
     expected_clicks_low: prediction.expected_clicks_low,
     expected_clicks_high: prediction.expected_clicks_high,
     intelligence_reasons: prediction.reasons,
+    intelligence_features: prediction.features,
+    intelligence_weights: { discover: discoverWeight, news: newsWeight, editorial: editorialWeight },
     discover_score: discover,
     traffic_score: traffic,
     editorial_score: editorial,
@@ -336,6 +347,36 @@ function compareItems(a, b, sortKey) {
   const diff = adjustedScore(b, sortKey) - adjustedScore(a, sortKey);
   if (diff) return diff;
   return timeValue(b?.published_at || b?.updated_at || b?.created_at) - timeValue(a?.published_at || a?.updated_at || a?.created_at);
+}
+
+function diversifyItems(items = [], sortKey = 'published_at') {
+  if (sortKey === 'published_at' || sortKey === 'updated_at' || items.length < 4) return items;
+  const remaining = items.slice();
+  const selected = [];
+  const sourceCounts = new Map();
+  const topicCounts = new Map();
+  const target = Math.min(120, remaining.length);
+  while (selected.length < target && remaining.length) {
+    let bestIndex = 0;
+    let bestValue = -Infinity;
+    for (let index = 0; index < Math.min(100, remaining.length); index += 1) {
+      const item = remaining[index];
+      const source = String(item.source_name || 'unknown').toLocaleLowerCase('tr-TR');
+      const topic = primaryTopicKey(item);
+      const sourcePenalty = Math.max(0, (sourceCounts.get(source) || 0) - 1) * 5;
+      const topicPenalty = Math.max(0, (topicCounts.get(topic) || 0) - 2) * 4;
+      const value = adjustedScore(item, sortKey) - sourcePenalty - topicPenalty - index * .015;
+      if (value > bestValue) { bestValue = value; bestIndex = index; }
+    }
+    const [picked] = remaining.splice(bestIndex, 1);
+    const source = String(picked.source_name || 'unknown').toLocaleLowerCase('tr-TR');
+    const topic = primaryTopicKey(picked);
+    picked.diversity_rank = selected.length + 1;
+    sourceCounts.set(source, (sourceCounts.get(source) || 0) + 1);
+    topicCounts.set(topic, (topicCounts.get(topic) || 0) + 1);
+    selected.push(picked);
+  }
+  return [...selected, ...remaining];
 }
 
 async function safeSelect(builder) {
@@ -399,6 +440,7 @@ export default async function handler(req, res) {
     }
 
     enriched.sort((a, b) => compareItems(a, b, sortKey));
+    enriched = diversifyItems(enriched, sortKey);
     if (intelligenceModel) {
       try { await savePredictions(enriched, intelligenceModel.model_version); } catch {}
     }
@@ -415,6 +457,11 @@ export default async function handler(req, res) {
         scoring_model: intelligenceModel ? 'intelligence_v1' : 'calibrated_v2',
         intelligence_model_version: intelligenceModel?.model_version || null,
         intelligence_sample_count: intelligenceModel?.sample_count || 0,
+        intelligence_weights: intelligenceModel ? {
+          discover: modelInfluence(intelligenceModel, 'discover', .45),
+          news: modelInfluence(intelligenceModel, 'news', .28),
+          editorial: modelInfluence(intelligenceModel, 'editorial', 0)
+        } : null,
         performance_learning_terms: learnedTerms.size,
         normalized_scores: ['total_score', 'traffic_score', 'conversion_score', 'discover_score', 'social_score', 'editorial_score']
       }

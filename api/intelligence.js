@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { createHash } from 'node:crypto';
 import { json, queryLocal, safeText, nowIso } from './_lib.js';
 import { getGoogleConfig, googleAccessToken } from './_google-auth.js';
-import { loadIntelligenceModel, trainIntelligenceModel } from './_intelligence-model.js';
+import { extractIntelligenceFeatures, loadIntelligenceModel, trainIntelligenceModel } from './_intelligence-model.js';
 
 const STOP = new Set('ve veya ile için bir bu şu daha yeni son ilk olan olarak göre sonra önce hakkında üzerinde geliyor geldi olacak oldu neden nasıl hangi ne zaman teknoloji tech says report reportedly could may its the and for from with that this have has will into over after before'.split(' '));
 
@@ -58,7 +58,45 @@ async function syncTeknoblog() {
     }
     page += 1;
   } while (page <= totalPages);
+  await reconcilePredictionOutcomes();
   return stored;
+}
+
+async function reconcilePredictionOutcomes() {
+  const [predictions, posts, directQueue] = await Promise.all([
+    queryLocal(`SELECT DISTINCT ON(url) url,title,model_version,discover_probability,news_probability,expected_clicks_low,expected_clicks_high,predicted_at
+      FROM content_predictions WHERE title IS NOT NULL AND title<>'' AND predicted_at>=NOW()-INTERVAL '30 days'
+      ORDER BY url,predicted_at DESC`),
+    queryLocal(`SELECT title,url,published_at FROM teknoblog_content WHERE published_at>=NOW()-INTERVAL '35 days' ORDER BY published_at DESC`),
+    queryLocal(`SELECT url,published_url FROM editorial_queue WHERE published_url IS NOT NULL AND published_url<>''`)
+  ]);
+  const directMap = new Map(directQueue.rows.map((row) => [row.url, row.published_url]));
+  let matched = 0;
+  for (const prediction of predictions.rows) {
+    let best = null;
+    let bestScore = 0;
+    const directUrl = directMap.get(prediction.url);
+    for (const post of posts.rows) {
+      const score = directUrl && directUrl.replace(/\/+$/, '') === post.url.replace(/\/+$/, '') ? 1 : overlap(tokens(prediction.title), tokens(post.title));
+      const predictedAt = new Date(prediction.predicted_at).getTime();
+      const publishedAt = new Date(post.published_at).getTime();
+      if (publishedAt < predictedAt - 12 * 3600000 || publishedAt > predictedAt + 21 * 86400000) continue;
+      if (score > bestScore) { best = post; bestScore = score; }
+    }
+    if (!best || bestScore < .48) continue;
+    await queryLocal(`INSERT INTO prediction_outcomes(prediction_url,published_url,model_version,match_score,discover_probability,news_probability,expected_clicks_low,expected_clicks_high,matched_at)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,NOW()) ON CONFLICT(prediction_url,published_url) DO UPDATE SET
+      model_version=EXCLUDED.model_version,match_score=GREATEST(prediction_outcomes.match_score,EXCLUDED.match_score),
+      discover_probability=EXCLUDED.discover_probability,news_probability=EXCLUDED.news_probability,
+      expected_clicks_low=EXCLUDED.expected_clicks_low,expected_clicks_high=EXCLUDED.expected_clicks_high`,
+    [prediction.url, best.url, prediction.model_version, bestScore, prediction.discover_probability, prediction.news_probability, prediction.expected_clicks_low, prediction.expected_clicks_high]);
+    matched += 1;
+  }
+  await queryLocal(`UPDATE prediction_outcomes o SET
+    discover_clicks=p.discover_clicks,discover_impressions=p.discover_impressions,
+    news_clicks=p.google_news_clicks,news_impressions=p.google_news_impressions,observed_at=p.observed_at
+    FROM published_performance p WHERE regexp_replace(o.published_url,'/+$','')=regexp_replace(p.url,'/+$','')`);
+  return { matched };
 }
 
 async function recentCandidates(limit = 600) {
@@ -144,7 +182,7 @@ async function coverageSection() {
 
 async function sourceHealthSection() {
   const result = await queryLocal(`SELECT s.id,s.name,s.is_active,s.priority_weight,s.trust_score,
-    h.last_attempt_at,h.last_success_at,h.last_error,h.consecutive_failures,h.fetched_count,h.image_count,h.avg_latency_ms,
+    h.last_attempt_at,h.last_success_at,h.last_error,h.last_status,h.consecutive_failures,h.fetched_count,h.inserted_count,h.updated_count,h.duplicate_count,h.image_count,h.avg_latency_ms,
     COALESCE(h.quality_score, CASE WHEN MAX(r.created_at)>NOW()-INTERVAL '24 hours' THEN 75 ELSE 35 END) AS quality_score,
     MAX(r.created_at) AS last_item_at, COUNT(r.id)::int AS stored_items,
     COUNT(r.id) FILTER (WHERE r.image_url IS NOT NULL AND r.image_url<>'')::int AS stored_images
@@ -190,6 +228,35 @@ async function performanceSection() {
     },
     model: activeModel ? { model_version: activeModel.model_version, trained_at: activeModel.trained_at, sample_count: activeModel.sample_count, discover_positive_rate: activeModel.discover_positive_rate, news_positive_rate: activeModel.news_positive_rate, metrics: activeModel.metrics } : null,
     note: configured ? null : 'Google Search Console bağlantısını bu ekrandan güvenli biçimde kurabilirsiniz.'
+  };
+}
+
+async function accuracySection() {
+  await reconcilePredictionOutcomes();
+  const [summary, discoverBuckets, newsBuckets, recent, model, feedback] = await Promise.all([
+    queryLocal(`SELECT COUNT(*)::int AS matched,
+      COUNT(*) FILTER(WHERE observed_at IS NOT NULL)::int AS observed,
+      COUNT(*) FILTER(WHERE discover_impressions>=100 OR discover_clicks>=3)::int AS discover_success,
+      COUNT(*) FILTER(WHERE news_impressions>=50 OR news_clicks>=2)::int AS news_success,
+      ROUND(AVG(discover_probability))::int AS avg_discover_probability,
+      ROUND(AVG(news_probability))::int AS avg_news_probability,
+      ROUND(AVG(discover_clicks+news_clicks))::int AS avg_actual_clicks,
+      ROUND(AVG((expected_clicks_low+expected_clicks_high)/2.0))::int AS avg_expected_clicks
+      FROM prediction_outcomes`),
+    queryLocal(`SELECT LEAST(90,FLOOR(discover_probability/10)*10)::int AS bucket,COUNT(*)::int AS samples,
+      COUNT(*) FILTER(WHERE discover_impressions>=100 OR discover_clicks>=3)::int AS successes,
+      ROUND(AVG(discover_clicks))::int AS avg_clicks FROM prediction_outcomes WHERE observed_at IS NOT NULL GROUP BY 1 ORDER BY 1`),
+    queryLocal(`SELECT LEAST(90,FLOOR(news_probability/10)*10)::int AS bucket,COUNT(*)::int AS samples,
+      COUNT(*) FILTER(WHERE news_impressions>=50 OR news_clicks>=2)::int AS successes,
+      ROUND(AVG(news_clicks))::int AS avg_clicks FROM prediction_outcomes WHERE observed_at IS NOT NULL GROUP BY 1 ORDER BY 1`),
+    queryLocal(`SELECT o.*,p.title FROM prediction_outcomes o LEFT JOIN teknoblog_content p ON regexp_replace(o.published_url,'/+$','')=regexp_replace(p.url,'/+$','') ORDER BY o.matched_at DESC LIMIT 40`),
+    loadIntelligenceModel(),
+    queryLocal(`SELECT decision,COUNT(*)::int AS count FROM editorial_feedback GROUP BY decision ORDER BY count DESC`)
+  ]);
+  return {
+    summary: summary.rows[0] || {}, discover_buckets: discoverBuckets.rows, news_buckets: newsBuckets.rows,
+    recent: recent.rows, feedback: feedback.rows,
+    model: model ? { model_version: model.model_version, trained_at: model.trained_at, sample_count: model.sample_count, metrics: model.metrics } : null
   };
 }
 
@@ -277,20 +344,24 @@ async function syncGsc() {
     FROM teknoblog_content t
     WHERE regexp_replace(p.url,'/+$','')=regexp_replace(t.url,'/+$','')
       AND (p.title IS NULL OR p.title='' OR p.published_at IS NULL)`);
+  const outcomes = await reconcilePredictionOutcomes();
   const trained = await trainIntelligenceModel();
-  return { urls: combined.size, snapshots: snapshots.length, history_days: historyDays, trained };
+  return { urls: combined.size, snapshots: snapshots.length, history_days: historyDays, outcomes, trained };
 }
 
 async function queueAction(body) {
   const url = String(body.url || '').trim();
   if (!url) throw new Error('url gerekli');
-  const result = await queryLocal(`INSERT INTO editorial_queue(candidate_id,title,url,source_name,image_url,status,priority,notes,assigned_to,updated_at)
-    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW()) ON CONFLICT(url) DO UPDATE SET
+  const result = await queryLocal(`INSERT INTO editorial_queue(candidate_id,title,url,source_name,image_url,status,priority,notes,assigned_to,published_url,updated_at)
+    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW()) ON CONFLICT(url) DO UPDATE SET
     title=EXCLUDED.title,source_name=EXCLUDED.source_name,image_url=EXCLUDED.image_url,status=EXCLUDED.status,
-    priority=EXCLUDED.priority,notes=EXCLUDED.notes,assigned_to=EXCLUDED.assigned_to,updated_at=NOW(),
+    priority=EXCLUDED.priority,notes=EXCLUDED.notes,assigned_to=EXCLUDED.assigned_to,published_url=COALESCE(EXCLUDED.published_url,editorial_queue.published_url),updated_at=NOW(),
     completed_at=CASE WHEN EXCLUDED.status='published' THEN NOW() ELSE editorial_queue.completed_at END RETURNING *`,
-  [body.candidate_id || null, body.title || 'Başlıksız', url, body.source_name || '', body.image_url || '', body.status || 'new', clamp(body.priority || 50), body.notes || '', body.assigned_to || '']);
-  await queryLocal(`INSERT INTO editorial_feedback(url,decision,notes) VALUES($1,$2,$3)`,[url,body.status||'new',body.notes||'']);
+  [body.candidate_id || null, body.title || 'Başlıksız', url, body.source_name || '', body.image_url || '', body.status || 'new', clamp(body.priority || 50), body.notes || '', body.assigned_to || '', body.published_url || null]);
+  const features = extractIntelligenceFeatures({ title: body.title, source_name: body.source_name, image_url: body.image_url }).features;
+  await queryLocal(`INSERT INTO editorial_feedback(url,title,source_name,decision,notes,features) VALUES($1,$2,$3,$4,$5,$6)`,
+    [url, body.title || 'Başlıksız', body.source_name || '', body.status || 'new', body.notes || '', JSON.stringify(features)]);
+  if (body.status === 'published') await reconcilePredictionOutcomes();
   return result.rows[0];
 }
 
@@ -356,6 +427,7 @@ export default async function handler(req, res) {
       if (section === 'queue') return json(res, 200, { items: await queueSection() });
       if (section === 'sources') return json(res, 200, { items: await sourceHealthSection() });
       if (section === 'performance') return json(res, 200, await performanceSection());
+      if (section === 'accuracy') return json(res, 200, await accuracySection());
       if (section === 'scoring-lab') return json(res, 200, await scoringLabSection());
       if (section === 'system') return json(res, 200, { disk: diskStatus(), alerts: (await queryLocal(`SELECT * FROM smart_alerts ORDER BY created_at DESC LIMIT 50`)).rows, images: (await queryLocal(`SELECT * FROM image_checks ORDER BY checked_at DESC LIMIT 50`)).rows });
       return json(res, 404, { error: 'Bölüm bulunamadı' });
