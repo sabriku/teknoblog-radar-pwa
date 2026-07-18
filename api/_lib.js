@@ -100,6 +100,11 @@ export async function initializeDatabase() {
   return true;
 }
 
+export async function queryLocal(text, params = []) {
+  await initializeDatabase();
+  return db().query(text, params);
+}
+
 export function databaseStatus() {
   return { configured: Boolean(databaseUrl()), ready: schemaReady, error: dbDisabledReason || null };
 }

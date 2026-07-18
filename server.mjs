@@ -21,6 +21,7 @@ const API_ROUTES = {
   '/api/health': './api/health.js',
   '/api/ingest': './api/ingest.js',
   '/api/instagram-radar': './api/instagram-radar.js',
+  '/api/intelligence': './api/intelligence.js',
   '/api/opportunity-feed-radar': './api/opportunity-feed-radar.js',
   '/api/opportunity-radar': './api/opportunity-radar.js',
   '/api/push-to-slack': './api/push-to-slack.js',

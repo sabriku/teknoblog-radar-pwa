@@ -148,6 +148,96 @@ CREATE TABLE IF NOT EXISTS source_blacklist_terms (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS editorial_queue (
+  id BIGSERIAL PRIMARY KEY,
+  candidate_id TEXT,
+  title TEXT NOT NULL,
+  url TEXT NOT NULL UNIQUE,
+  source_name TEXT,
+  image_url TEXT,
+  status TEXT NOT NULL DEFAULT 'new',
+  priority INTEGER NOT NULL DEFAULT 50,
+  notes TEXT,
+  assigned_to TEXT,
+  published_url TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  completed_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS source_health (
+  source_id TEXT PRIMARY KEY,
+  last_attempt_at TIMESTAMPTZ,
+  last_success_at TIMESTAMPTZ,
+  last_error TEXT,
+  consecutive_failures INTEGER NOT NULL DEFAULT 0,
+  fetched_count INTEGER NOT NULL DEFAULT 0,
+  image_count INTEGER NOT NULL DEFAULT 0,
+  avg_latency_ms INTEGER NOT NULL DEFAULT 0,
+  quality_score INTEGER NOT NULL DEFAULT 50,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS content_clusters (
+  id BIGSERIAL PRIMARY KEY,
+  cluster_key TEXT NOT NULL UNIQUE,
+  cluster_name TEXT NOT NULL,
+  source_count INTEGER NOT NULL DEFAULT 0,
+  item_count INTEGER NOT NULL DEFAULT 0,
+  momentum_score INTEGER NOT NULL DEFAULT 0,
+  confidence_score INTEGER NOT NULL DEFAULT 0,
+  first_seen_at TIMESTAMPTZ,
+  last_seen_at TIMESTAMPTZ,
+  payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS teknoblog_content (
+  id BIGSERIAL PRIMARY KEY,
+  wp_id BIGINT UNIQUE,
+  title TEXT NOT NULL,
+  url TEXT NOT NULL UNIQUE,
+  excerpt TEXT,
+  image_url TEXT,
+  published_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS published_performance (
+  id BIGSERIAL PRIMARY KEY,
+  url TEXT NOT NULL UNIQUE,
+  title TEXT,
+  published_at TIMESTAMPTZ,
+  discover_clicks DOUBLE PRECISION NOT NULL DEFAULT 0,
+  discover_impressions DOUBLE PRECISION NOT NULL DEFAULT 0,
+  discover_ctr DOUBLE PRECISION NOT NULL DEFAULT 0,
+  google_news_clicks DOUBLE PRECISION NOT NULL DEFAULT 0,
+  google_news_impressions DOUBLE PRECISION NOT NULL DEFAULT 0,
+  web_clicks DOUBLE PRECISION NOT NULL DEFAULT 0,
+  web_impressions DOUBLE PRECISION NOT NULL DEFAULT 0,
+  observed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  payload JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE TABLE IF NOT EXISTS smart_alerts (
+  id BIGSERIAL PRIMARY KEY,
+  alert_key TEXT NOT NULL UNIQUE,
+  alert_type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  status TEXT NOT NULL DEFAULT 'new',
+  sent_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS image_checks (
+  url TEXT PRIMARY KEY,
+  status TEXT NOT NULL,
+  content_type TEXT,
+  content_length BIGINT,
+  checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 ALTER TABLE sources ADD COLUMN IF NOT EXISTS description TEXT;
 ALTER TABLE sources ADD COLUMN IF NOT EXISTS rss_url TEXT;
 ALTER TABLE sources ADD COLUMN IF NOT EXISTS site_url TEXT;
@@ -204,3 +294,10 @@ CREATE INDEX IF NOT EXISTS idx_pipeline_runs_status ON pipeline_runs(status, cre
 CREATE INDEX IF NOT EXISTS idx_trend_signals_detected ON trend_signals(detected_at DESC);
 CREATE INDEX IF NOT EXISTS idx_trend_clusters_status_seen ON trend_clusters(status, last_seen_at DESC NULLS LAST);
 CREATE INDEX IF NOT EXISTS idx_trend_links_cluster ON trend_news_links(cluster_id);
+CREATE INDEX IF NOT EXISTS idx_editorial_queue_status ON editorial_queue(status, priority DESC, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_source_health_quality ON source_health(quality_score, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_content_clusters_momentum ON content_clusters(momentum_score DESC, last_seen_at DESC);
+CREATE INDEX IF NOT EXISTS idx_teknoblog_content_published ON teknoblog_content(published_at DESC);
+CREATE INDEX IF NOT EXISTS idx_teknoblog_content_search ON teknoblog_content USING GIN (to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(excerpt,'')));
+CREATE INDEX IF NOT EXISTS idx_performance_observed ON published_performance(observed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_smart_alerts_status ON smart_alerts(status, created_at DESC);

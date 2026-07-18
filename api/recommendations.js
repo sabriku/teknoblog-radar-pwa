@@ -231,6 +231,24 @@ function withRadarScores(item = {}) {
   const conversion = computedConversionScore(item, discover, traffic);
   const social = computedSocialScore(item, discover);
   const total = computedTotalScore(item, { discover, traffic, editorial, conversion, social });
+  const confidence = clampScore(
+    34 +
+    (item.source_name ? 12 : 0) +
+    (item.published_at ? 14 : 0) +
+    (item.summary || item.description || item.excerpt ? 14 : 0) +
+    (item.image_url || item.image || item.thumbnail ? 12 : 0) +
+    (hasTechSignal(item) ? 10 : 0)
+  );
+  const reasons = [];
+  const hours = ageHours(item);
+  if (hours <= 3) reasons.push({ signal: 'freshness', impact: 18, label: 'Son 3 saat içinde yayımlandı' });
+  else if (hours <= 12) reasons.push({ signal: 'freshness', impact: 12, label: 'Gün içi taze haber' });
+  else if (hours <= 24) reasons.push({ signal: 'freshness', impact: 7, label: 'Son 24 saat içinde yayımlandı' });
+  if (hasTechSignal(item)) reasons.push({ signal: 'tech_relevance', impact: 10, label: 'Teknoblog teknoloji odağıyla uyumlu' });
+  if (DISCOVER_PATTERNS.some((pattern) => pattern.test(textOf(item)))) reasons.push({ signal: 'discover_intent', impact: 12, label: 'Discover ilgisi taşıyan konu veya marka sinyali' });
+  if (TRAFFIC_PATTERNS.some((pattern) => pattern.test(textOf(item)))) reasons.push({ signal: 'search_intent', impact: 10, label: 'Arama ve trafik niyeti mevcut' });
+  if (item.image_url || item.image || item.thumbnail) reasons.push({ signal: 'image', impact: 6, label: 'Haber görseli mevcut' });
+  if (isHardNoise(item)) reasons.push({ signal: 'noise', impact: -40, label: 'Gürültü filtresi riski' });
   return {
     ...item,
     ...originalScores,
@@ -240,6 +258,8 @@ function withRadarScores(item = {}) {
     radar_conversion_score: conversion,
     radar_social_score: social,
     radar_total_score: total,
+    score_confidence: confidence,
+    score_reasons: reasons,
     discover_score: discover,
     traffic_score: traffic,
     editorial_score: editorial,

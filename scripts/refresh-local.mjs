@@ -20,6 +20,17 @@ try {
   }
 
   console.log(JSON.stringify(data));
+  for (const action of ['sync_teknoblog', 'run_alerts', 'sync_gsc']) {
+    try {
+      const followup = await fetch(`${baseUrl}/api/intelligence?token=${encodeURIComponent(token)}`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action }), signal: controller.signal
+      });
+      const followupData = await followup.json().catch(() => ({}));
+      console.log(JSON.stringify({ action, ok: followup.ok, ...followupData }));
+    } catch (error) {
+      console.log(JSON.stringify({ action, ok: false, skipped: true, error: error?.message || String(error) }));
+    }
+  }
 } finally {
   clearTimeout(timer);
 }

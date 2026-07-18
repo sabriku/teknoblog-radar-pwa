@@ -12,6 +12,7 @@
   "scripts": {
     "check": "node --check server.mjs && node --check api/_lib.js",
     "smoke": "node scripts/smoke-local.mjs",
-    "refresh": "node scripts/refresh-local.mjs"
+    "refresh": "node scripts/refresh-local.mjs",
+    "maintenance": "node scripts/maintenance-local.mjs"
   }
 }

@@ -5,6 +5,8 @@ const checks = [
   ['/api/health', 200],
   ['/api/sources', 200],
   ['/api/recommendations?sort=discover_score', 200],
+  ['/api/intelligence?section=summary', 200],
+  ['/api/intelligence?section=scoring-lab', 200],
   ['/api/trend-overview?window=24h&limit=5', 200],
   ['/api/push-to-slack', 200]
 ];

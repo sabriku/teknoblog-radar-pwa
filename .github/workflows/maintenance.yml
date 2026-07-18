@@ -1,0 +1,22 @@
+name: Maintain Teknoblog Radar
+
+on:
+  schedule:
+    - cron: '35 1 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: teknoblog-radar-maintenance
+  cancel-in-progress: false
+
+jobs:
+  maintain:
+    runs-on: self-hosted
+    steps:
+      - name: Back up local PostgreSQL
+        run: sudo /usr/local/bin/radar-db-backup.sh
+      - name: Retention and image checks
+        working-directory: /var/www/teknoblog-radar
+        env:
+          RADAR_BASE_URL: http://127.0.0.1:3000
+        run: node --import dotenv/config scripts/maintenance-local.mjs

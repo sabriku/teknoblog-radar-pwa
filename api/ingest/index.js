@@ -1,4 +1,4 @@
-import { json, getSupabaseAdmin, parseFeedItems, hashValue, chooseFeedUrl, safeText, nowIso } from '../_lib.js';
+import { json, getSupabaseAdmin, parseFeedItems, hashValue, chooseFeedUrl, safeText, nowIso, queryLocal } from '../_lib.js';
 
 const PRIORITY_BOOSTS = {
   'engadget': 35,
@@ -45,6 +45,18 @@ function normalizeImageUrl(url = '', baseUrl = '') {
     return clean;
   }
 }
+
+async function recordSourceHealth(source, { ok, error = '', fetched = 0, images = 0, latency = 0 }) {
+  const quality = clampHealth((ok ? 45 : 10) + Math.min(25, fetched * 2) + Math.min(15, images * 3) + (latency < 3000 ? 10 : latency < 6000 ? 5 : 0));
+  await queryLocal(`INSERT INTO source_health(source_id,last_attempt_at,last_success_at,last_error,consecutive_failures,fetched_count,image_count,avg_latency_ms,quality_score,updated_at)
+    VALUES($1,NOW(),CASE WHEN $2 THEN NOW() ELSE NULL END,$3,CASE WHEN $2 THEN 0 ELSE 1 END,$4,$5,$6,$7,NOW())
+    ON CONFLICT(source_id) DO UPDATE SET last_attempt_at=NOW(),last_success_at=CASE WHEN $2 THEN NOW() ELSE source_health.last_success_at END,
+    last_error=$3,consecutive_failures=CASE WHEN $2 THEN 0 ELSE source_health.consecutive_failures+1 END,
+    fetched_count=$4,image_count=$5,avg_latency_ms=CASE WHEN source_health.avg_latency_ms=0 THEN $6 ELSE ROUND((source_health.avg_latency_ms+$6)/2.0)::int END,
+    quality_score=$7,updated_at=NOW()`, [source.id, ok, error, fetched, images, latency, quality]);
+}
+
+function clampHealth(value) { return Math.max(0, Math.min(100, Math.round(Number(value) || 0))); }
 
 async function fetchOgImage(url = '') {
   if (!url) return '';
@@ -108,6 +120,7 @@ export default async function handler(req, res) {
     let processed_sources = 0;
 
     for (const source of sources || []) {
+      const sourceStartedAt = Date.now();
       if (Date.now() - startedAt > hardStopMs) {
         debug.push({ source: source.name, status: 'stopped', reason: 'Time budget reached' });
         break;
@@ -117,6 +130,7 @@ export default async function handler(req, res) {
 
       if (!feedUrl) {
         debug.push({ source: source.name, status: 'skipped', reason: 'No feed URL' });
+        await recordSourceHealth(source, { ok: false, error: 'No feed URL', latency: Date.now() - sourceStartedAt });
         continue;
       }
 
@@ -137,6 +151,7 @@ export default async function handler(req, res) {
 
         if (!response.ok) {
           debug.push({ source: source.name, status: 'http_error', feedUrl, code: response.status });
+          await recordSourceHealth(source, { ok: false, error: `HTTP ${response.status}`, latency: Date.now() - sourceStartedAt });
           continue;
         }
 
@@ -152,6 +167,7 @@ export default async function handler(req, res) {
         let sampleError = '';
 
         debug.push({ source: source.name, status: 'fetched', feedUrl, count: items.length });
+        const imageCount = items.filter((item) => item.image_url || item.image).length;
 
         for (const item of items) {
           const title = safeText(item.title);
@@ -243,6 +259,7 @@ export default async function handler(req, res) {
           selectErrors,
           error: sampleError || ''
         });
+        await recordSourceHealth(source, { ok: true, fetched: items.length, images: imageCount, latency: Date.now() - sourceStartedAt });
       } catch (error) {
         debug.push({
           source: source.name,
@@ -250,6 +267,7 @@ export default async function handler(req, res) {
           feedUrl,
           error: error?.message || String(error)
         });
+        await recordSourceHealth(source, { ok: false, error: error?.message || String(error), latency: Date.now() - sourceStartedAt });
       }
     }
 

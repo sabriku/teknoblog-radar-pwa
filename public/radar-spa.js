@@ -9,6 +9,7 @@
     'instagram',
     'decision',
     'editorial',
+    'intelligence',
     'ops'
   ]);
 
@@ -21,6 +22,7 @@
     instagram: 'Instagram',
     decision: 'Trend/Karar',
     editorial: 'Editoryal',
+    intelligence: 'Radar Intelligence',
     ops: 'Operasyon'
   };
 
@@ -33,6 +35,7 @@
     instagram: '📸',
     decision: '⚡',
     editorial: '🧭',
+    intelligence: '🧠',
     ops: '🛠️'
   };
 
@@ -90,6 +93,7 @@
       instagram: 'Instagram karusel ve sosyal medya potansiyeli yüksek içerikler.',
       decision: 'Trend kümeleri ve haberleştirme kararı katmanı.',
       editorial: 'Günlük yazılacak haberler ve Discover adayları.',
+      intelligence: 'Kümeler, kapsam boşlukları, iş akışı, gerçek performans ve sistem sağlığı.',
       ops: 'Operasyon, sağlık ve bakım kontrolleri.'
     };
     return map[tab] || 'Teknoblog Radar paneli.';
