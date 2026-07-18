@@ -160,10 +160,34 @@ async function queueSection() {
 }
 
 async function performanceSection() {
-  const rows = (await queryLocal(`SELECT * FROM published_performance ORDER BY observed_at DESC LIMIT 300`)).rows;
+  const stored = (await queryLocal(`SELECT * FROM published_performance
+    WHERE published_at>=NOW()-INTERVAL '14 days'
+    ORDER BY published_at DESC LIMIT 500`)).rows;
+  const ranked = stored.map((item) => {
+    const ageDays = Math.max(0, (Date.now() - new Date(item.published_at).getTime()) / 86400000);
+    const discoverStrength = Math.log1p(Number(item.discover_clicks) || 0) * 22 + Math.log1p(Number(item.discover_impressions) || 0) * 5 + (Number(item.discover_ctr) || 0) * 20;
+    const newsStrength = Math.log1p(Number(item.google_news_clicks) || 0) * 20 + Math.log1p(Number(item.google_news_impressions) || 0) * 4;
+    const webStrength = Math.log1p(Number(item.web_clicks) || 0) * 8 + Math.log1p(Number(item.web_impressions) || 0) * 1.5;
+    const priority = discoverStrength * 0.58 + newsStrength * 0.32 + webStrength * 0.10 + Math.max(0, 1 - ageDays / 14) * 14;
+    return { ...item, age_days: Math.round(ageDays * 10) / 10, discover_strength: Math.round(discoverStrength), news_strength: Math.round(newsStrength), performance_priority: Math.min(100, Math.round(priority)) };
+  });
+  const signaled = ranked.filter((item) => Number(item.discover_impressions) > 0 || Number(item.discover_clicks) > 0 || Number(item.google_news_impressions) > 0 || Number(item.google_news_clicks) > 0);
+  const items = (signaled.length ? signaled : ranked).sort((a, b) => b.performance_priority - a.performance_priority || new Date(b.published_at) - new Date(a.published_at)).slice(0, 100);
+  const discoverItems = ranked.filter((item) => Number(item.discover_impressions) > 0 || Number(item.discover_clicks) > 0).sort((a, b) => b.discover_strength - a.discover_strength || new Date(b.published_at) - new Date(a.published_at)).slice(0, 30);
+  const newsItems = ranked.filter((item) => Number(item.google_news_impressions) > 0 || Number(item.google_news_clicks) > 0).sort((a, b) => b.news_strength - a.news_strength || new Date(b.published_at) - new Date(a.published_at)).slice(0, 30);
   const config = await getGoogleConfig();
   const configured = Boolean(config.site_url && config.client_id && config.client_secret && config.refresh_token);
-  return { configured, items: rows, note: configured ? null : 'Google Search Console bağlantısını bu ekrandan güvenli biçimde kurabilirsiniz.' };
+  return {
+    configured, items, discover_items: discoverItems, news_items: newsItems,
+    window_days: 14,
+    totals: {
+      discover_clicks: ranked.reduce((sum, item) => sum + (Number(item.discover_clicks) || 0), 0),
+      discover_impressions: ranked.reduce((sum, item) => sum + (Number(item.discover_impressions) || 0), 0),
+      news_clicks: ranked.reduce((sum, item) => sum + (Number(item.google_news_clicks) || 0), 0),
+      news_impressions: ranked.reduce((sum, item) => sum + (Number(item.google_news_impressions) || 0), 0)
+    },
+    note: configured ? null : 'Google Search Console bağlantısını bu ekrandan güvenli biçimde kurabilirsiniz.'
+  };
 }
 
 async function scoringLabSection() {
@@ -233,7 +257,9 @@ async function syncGsc() {
     [item.url, item.discover?.clicks || 0, item.discover?.impressions || 0, item.discover?.ctr || 0, item.googleNews?.clicks || 0, item.googleNews?.impressions || 0, item.web?.clicks || 0, item.web?.impressions || 0, JSON.stringify(item)]);
   }
   await queryLocal(`UPDATE published_performance p SET title=t.title,published_at=t.published_at
-    FROM teknoblog_content t WHERE p.url=t.url AND (p.title IS NULL OR p.title='')`);
+    FROM teknoblog_content t
+    WHERE regexp_replace(p.url,'/+$','')=regexp_replace(t.url,'/+$','')
+      AND (p.title IS NULL OR p.title='' OR p.published_at IS NULL)`);
   return combined.size;
 }
 
