@@ -327,7 +327,7 @@ class PgQueryBuilder {
              OR ($3::text IS NOT NULL AND url_hash=$3)
           ORDER BY created_at DESC LIMIT 1`, [row.id || null, row.content_hash || null, row.url_hash || null]);
         if (!existing.rows[0]) throw new Error('Çakışan RSS kaydı bulunamadı.');
-        const mutable = cols.filter((c) => !['id', 'created_at', 'updated_at'].includes(c));
+        const mutable = cols.filter((c) => !['id', 'content_hash', 'url_hash', 'created_at', 'updated_at'].includes(c));
         const updateValues = mutable.map((c) => row[c]);
         const updateSql = mutable.map((c, index) => {
           if (['image_url', 'thumbnail', 'image', 'summary', 'description', 'excerpt'].includes(c)) {
@@ -356,7 +356,7 @@ class PgQueryBuilder {
              OR ($3::text IS NOT NULL AND raw_feed_item_id=$3)
           ORDER BY created_at DESC LIMIT 1`, [row.id || null, row.candidate_hash || null, row.raw_feed_item_id || null]);
         if (!existing.rows[0]) throw new Error('Çakışan aday kaydı bulunamadı.');
-        const mutable = cols.filter((c) => !['id', 'created_at', 'updated_at'].includes(c));
+        const mutable = cols.filter((c) => !['id', 'candidate_hash', 'raw_feed_item_id', 'created_at', 'updated_at'].includes(c));
         const updateValues = mutable.map((c) => row[c]);
         const updateSql = mutable.map((c, index) => `${c}=$${index + 1}`).join(',');
         const updated = await db().query(`UPDATE topic_candidates SET ${updateSql},updated_at=NOW()
