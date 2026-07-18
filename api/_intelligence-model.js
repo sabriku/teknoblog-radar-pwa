@@ -53,10 +53,11 @@ function buildChannel(samples,channel) {
 }
 
 function evaluateChannel(channel,samples,positiveKey) {
-  if(!samples.length)return{accuracy:0,precision:0,recall:0,brier:0,samples:0};
-  let correct=0,tp=0,fp=0,fn=0,brier=0;
-  for(const sample of samples){const probability=channelPrediction(channel,sample.features,channel.global_rate*100).probability;const predicted=probability>=.5;const actual=Boolean(sample[positiveKey]);if(predicted===actual)correct++;if(predicted&&actual)tp++;if(predicted&&!actual)fp++;if(!predicted&&actual)fn++;brier+=(probability-(actual?1:0))**2}
-  return{accuracy:Math.round(correct/samples.length*100),precision:Math.round(tp/Math.max(1,tp+fp)*100),recall:Math.round(tp/Math.max(1,tp+fn)*100),brier:Math.round(brier/samples.length*1000)/1000,samples:samples.length};
+  if(!samples.length)return{accuracy:0,balanced_accuracy:0,f1:0,precision:0,recall:0,brier:0,samples:0,threshold:0};
+  let correct=0,tp=0,fp=0,fn=0,tn=0,brier=0;const threshold=Math.max(.15,Math.min(.5,channel.global_rate*1.6));
+  for(const sample of samples){const probability=channelPrediction(channel,sample.features,channel.global_rate*100).probability;const predicted=probability>=threshold;const actual=Boolean(sample[positiveKey]);if(predicted===actual)correct++;if(predicted&&actual)tp++;if(predicted&&!actual)fp++;if(!predicted&&actual)fn++;if(!predicted&&!actual)tn++;brier+=(probability-(actual?1:0))**2}
+  const precision=tp/Math.max(1,tp+fp);const recall=tp/Math.max(1,tp+fn);const specificity=tn/Math.max(1,tn+fp);
+  return{accuracy:Math.round(correct/samples.length*100),balanced_accuracy:Math.round((recall+specificity)/2*100),f1:Math.round((2*precision*recall/Math.max(.0001,precision+recall))*100),precision:Math.round(precision*100),recall:Math.round(recall*100),brier:Math.round(brier/samples.length*1000)/1000,samples:samples.length,threshold:Math.round(threshold*100)};
 }
 
 export async function trainIntelligenceModel() {
