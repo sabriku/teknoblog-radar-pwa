@@ -36,3 +36,9 @@ WHERE NOT EXISTS (
   WHERE lower(coalesce(existing.rss_url, existing.feed_url, '')) = lower(s.feed_url)
      OR lower(coalesce(existing.site_url, '')) = lower(s.site_url)
 );
+
+UPDATE sources SET
+  feed_url='https://news.google.com/rss/search?q=site%3Avideocardz.com&hl=en-US&gl=US&ceid=US%3Aen',
+  rss_url='https://news.google.com/rss/search?q=site%3Avideocardz.com&hl=en-US&gl=US&ceid=US%3Aen',
+  updated_at=NOW()
+WHERE id='videocardz';

@@ -253,11 +253,52 @@ async function accuracySection() {
     loadIntelligenceModel(),
     queryLocal(`SELECT decision,COUNT(*)::int AS count FROM editorial_feedback GROUP BY decision ORDER BY count DESC`)
   ]);
+  const challenger = (await queryLocal(`SELECT model_version,trained_at,sample_count,metrics FROM intelligence_models WHERE status='challenger' ORDER BY trained_at DESC LIMIT 1`)).rows[0] || null;
   return {
     summary: summary.rows[0] || {}, discover_buckets: discoverBuckets.rows, news_buckets: newsBuckets.rows,
     recent: recent.rows, feedback: feedback.rows,
-    model: model ? { model_version: model.model_version, trained_at: model.trained_at, sample_count: model.sample_count, metrics: model.metrics } : null
+    model: model ? { model_version: model.model_version, trained_at: model.trained_at, sample_count: model.sample_count, metrics: model.metrics } : null,
+    challenger
   };
+}
+
+async function weeklyReportSection() {
+  const weekStart = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
+  const [channels, topPosts, outcomes, sources, missed, model] = await Promise.all([
+    queryLocal(`SELECT search_type,SUM(clicks)::int AS clicks,SUM(impressions)::int AS impressions FROM performance_snapshots WHERE snapshot_date>=CURRENT_DATE-6 GROUP BY search_type`),
+    queryLocal(`SELECT title,url,published_at,discover_clicks,discover_impressions,google_news_clicks,google_news_impressions FROM published_performance WHERE published_at>=NOW()-INTERVAL '7 days' ORDER BY discover_clicks+google_news_clicks DESC LIMIT 20`),
+    queryLocal(`SELECT COUNT(*)::int AS matched,COUNT(*) FILTER(WHERE observed_at IS NOT NULL)::int AS observed,ROUND(AVG(discover_clicks+news_clicks))::int AS actual_clicks,ROUND(AVG((expected_clicks_low+expected_clicks_high)/2.0))::int AS expected_clicks FROM prediction_outcomes WHERE matched_at>=NOW()-INTERVAL '7 days'`),
+    sourceHealthSection(),
+    queryLocal(`SELECT title,url,source_name,discover_probability,news_probability FROM content_predictions p WHERE predicted_at>=NOW()-INTERVAL '7 days' AND discover_probability>=70 AND NOT EXISTS(SELECT 1 FROM prediction_outcomes o WHERE o.prediction_url=p.url) ORDER BY discover_probability DESC LIMIT 20`),
+    loadIntelligenceModel()
+  ]);
+  const words = new Map();
+  for (const post of topPosts.rows) for (const word of tokens(post.title).filter((item) => item.length >= 4)) words.set(word, (words.get(word) || 0) + Number(post.discover_clicks || 0) + Number(post.google_news_clicks || 0) + 1);
+  const report = {
+    week_start: weekStart, channels: channels.rows, top_posts: topPosts.rows, outcomes: outcomes.rows[0] || {},
+    best_sources: sources.filter((item) => Number(item.quality_score) >= 60).sort((a, b) => b.quality_score - a.quality_score).slice(0, 10),
+    weak_sources: sources.filter((item) => Number(item.quality_score) < 45).slice(0, 10), missed_opportunities: missed.rows,
+    winning_topics: [...words.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([topic, score]) => ({ topic, score })),
+    model: model ? { model_version: model.model_version, metrics: model.metrics } : null, generated_at: nowIso()
+  };
+  await queryLocal(`INSERT INTO weekly_intelligence_reports(week_start,report,updated_at) VALUES($1,$2,NOW()) ON CONFLICT(week_start) DO UPDATE SET report=EXCLUDED.report,updated_at=NOW()`, [weekStart, JSON.stringify(report)]);
+  return report;
+}
+
+async function recalculateSourceQuality() {
+  await queryLocal(`WITH stats AS (
+    SELECT s.id,COUNT(r.id) FILTER(WHERE r.created_at>=NOW()-INTERVAL '7 days')::float AS items,
+      COUNT(r.id) FILTER(WHERE r.created_at>=NOW()-INTERVAL '7 days' AND r.image_url IS NOT NULL AND r.image_url<>'')::float AS images,
+      COALESCE(h.consecutive_failures,0) AS failures,COALESCE(h.last_status,'unknown') AS last_status
+    FROM sources s LEFT JOIN raw_feed_items r ON r.source_id=s.id LEFT JOIN source_health h ON h.source_id=s.id GROUP BY s.id,h.source_id
+  ), quality AS (
+    SELECT id,GREATEST(15,LEAST(98,ROUND(35+LEAST(35,items*2)+CASE WHEN items>0 THEN images/items*18 ELSE 0 END-failures*6-CASE WHEN last_status='blocked' THEN 15 ELSE 0 END)))::int AS score FROM stats
+  ) UPDATE source_health h SET quality_score=q.score,updated_at=NOW() FROM quality q WHERE h.source_id=q.id`);
+  await queryLocal(`UPDATE sources s SET
+    trust_score=GREATEST(30,LEAST(100,ROUND(s.trust_score*.8+h.quality_score*.2)))::int,
+    priority_weight=GREATEST(35,LEAST(100,ROUND(s.priority_weight*.9+h.quality_score*.1)))::int,
+    updated_at=NOW() FROM source_health h WHERE h.source_id=s.id`);
+  return { updated: (await queryLocal(`SELECT COUNT(*)::int AS count FROM source_health`)).rows[0]?.count || 0 };
 }
 
 async function scoringLabSection() {
@@ -368,9 +409,13 @@ async function queueAction(body) {
 async function runAlerts() {
   const clusters = await clustersSection();
   const stale = (await queryLocal(`SELECT * FROM editorial_queue WHERE status NOT IN ('published','skipped') AND created_at<NOW()-INTERVAL '2 hours' ORDER BY priority DESC LIMIT 10`)).rows;
+  const drift = (await queryLocal(`SELECT COUNT(*)::int AS observed,AVG(discover_probability)/100.0 AS predicted,
+    AVG(CASE WHEN discover_impressions>=100 OR discover_clicks>=3 THEN 1 ELSE 0 END) AS actual FROM prediction_outcomes WHERE observed_at>=NOW()-INTERVAL '30 days'`)).rows[0] || {};
+  const driftGap = Math.abs(Number(drift.predicted || 0) - Number(drift.actual || 0));
   const alerts = [
     ...clusters.filter((item) => item.momentum_score >= 75 && item.source_count >= 2).slice(0, 8).map((item) => ({ type: 'momentum', key: `momentum:${item.cluster_key}:${new Date().toISOString().slice(0,13)}`, title: item.cluster_name, payload: item })),
-    ...stale.map((item) => ({ type: 'queue_stale', key: `queue:${item.id}:${new Date().toISOString().slice(0,10)}`, title: item.title, payload: item }))
+    ...stale.map((item) => ({ type: 'queue_stale', key: `queue:${item.id}:${new Date().toISOString().slice(0,10)}`, title: item.title, payload: item })),
+    ...(Number(drift.observed || 0) >= 20 && driftGap >= .2 ? [{ type: 'model_drift', key: `drift:${new Date().toISOString().slice(0,10)}`, title: `Discover tahmin sapması %${Math.round(driftGap * 100)}`, payload: drift }] : [])
   ];
   let created = 0;
   const newAlerts = [];
@@ -396,6 +441,8 @@ async function maintenance() {
   result.candidates = (await queryLocal(`DELETE FROM topic_candidates WHERE created_at<NOW()-INTERVAL '45 days' RETURNING id`)).rowCount;
   result.pipeline_runs = (await queryLocal(`DELETE FROM pipeline_runs WHERE created_at<NOW()-INTERVAL '30 days' AND status<>'running' RETURNING id`)).rowCount;
   result.alerts = (await queryLocal(`DELETE FROM smart_alerts WHERE created_at<NOW()-INTERVAL '30 days' RETURNING id`)).rowCount;
+  result.source_quality = await recalculateSourceQuality();
+  result.weekly_report = await weeklyReportSection();
   result.disk = diskStatus();
   return result;
 }
@@ -428,6 +475,7 @@ export default async function handler(req, res) {
       if (section === 'sources') return json(res, 200, { items: await sourceHealthSection() });
       if (section === 'performance') return json(res, 200, await performanceSection());
       if (section === 'accuracy') return json(res, 200, await accuracySection());
+      if (section === 'weekly-report') return json(res, 200, await weeklyReportSection());
       if (section === 'scoring-lab') return json(res, 200, await scoringLabSection());
       if (section === 'system') return json(res, 200, { disk: diskStatus(), alerts: (await queryLocal(`SELECT * FROM smart_alerts ORDER BY created_at DESC LIMIT 50`)).rows, images: (await queryLocal(`SELECT * FROM image_checks ORDER BY checked_at DESC LIMIT 50`)).rows });
       return json(res, 404, { error: 'Bölüm bulunamadı' });

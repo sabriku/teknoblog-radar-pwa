@@ -321,6 +321,13 @@ CREATE TABLE IF NOT EXISTS prediction_outcomes (
   UNIQUE(prediction_url,published_url)
 );
 
+CREATE TABLE IF NOT EXISTS weekly_intelligence_reports (
+  week_start DATE PRIMARY KEY,
+  report JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 ALTER TABLE sources ADD COLUMN IF NOT EXISTS description TEXT;
 ALTER TABLE sources ADD COLUMN IF NOT EXISTS rss_url TEXT;
 ALTER TABLE sources ADD COLUMN IF NOT EXISTS site_url TEXT;

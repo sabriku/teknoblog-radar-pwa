@@ -40,6 +40,15 @@ export function extractIntelligenceFeatures(item = {}) {
   for (const [key, pattern] of Object.entries(TYPE_GROUPS)) if (pattern.test(body)) { features.push(`type:${key}`); labels[`type:${key}`] = key; types.push(key); }
   for (const entity of entities.slice(0, 3)) for (const type of types.slice(0, 2)) { features.push(`topic:${entity}+${type}`); labels[`topic:${entity}+${type}`] = `${entity} · ${type}`; }
   if (item.image_url || item.image || item.thumbnail) { features.push('quality:image'); labels['quality:image'] = 'görsel var'; }
+  const sourceKey = clean(item.source_name || '').replace(/\s+/g, '_').slice(0, 40);
+  if (sourceKey) { features.push(`source:${sourceKey}`); labels[`source:${sourceKey}`] = item.source_name; }
+  const published = item.published_at ? new Date(item.published_at) : null;
+  if (published && Number.isFinite(published.getTime())) {
+    const hour = published.getUTCHours();
+    const timeKey = hour < 6 ? 'time:night' : hour < 10 ? 'time:morning' : hour < 15 ? 'time:day' : 'time:evening';
+    features.push(timeKey); labels[timeKey] = timeKey.replace('time:', 'yayın zamanı ');
+    const dayKey = `weekday:${published.getUTCDay()}`; features.push(dayKey); labels[dayKey] = 'yayın günü';
+  }
   const wordCount = title.split(' ').filter(Boolean).length;
   const lengthKey = wordCount <= 6 ? 'format:short_title' : wordCount >= 13 ? 'format:long_title' : 'format:balanced_title';
   features.push(lengthKey); labels[lengthKey] = lengthKey === 'format:balanced_title' ? 'dengeli başlık' : lengthKey === 'format:short_title' ? 'kısa başlık' : 'uzun başlık';
@@ -135,6 +144,7 @@ export function modelInfluence(modelRow, channel, fallback = .25) {
 }
 
 export async function trainIntelligenceModel() {
+  const previousActive = await loadIntelligenceModel();
   const result = await queryLocal(`SELECT t.url,t.title,t.excerpt,t.image_url,t.published_at,
     COALESCE(SUM(s.clicks) FILTER(WHERE s.search_type='discover'),0)::float AS discover_clicks,
     COALESCE(SUM(s.impressions) FILTER(WHERE s.search_type='discover'),0)::float AS discover_impressions,
@@ -179,9 +189,13 @@ export async function trainIntelligenceModel() {
   discover.threshold = evaluation.discover.threshold / 100;
   news.threshold = evaluation.news.threshold / 100;
   if (editorial) editorial.threshold = evaluation.editorial.threshold / 100;
-  const model = { discover, news, editorial, clicks: { discover_avg: avg(positiveDiscover, 'discover_clicks'), news_avg: avg(positiveNews, 'news_clicks') } };
+  const observedOutcomes = (await queryLocal(`SELECT discover_clicks+news_clicks AS actual,(expected_clicks_low+expected_clicks_high)/2.0 AS expected
+    FROM prediction_outcomes WHERE observed_at IS NOT NULL AND expected_clicks_high>0 ORDER BY observed_at DESC LIMIT 500`)).rows;
+  const actualTotal = observedOutcomes.reduce((sum, row) => sum + Number(row.actual || 0), 0);
+  const expectedTotal = observedOutcomes.reduce((sum, row) => sum + Number(row.expected || 0), 0);
+  const clickCalibration = observedOutcomes.length >= 15 && expectedTotal > 0 ? clamp(actualTotal / expectedTotal, .35, 2.5) : 1;
+  const model = { discover, news, editorial, clicks: { discover_avg: avg(positiveDiscover, 'discover_clicks'), news_avg: avg(positiveNews, 'news_clicks'), calibration: clickCalibration, calibration_samples: observedOutcomes.length } };
   const version = `intel-${new Date().toISOString().slice(0, 10)}-${Date.now().toString(36)}`;
-  await queryLocal(`UPDATE intelligence_models SET status='retired' WHERE status='active'`);
   const metrics = {
     discover_positive: positiveDiscover.length,
     news_positive: positiveNews.length,
@@ -191,9 +205,13 @@ export async function trainIntelligenceModel() {
     feature_count_editorial: Object.keys(editorial?.features || {}).length,
     evaluation
   };
+  const scoreOf = (row) => Number(row?.metrics?.evaluation?.discover?.balanced_accuracy || 0) * .62 + Number(row?.metrics?.evaluation?.news?.balanced_accuracy || 0) * .38;
+  const candidateScore = scoreOf({ metrics }); const activeScore = scoreOf(previousActive);
+  const promoted = !previousActive || candidateScore >= activeScore - 1.5;
+  if (promoted) await queryLocal(`UPDATE intelligence_models SET status='retired' WHERE status='active'`);
   await queryLocal(`INSERT INTO intelligence_models(model_version,status,sample_count,discover_positive_rate,news_positive_rate,metrics,model)
-    VALUES($1,'active',$2,$3,$4,$5,$6)`, [version, samples.length, discover.global_rate, news.global_rate, JSON.stringify(metrics), JSON.stringify(model)]);
-  return { model_version: version, sample_count: samples.length, discover_positive_rate: discover.global_rate, news_positive_rate: news.global_rate, metrics };
+    VALUES($1,$2,$3,$4,$5,$6,$7)`, [version, promoted ? 'active' : 'challenger', samples.length, discover.global_rate, news.global_rate, JSON.stringify({ ...metrics, comparison: { candidate_score: candidateScore, active_score: activeScore, promoted }, click_calibration: clickCalibration }), JSON.stringify(model)]);
+  return { model_version: version, status: promoted ? 'active' : 'challenger', promoted, sample_count: samples.length, discover_positive_rate: discover.global_rate, news_positive_rate: news.global_rate, metrics };
 }
 
 export async function loadIntelligenceModel() {
@@ -215,7 +233,7 @@ export function predictWithModel(item = {}, modelRow = null, heuristics = {}) {
     ...news.evidence.map((row) => ({ channel: 'news', label: labels[row.feature] || row.feature, impact: Math.round(row.effect * 10) })),
     ...(editorial?.evidence || []).map((row) => ({ channel: 'editorial', label: labels[row.feature] || row.feature, impact: Math.round(row.effect * 9) }))
   ].sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact)).slice(0, 7);
-  const expected = Math.max(0, Number(model.clicks?.discover_avg || 0) * discover.probability + Number(model.clicks?.news_avg || 0) * news.probability);
+  const expected = Math.max(0, (Number(model.clicks?.discover_avg || 0) * discover.probability + Number(model.clicks?.news_avg || 0) * news.probability) * Number(model.clicks?.calibration || 1));
   return {
     model_version: modelRow?.model_version || 'heuristic-fallback',
     discover_probability: Math.round(discover.probability * 100),

@@ -8,6 +8,7 @@ const checks = [
   ['/api/intelligence?section=summary', 200],
   ['/api/intelligence?section=scoring-lab', 200],
   ['/api/intelligence?section=accuracy', 200],
+  ['/api/intelligence?section=weekly-report', 200],
   ['/api/google-auth', 200],
   ['/api/trend-overview?window=24h&limit=5', 200],
   ['/api/push-to-slack', 200]
