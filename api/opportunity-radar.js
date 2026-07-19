@@ -15,11 +15,18 @@ const CIMRI_PAGES = [
 ];
 
 const EPEY_PAGES = [
+  ['MediaMarkt', 'https://www.epey.com/site/media-markt/'],
+  ['Teknosa', 'https://www.epey.com/site/teknosa/'],
+  ['Hepsiburada', 'https://www.epey.com/site/hepsiburada/'],
+  ['Amazon.com.tr', 'https://www.epey.com/site/amazon/'],
   ['Samsung Shop', 'https://www.epey.com/site/samsung/'],
   ['Huawei Online Mağaza', 'https://www.epey.com/site/huawei/']
 ];
 
 const AKAKCE_STORE_PAGES = [
+  ['MediaMarkt', 'https://www.akakce.com/magaza/mediamarkt'],
+  ['Hepsiburada', 'https://www.akakce.com/magaza/hepsiburada'],
+  ['Amazon.com.tr', 'https://www.akakce.com/magaza/amazon'],
   ['Samsung Shop', 'https://www.akakce.com/magaza/samsung'],
   ['Huawei Online Mağaza', 'https://www.akakce.com/magaza/huawei']
 ];
