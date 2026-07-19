@@ -1,6 +1,6 @@
 (() => {
   const STORAGE_KEY = 'tb_google_news_open';
-  const REFRESH_MS = 60 * 60 * 1000;
+  const REFRESH_MS = 15 * 60 * 1000;
   const MAX_LAYOUT_TRIES = 80;
 
   const state = {
@@ -8,6 +8,9 @@
     items: [],
     loading: false,
     refreshedAt: null,
+    nextRefreshAt: null,
+    sourceUrl: 'https://news.google.com/topics/CAAqKAgKIiJDQkFTRXdvSkwyMHZNR1ptZHpWbUVnSjBjaG9DVkZJb0FBUAE?hl=tr&gl=TR&ceid=TR:tr',
+    stale: false,
     error: ''
   };
 
@@ -52,11 +55,6 @@
     return Math.max(0, (Date.now() - d.getTime()) / 3600000);
   }
 
-  function fallbackImage(item = {}) {
-    const source = encodeURIComponent(cleanText(item.source_name || 'Google News').slice(0, 28));
-    return `https://placehold.co/640x360/f8fafc/334155?text=${source}`;
-  }
-
   function guidanceFor(item = {}) {
     const text = `${item.title || ''} ${item.summary || ''} ${item.source_name || ''}`.toLowerCase();
     const hours = ageHours(item.published_at);
@@ -95,7 +93,7 @@
   }
 
   function sortItems(items = []) {
-    return [...items].sort((a, b) => guidanceFor(b).score - guidanceFor(a).score || new Date(b.published_at || 0) - new Date(a.published_at || 0));
+    return [...items].sort((a, b) => Number(a.google_news_rank || 9999) - Number(b.google_news_rank || 9999) || new Date(b.published_at || 0) - new Date(a.published_at || 0));
   }
 
   function ensureStyle() {
@@ -111,10 +109,13 @@
       #tb-google-news-wrap[data-open='0'] .tb-google-chevron{transform:rotate(-90deg)}
       #tb-google-news-wrap .tb-google-chevron{transition:transform .2s ease}
       #tb-google-news-wrap .tb-google-news-refresh{border:1px solid #2563eb;background:#fff;color:#2563eb;padding:9px 12px;border-radius:12px;font-weight:700;cursor:pointer}
+      #tb-google-news-wrap .tb-google-news-source{border:1px solid #dbe3ef;background:#f8fafc;color:#334155;padding:9px 12px;border-radius:12px;font-size:12px;font-weight:700;text-decoration:none}
+      #tb-google-news-wrap .tb-google-news-head-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
       #tb-google-news-wrap .tb-google-news-refresh:disabled{opacity:.7;cursor:wait}
       #tb-google-news-wrap .tb-google-news-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-top:16px}
       #tb-google-news-wrap article{position:relative;border:1px solid #e5e7eb;border-radius:16px;background:#fff;box-shadow:0 4px 12px rgba(15,23,42,.04);overflow:hidden}
       #tb-google-news-wrap .tb-google-image{width:100%;aspect-ratio:16/9;background:#f1f5f9;object-fit:cover;display:block;border-bottom:1px solid #e5e7eb}
+      #tb-google-news-wrap .tb-google-image-placeholder{width:100%;aspect-ratio:16/9;background:linear-gradient(135deg,#eff6ff,#f8fafc 48%,#fff7ed);display:grid;place-items:center;border-bottom:1px solid #e5e7eb;color:#64748b;font-size:12px;font-weight:700;text-align:center;padding:16px}
       #tb-google-news-wrap .tb-google-card-inner{padding:12px}
       #tb-google-news-wrap h3{font:700 17px/1.35 'Fira Sans Condensed',sans-serif;color:#111827;margin:0 0 8px;padding-right:34px}
       #tb-google-news-wrap .tb-google-meta{display:flex;flex-wrap:wrap;gap:6px;font-size:11px;color:#64748b;margin-bottom:8px}
@@ -130,6 +131,9 @@
       #tb-google-news-wrap .tb-guidance.watch{background:#eff6ff;color:#1d4ed8;border:1px solid #93c5fd}
       #tb-google-news-wrap .tb-guidance.low{background:#f8fafc;color:#64748b;border:1px solid #cbd5e1}
       #tb-google-news-wrap .tb-guidance-reason{font-size:11px;line-height:1.45;color:#64748b;margin-bottom:8px}
+      #tb-google-news-wrap .tb-google-rank{display:inline-flex;align-items:center;border-radius:999px;background:#eef2ff;color:#4338ca;padding:4px 7px;font-size:10px;font-weight:800}
+      #tb-google-news-wrap .tb-google-cluster{font-size:11px;color:#64748b;margin-top:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      @media (max-width:640px){#tb-google-news-wrap{padding:12px;border-radius:16px}#tb-google-news-wrap .tb-google-news-grid{grid-template-columns:1fr}#tb-google-news-wrap .tb-google-news-source{display:none}}
     `;
     document.head.appendChild(style);
   }
@@ -146,7 +150,8 @@
     if (state.loading) return 'Google News Bilim ve Teknoloji akışı kontrol ediliyor...';
     if (state.error) return state.error;
     const must = state.items.filter((item) => guidanceFor(item).tone === 'hot').length;
-    return `Saatlik kontrol: ${esc(fmtDate(state.refreshedAt) || 'Henüz yüklenmedi')} · Mutlaka girilecek konu: ${must}`;
+    const stale = state.stale ? ' · Son geçerli önbellek gösteriliyor' : '';
+    return `Google Haberler ile 15 dakikada bir eşzamanlanır · Son kontrol: ${esc(fmtDate(state.refreshedAt) || 'Henüz yüklenmedi')} · Mutlaka girilecek konu: ${must}${stale}`;
   }
 
   function render() {
@@ -165,14 +170,22 @@
     wrap.setAttribute('data-open', state.open ? '1' : '0');
 
     const cards = sortItems(state.items).map((item, index) => {
-      const image = cleanText(item.image_url || '') || fallbackImage(item);
+      const image = cleanText(item.image_url || '');
       const guidance = guidanceFor(item);
+      const relatedSources = Array.isArray(item.related_sources) ? item.related_sources.filter(Boolean).slice(0, 4) : [];
+      const rank = Number(item.google_news_rank || index + 1);
+      const imageMarkup = image
+        ? `<img class="tb-google-image" src="${esc(image)}" alt="${esc(item.title || 'Google Haberler Bilim ve Teknoloji haberi')}" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none';this.nextElementSibling.style.display='grid'"><div class="tb-google-image-placeholder" style="display:none">📰 ${esc(item.source_name || 'Google Haberler')}</div>`
+        : `<div class="tb-google-image-placeholder">📰 ${esc(item.source_name || 'Google Haberler')}</div>`;
       return `
         <article data-guidance="${esc(guidance.tone)}">
-          <img class="tb-google-image" src="${esc(image)}" alt="${esc(item.title || 'Google News teknoloji haberi')}" loading="lazy" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='${esc(fallbackImage(item))}'">
+          ${imageMarkup}
           <div class="tb-google-card-inner">
             <input type="checkbox" data-select-url="${esc(item.url)}" style="position:absolute;right:12px;top:12px;z-index:2">
-            <div class="tb-guidance ${esc(guidance.tone)}">${esc(guidance.label)} · ${esc(guidance.score)}</div>
+            <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:8px">
+              <span class="tb-google-rank">Google Haberler #${esc(rank)}</span>
+              <span class="tb-guidance ${esc(guidance.tone)}" style="margin:0">${esc(guidance.label)} · ${esc(guidance.score)}</span>
+            </div>
             <div class="tb-guidance-reason">${esc(guidance.reason)}</div>
             <h3>${esc(item.title)}</h3>
             <div class="tb-google-meta">
@@ -180,9 +193,10 @@
               <div>${esc(fmtDate(item.published_at))}</div>
             </div>
             <div class="tb-google-summary">${esc(item.summary || '')}</div>
+            ${relatedSources.length ? `<div class="tb-google-cluster" title="${esc(relatedSources.join(', '))}">Kaynaklar: ${esc(relatedSources.join(', '))}</div>` : ''}
             <div class="tb-google-actions">
               <a class="tb-google-link" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">Haberi aç</a>
-              <span style="font-size:11px;color:#94a3b8">#${index + 1}</span>
+              <span style="font-size:11px;color:#94a3b8">${esc(item.story_count || 1)} haber</span>
             </div>
           </div>
         </article>
@@ -193,9 +207,12 @@
       <div class="tb-google-news-head">
         <button type="button" class="tb-google-news-toggle" aria-expanded="${state.open ? 'true' : 'false'}">
           <span class="tb-google-chevron">▾</span>
-          <b>Google News Teknoloji</b>
+          <b>Google Haberler · Bilim ve Teknoloji</b>
         </button>
-        <button type="button" class="tb-google-news-refresh" ${state.loading ? 'disabled' : ''}>Google News Yenile</button>
+        <div class="tb-google-news-head-actions">
+          <a class="tb-google-news-source" href="${esc(state.sourceUrl)}" target="_blank" rel="noopener noreferrer">Google Haberler'de aç</a>
+          <button type="button" class="tb-google-news-refresh" ${state.loading ? 'disabled' : ''}>Şimdi eşzamanla</button>
+        </div>
       </div>
 
       <div class="tb-google-news-body">
@@ -203,7 +220,7 @@
           ${statusText()}
         </div>
 
-        ${cards ? `<div class="tb-google-news-grid">${cards}</div>` : '<div class="tb-google-empty">Henüz gösterilecek Google News teknoloji haberi yok.</div>'}
+        ${cards ? `<div class="tb-google-news-grid">${cards}</div>` : '<div class="tb-google-empty">Google Haberler Türkçe Bilim ve Teknoloji akışında gösterilecek haber bulunamadı.</div>'}
       </div>
     `;
 
@@ -230,7 +247,7 @@
       const url = new URL('/api/trend-overview', window.location.origin);
       url.searchParams.set('google_news', '1');
       url.searchParams.set('limit', '40');
-      url.searchParams.set('_', Date.now().toString());
+      if (force) url.searchParams.set('refresh', '1');
 
       const res = await fetch(url.toString(), {
         cache: 'no-store',
@@ -242,6 +259,9 @@
       if (!res.ok || data?.error) throw new Error(data?.error || `HTTP ${res.status}`);
       state.items = Array.isArray(data?.items) ? data.items : [];
       state.refreshedAt = data?.refreshed_at || new Date().toISOString();
+      state.nextRefreshAt = data?.next_refresh_at || null;
+      state.sourceUrl = data?.source_url || state.sourceUrl;
+      state.stale = Boolean(data?.stale);
     } catch (error) {
       console.error('Google News panel error:', error);
       state.error = `Google News verisi alınamadı: ${error?.message || 'Bilinmeyen hata'}`;

@@ -1,13 +1,16 @@
 import { getSupabaseAdmin, json, hashValue, parseFeedItems, queryLocal, safeText } from './_lib.js';
 
 const GOOGLE_NEWS_TECH_RSS = 'https://news.google.com/rss/topics/CAAqKAgKIiJDQkFTRXdvSkwyMHZNR1ptZHpWbUVnSjBjaG9DVkZJb0FBUAE?hl=tr&gl=TR&ceid=TR:tr';
+const GOOGLE_NEWS_TECH_PAGE = 'https://news.google.com/topics/CAAqKAgKIiJDQkFTRXdvSkwyMHZNR1ptZHpWbUVnSjBjaG9DVkZJb0FBUAE?hl=tr&gl=TR&ceid=TR:tr';
 const TIMEOUT_MS = 15000;
 const GOOGLE_TRENDS_RPC = 'i0OFE';
 const GOOGLE_TRENDS_NEWS_RPC = 'w4opAf';
 const GOOGLE_TRENDS_CACHE_MS = 8 * 60 * 1000;
 const GOOGLE_TRENDS_NEWS_CACHE_MS = 30 * 60 * 1000;
+const GOOGLE_NEWS_CACHE_MS = 12 * 60 * 1000;
 const trendsMemoryCache = new Map();
 const trendsNewsMemoryCache = new Map();
+const googleNewsMemoryCache = new Map();
 
 const COUNTRIES = [
   { code: 'TR', name: 'Türkiye', priority: 1, domain: 'https://trends.google.com.tr', lang: 'tr' },
@@ -260,9 +263,131 @@ async function googleTrendsItems(limit, geo, categoryKey, windowKey) {
 
 async function fetchRss(url) { const text = await fetchText(url, 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8'); return parseFeedItems(text); }
 function sourceFromTitle(title = '') { const parts = String(title || '').trim().split(' - '); return parts.length > 1 ? parts[parts.length - 1].trim() : 'Google News'; }
-function cleanNewsTitle(title = '') { const parts = String(title || '').trim().split(' - '); return parts.length > 1 ? parts.slice(0, -1).join(' - ').trim() : String(title || '').trim(); }
-async function fetchGoogleNewsTech(limit = 24) { const raw = await fetchRss(GOOGLE_NEWS_TECH_RSS); const seen = new Set(); const items = []; for (const item of raw) { const title = cleanNewsTitle(safeText(item.title || '')); const key = `${title}:${item.url || ''}`; if (!title || seen.has(key)) continue; seen.add(key); items.push({ title, url: item.url || '', source_name: sourceFromTitle(item.title || ''), published_at: dateIso(item.published_at || ''), summary: safeText(item.summary || ''), image_url: item.image_url || '' }); if (items.length >= limit) break; } return items; }
-async function respondGoogleNewsTech(req, res) { const limit = clamp(Number(req.query?.limit || 24), 1, 50); const items = await fetchGoogleNewsTech(limit); return json(res, 200, { items, count: items.length, refreshed_at: new Date().toISOString(), source: 'Google News Bilim ve Teknoloji', source_url: GOOGLE_NEWS_TECH_RSS, via: 'trend-overview' }); }
+function cleanNewsTitle(title = '') { const parts = String(title || '').trim().split(' - '); const clean = parts.length > 1 ? parts.slice(0, -1).join(' - ').trim() : String(title || '').trim(); return clean.replace(/\s+-\s+teknoloji haberleri$/i, '').trim(); }
+
+function decodeHtmlAttribute(value = '') {
+  return String(value || '').replace(/&amp;/gi, '&').replace(/&quot;/gi, '"').replace(/&#39;/gi, "'").trim();
+}
+
+function normalizeNewsHeadline(value = '') {
+  return safeText(value).normalize('NFKC').toLocaleLowerCase('tr-TR').replace(/[^a-z0-9çğıöşü\s]/gi, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function googleNewsImageMap(html = '') {
+  const images = new Map();
+  const cardPattern = /<img[^>]*class="[^"]*Quavad[^"]*"[^>]*src="([^"]+)"[^>]*>[\s\S]{0,16000}?<a[^>]*class="gPFEn"[^>]*>([\s\S]*?)<\/a>/gi;
+  for (const match of String(html || '').matchAll(cardPattern)) {
+    const title = normalizeNewsHeadline(match[2]);
+    let imageUrl = decodeHtmlAttribute(match[1]);
+    if (imageUrl.startsWith('/')) imageUrl = `https://news.google.com${imageUrl}`;
+    if (title && /^https?:\/\//i.test(imageUrl) && !images.has(title)) images.set(title, imageUrl);
+  }
+  return images;
+}
+
+function matchingGoogleNewsImage(images, normalizedTitle = '') {
+  if (images.has(normalizedTitle)) return images.get(normalizedTitle);
+  if (normalizedTitle.length < 20) return '';
+  for (const [title, image] of images) {
+    if (title.length >= 20 && (normalizedTitle.startsWith(title) || title.startsWith(normalizedTitle))) return image;
+  }
+  return '';
+}
+
+function clusterDetails(description = '') {
+  const sources = [];
+  const titles = [];
+  for (const match of String(description || '').matchAll(/<li>[\s\S]*?<a[^>]*>([\s\S]*?)<\/a>[\s\S]*?<font[^>]*>([\s\S]*?)<\/font>[\s\S]*?<\/li>/gi)) {
+    const title = safeText(match[1]);
+    const source = safeText(match[2]);
+    if (title) titles.push(title);
+    if (source && !sources.includes(source)) sources.push(source);
+  }
+  return { sources: sources.slice(0, 8), storyCount: Math.max(1, titles.length) };
+}
+
+async function fetchGoogleNewsTechFresh() {
+  const [rssText, topicHtml] = await Promise.all([
+    fetchText(GOOGLE_NEWS_TECH_RSS, 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8'),
+    fetchText(GOOGLE_NEWS_TECH_PAGE, 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8')
+  ]);
+  const raw = parseFeedItems(rssText);
+  if (!raw.length) throw new Error('Google Haberler Bilim ve Teknoloji akışı boş döndü.');
+  const imageMap = googleNewsImageMap(topicHtml);
+  const seen = new Set();
+  const items = [];
+  for (const item of raw) {
+    const title = cleanNewsTitle(safeText(item.title || ''));
+    const normalized = normalizeNewsHeadline(title);
+    const key = `${normalized}:${item.url || ''}`;
+    if (!title || !item.url || seen.has(key)) continue;
+    seen.add(key);
+    const cluster = clusterDetails(item.summary || '');
+    const sourceName = sourceFromTitle(item.title || '');
+    items.push({
+      title,
+      url: item.url,
+      source_name: sourceName,
+      published_at: dateIso(item.published_at || ''),
+      summary: cluster.storyCount > 1 ? `Google Haberler bu konu için ${cluster.storyCount} kaynağı bir araya getiriyor.` : `${sourceName} tarafından yayımlandı.`,
+      image_url: item.image_url || matchingGoogleNewsImage(imageMap, normalized),
+      related_sources: cluster.sources,
+      story_count: cluster.storyCount,
+      google_news_rank: items.length + 1,
+      google_news_section: 'Bilim ve Teknoloji',
+      locale: 'tr-TR'
+    });
+  }
+  return items;
+}
+
+async function cachedGoogleNewsTech(force = false) {
+  const key = 'tr:science-technology';
+  const memory = googleNewsMemoryCache.get(key);
+  if (!force && memory && Date.now() - memory.fetchedAt < GOOGLE_NEWS_CACHE_MS) return { items: memory.items, fetchedAt: memory.fetchedAt, cache: 'memory', stale: false };
+  const saved = await queryLocal('SELECT payload,fetched_at,expires_at FROM google_news_cache WHERE cache_key=$1', [key]).catch(() => ({ rows: [] }));
+  const record = saved.rows?.[0];
+  if (!force && record && new Date(record.expires_at).getTime() > Date.now()) {
+    const items = Array.isArray(record.payload) ? record.payload : [];
+    const fetchedAt = new Date(record.fetched_at).getTime();
+    googleNewsMemoryCache.set(key, { items, fetchedAt });
+    return { items, fetchedAt, cache: 'postgresql', stale: false };
+  }
+  try {
+    const items = await fetchGoogleNewsTechFresh();
+    const fetchedAt = Date.now();
+    googleNewsMemoryCache.set(key, { items, fetchedAt });
+    await queryLocal(`INSERT INTO google_news_cache(cache_key,payload,source_url,fetched_at,expires_at) VALUES($1,$2,$3,NOW(),$4)
+      ON CONFLICT(cache_key) DO UPDATE SET payload=EXCLUDED.payload,source_url=EXCLUDED.source_url,fetched_at=NOW(),expires_at=EXCLUDED.expires_at`, [key, JSON.stringify(items), GOOGLE_NEWS_TECH_PAGE, new Date(fetchedAt + GOOGLE_NEWS_CACHE_MS)]).catch(() => {});
+    return { items, fetchedAt, cache: 'google_news', stale: false };
+  } catch (error) {
+    if (record && new Date(record.fetched_at).getTime() > Date.now() - 24 * 3600000) return { items: Array.isArray(record.payload) ? record.payload : [], fetchedAt: new Date(record.fetched_at).getTime(), cache: 'stale_postgresql', stale: true, error: error.message };
+    throw error;
+  }
+}
+
+async function fetchGoogleNewsTech(limit = 24) { const result = await cachedGoogleNewsTech(false); return result.items.slice(0, limit); }
+async function respondGoogleNewsTech(req, res) {
+  const limit = clamp(Number(req.query?.limit || 24), 1, 50);
+  const force = String(req.query?.refresh || '') === '1';
+  const result = await cachedGoogleNewsTech(force);
+  return json(res, 200, {
+    items: result.items.slice(0, limit),
+    count: Math.min(result.items.length, limit),
+    total_count: result.items.length,
+    refreshed_at: new Date(result.fetchedAt).toISOString(),
+    next_refresh_at: new Date(result.fetchedAt + GOOGLE_NEWS_CACHE_MS).toISOString(),
+    refresh_interval_minutes: GOOGLE_NEWS_CACHE_MS / 60000,
+    cache: result.cache,
+    stale: Boolean(result.stale),
+    warning: result.error || null,
+    source: 'Google Haberler · Bilim ve Teknoloji · Türkçe',
+    source_url: GOOGLE_NEWS_TECH_PAGE,
+    rss_url: GOOGLE_NEWS_TECH_RSS,
+    exact_topic_feed: true,
+    via: 'trend-overview'
+  });
+}
 async function respondGoogleTrends(req, res) { const limit = clamp(Number(req.query?.limit || 72), 1, 120); const geo = String(req.query?.geo || 'all'); const win = pickWindow(req.query?.window || '24h'); const cat = pickCategory(req.query?.category || 'all'); const result = await googleTrendsItems(limit, geo, cat, win.key); const primaryCountry = countryList(geo)[0]; const primaryCategory = selectedCategories(cat)[0] || CATEGORIES[0]; const fetchedTimes = result.sync.map((item) => item.fetched_at).filter(Boolean).sort(); return json(res, 200, { items: result.items, count: result.items.length, turkey_count: result.turkey_count, world_count: result.world_count, sync: result.sync, window: win.key, selected_category: cat, available_windows: WINDOWS, countries: COUNTRIES, categories: CATEGORIES, category: cat === 'all' ? 'Bilim ve Teknoloji' : primaryCategory.name, refreshed_at: fetchedTimes.at(-1) || new Date().toISOString(), response_at: new Date().toISOString(), refresh_interval_minutes: 10, source: 'Google Trends · Şu Anda Trend Olanlar', source_url: pageUrl(primaryCountry, primaryCategory, win), via: 'trend-overview', route: 'google_trends', data_source: 'TrendsUi batchexecute i0OFE', featured_news_source: 'FeTrendingService.ListNews', category_source: 'Google Trends kategori kimlikleri 15 ve 18', rss_used: false }); }
 async function respondGoogleTrendsNews(req, res) {
   const refs = refsFromToken(req.query?.token || '');
