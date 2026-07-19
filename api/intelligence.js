@@ -386,9 +386,12 @@ function isEarlySignal(item) {
 }
 
 function isRisingCluster(item) {
+  const lastSeen = new Date(item.last_seen_at || 0).getTime();
+  const ageHours = Number.isFinite(lastSeen) ? (Date.now() - lastSeen) / 3600000 : 999;
   return !item.owned_coverage
     && Number(item.source_count) >= 2
-    && Number(item.opportunity_minutes) > 0;
+    && Number(item.momentum_score) >= 20
+    && ageHours <= 12;
 }
 
 function risingClusters(items = []) {
