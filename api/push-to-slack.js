@@ -25,6 +25,28 @@ function normalizeUrl(value = '') {
   }
 }
 
+function normalizeReferences(item = {}) {
+  const candidates = [
+    ...(Array.isArray(item.references) ? item.references : []),
+    ...(Array.isArray(item.source_timeline) ? item.source_timeline : []),
+    ...(Array.isArray(item.editorial_package?.references) ? item.editorial_package.references : [])
+  ];
+  const seen = new Set([normalizeUrl(item.url)].filter(Boolean));
+  const references = [];
+  for (const reference of candidates) {
+    const url = normalizeUrl(reference?.url || reference?.link || reference?.canonical_url);
+    if (!url || seen.has(url) || !/^https?:\/\//i.test(url)) continue;
+    seen.add(url);
+    references.push({
+      url,
+      source_name: String(reference?.source_name || reference?.source || reference?.publisher || 'Kaynak').trim(),
+      title: String(reference?.title || '').trim()
+    });
+    if (references.length >= 6) break;
+  }
+  return references;
+}
+
 async function readSharedSentUrls(supabase) {
   try {
     const { data, error } = await supabase
@@ -100,7 +122,8 @@ export default async function handler(req, res) {
         title: String(item?.title || '').trim(),
         url: normalizeUrl(String(item?.url || '').trim()),
         source_name: String(item?.source_name || '').trim(),
-        published_at: String(item?.published_at || '').trim()
+        published_at: String(item?.published_at || '').trim(),
+        references: normalizeReferences(item)
       }))
       .filter((item) => item.title && item.url)
       .slice(0, 30);
@@ -117,7 +140,15 @@ export default async function handler(req, res) {
         `*${escapeText(item.title)}*`,
         item.source_name ? `Kaynak: ${escapeText(item.source_name)}` : '',
         item.published_at ? `Tarih: ${escapeText(item.published_at)}` : '',
-        item.url
+        item.url,
+        ...(item.references.length ? [
+          '',
+          '*Referans haberler:*',
+          ...item.references.map((reference, index) => {
+            const label = [reference.source_name, reference.title].filter(Boolean).join(' — ').slice(0, 150) || `Referans ${index + 1}`;
+            return `${index + 1}. <${reference.url}|${escapeText(label)}>`;
+          })
+        ] : [])
       ].filter(Boolean);
 
       const response = await fetch(webhookUrl, {

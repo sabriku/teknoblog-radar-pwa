@@ -739,6 +739,71 @@ async function watchlistAction(body) {
   return result.rows[0];
 }
 
+function slackReferenceUrl(value = '') {
+  try {
+    const url = new URL(String(value || '').trim());
+    if (!['http:', 'https:'].includes(url.protocol)) return '';
+    url.hash = '';
+    return url.toString();
+  } catch {
+    return '';
+  }
+}
+
+function slackReferenceLabel(value = '') {
+  return String(value || '')
+    .replace(/[<>|\r\n]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 150);
+}
+
+function alertReferences(alert) {
+  const payload = alert?.payload || {};
+  const candidates = [
+    ...(Array.isArray(payload.editorial_package?.references) ? payload.editorial_package.references : []),
+    ...(Array.isArray(payload.source_timeline) ? payload.source_timeline : []),
+    ...(Array.isArray(payload.references) ? payload.references : []),
+    ...(Array.isArray(payload.items) ? payload.items : []),
+    ...(payload.url ? [payload] : [])
+  ];
+  const seen = new Set();
+  const references = [];
+  for (const candidate of candidates) {
+    const url = slackReferenceUrl(candidate?.url || candidate?.link || candidate?.canonical_url);
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    references.push({
+      url,
+      source: slackReferenceLabel(candidate?.source_name || candidate?.source || candidate?.publisher || 'Kaynak'),
+      title: slackReferenceLabel(candidate?.title || '')
+    });
+    if (references.length >= 6) break;
+  }
+  return references;
+}
+
+export function buildSlackAlertText(alerts = []) {
+  const labels = { first_mover: '🚨 İlk yayın fırsatı', momentum: '📈 Hızlanıyor', deadline: '⏱️ Fırsat penceresi kapanıyor', watchlist: '🎯 İzleme listesi eşleşmesi', corroborated: '✅ İkinci kaynak doğruladı', queue_stale: '⏳ Görev bekliyor' };
+  const blocks = alerts.slice(0, 12).map((alert) => {
+    const detail = alert.type === 'first_mover'
+      ? ` · Öncülük ${alert.payload?.first_mover_score ?? '—'} · Rakip ${alert.payload?.competitor_count ?? '—'}`
+      : alert.type === 'deadline'
+        ? ` · ${alert.payload?.opportunity_minutes ?? '—'} dakika kaldı`
+        : '';
+    const references = alertReferences(alert);
+    const referenceLines = references.map((reference, index) => {
+      const label = [reference.source, reference.title].filter(Boolean).join(' — ') || `Referans ${index + 1}`;
+      return `   ${index + 1}. <${reference.url}|${label}>`;
+    });
+    return [
+      `• ${labels[alert.type] || 'Radar uyarısı'}: ${slackReferenceLabel(alert.title)}${detail}`,
+      ...(referenceLines.length ? ['  *Referans haberler:*', ...referenceLines] : [])
+    ].join('\n');
+  });
+  return ['*Teknoblog Radar · Öncü Haber Uyarıları*', ...blocks].join('\n\n');
+}
+
 async function runAlerts() {
   const clusters = await clustersSection();
   const stale = (await queryLocal(`SELECT * FROM editorial_queue WHERE status NOT IN ('published','skipped') AND created_at<NOW()-INTERVAL '2 hours' ORDER BY priority DESC LIMIT 10`)).rows;
@@ -764,9 +829,7 @@ async function runAlerts() {
   }
   const webhook = process.env.SLACK_KAYNAK_WEBHOOK_URL || process.env.SLACK_WEBHOOK_URL || '';
   if (webhook && newAlerts.length) {
-    const labels = { first_mover: '🚨 İlk yayın fırsatı', momentum: '📈 Hızlanıyor', deadline: '⏱️ Fırsat penceresi kapanıyor', watchlist: '🎯 İzleme listesi eşleşmesi', corroborated: '✅ İkinci kaynak doğruladı', queue_stale: '⏳ Görev bekliyor' };
-    const lines = ['*Teknoblog Radar · Öncü Haber Uyarıları*', ...newAlerts.slice(0, 12).map((alert) => `• ${labels[alert.type] || 'Radar uyarısı'}: ${alert.title}${alert.type === 'first_mover' ? ` · Öncülük ${alert.payload.first_mover_score} · Rakip ${alert.payload.competitor_count}` : alert.type === 'deadline' ? ` · ${alert.payload.opportunity_minutes} dakika kaldı` : ''}`)];
-    const response = await fetch(webhook, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: lines.join('\n') }) });
+    const response = await fetch(webhook, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: buildSlackAlertText(newAlerts) }) });
     if (response.ok) {
       await queryLocal(`UPDATE smart_alerts SET status='sent',sent_at=NOW() WHERE id=ANY($1::bigint[])`, [newAlerts.map((alert) => alert.id)]);
     }
