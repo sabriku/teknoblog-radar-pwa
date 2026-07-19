@@ -317,8 +317,11 @@ async function updateSourceLeadership(clusters = []) {
   }
   for (const stat of stats.values()) {
     const avgLead = stat.first ? Math.round(stat.lead_total / stat.first) : 0;
-    const leadership = clamp((stat.first / Math.max(1, stat.samples)) * 65 + Math.min(35, avgLead / 3));
-    const success = clamp((stat.successes / Math.max(1, stat.samples)) * 100);
+    const rawLeadership = (stat.first / Math.max(1, stat.samples)) * 65 + Math.min(35, avgLead / 3);
+    const sampleConfidence = Math.min(1, stat.samples / 12);
+    const leadership = clamp(50 + (rawLeadership - 50) * sampleConfidence);
+    const rawSuccess = (stat.successes / Math.max(1, stat.samples)) * 100;
+    const success = clamp(50 + (rawSuccess - 50) * sampleConfidence);
     await queryLocal(`INSERT INTO source_leadership_stats(source_id,source_name,beat,sample_count,first_break_count,corroboration_count,avg_lead_minutes,leadership_score,success_score,updated_at)
       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW()) ON CONFLICT(source_id,beat) DO UPDATE SET
       source_name=EXCLUDED.source_name,sample_count=EXCLUDED.sample_count,first_break_count=EXCLUDED.first_break_count,
