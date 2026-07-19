@@ -210,6 +210,15 @@ CREATE TABLE IF NOT EXISTS early_signal_snapshots (
   UNIQUE(cluster_key,capture_bucket)
 );
 
+CREATE TABLE IF NOT EXISTS google_trends_cache (
+  cache_key TEXT PRIMARY KEY,
+  geo TEXT NOT NULL,
+  window_hours INTEGER NOT NULL,
+  payload JSONB NOT NULL DEFAULT '[]'::jsonb,
+  fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS teknoblog_content (
   id BIGSERIAL PRIMARY KEY,
   wp_id BIGINT UNIQUE,
@@ -436,3 +445,4 @@ CREATE INDEX IF NOT EXISTS idx_raw_feed_items_search ON raw_feed_items USING GIN
 CREATE INDEX IF NOT EXISTS idx_content_clusters_search ON content_clusters USING GIN (to_tsvector('simple', coalesce(cluster_name,'') || ' ' || coalesce(payload::text,'')));
 CREATE INDEX IF NOT EXISTS idx_content_clusters_early ON content_clusters(owned_coverage,first_mover_score DESC,last_seen_at DESC);
 CREATE INDEX IF NOT EXISTS idx_early_signal_snapshots_time ON early_signal_snapshots(capture_bucket DESC,first_mover_score DESC);
+CREATE INDEX IF NOT EXISTS idx_google_trends_cache_expiry ON google_trends_cache(expires_at DESC);

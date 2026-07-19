@@ -31,6 +31,15 @@ try {
       console.log(JSON.stringify({ action, ok: false, skipped: true, error: error?.message || String(error) }));
     }
   }
+  for (const window of ['4h', '24h']) {
+    try {
+      const trends = await fetch(`${baseUrl}/api/trend-overview?google_trends=1&geo=all&category=all&window=${window}&limit=72`, { cache: 'no-store', signal: controller.signal });
+      const trendsData = await trends.json().catch(() => ({}));
+      console.log(JSON.stringify({ action: 'sync_google_trends', window, ok: trends.ok, count: trendsData.count || 0, source: trendsData.data_source || null }));
+    } catch (error) {
+      console.log(JSON.stringify({ action: 'sync_google_trends', window, ok: false, error: error?.message || String(error) }));
+    }
+  }
 } finally {
   clearTimeout(timer);
 }

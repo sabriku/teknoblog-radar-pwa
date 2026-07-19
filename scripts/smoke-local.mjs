@@ -13,6 +13,7 @@ const checks = [
   ['/api/intelligence?section=weekly-report', 200],
   ['/api/google-auth', 200],
   ['/api/trend-overview?window=24h&limit=5', 200],
+  ['/api/trend-overview?google_trends=1&geo=all&category=all&window=24h&limit=12', 200],
   ['/api/push-to-slack', 200]
 ];
 

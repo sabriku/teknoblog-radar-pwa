@@ -1,6 +1,7 @@
 (() => {
   const COUNTRIES = [
     ['all', 'Türkiye + dünya'],
+    ['WORLD', 'Dünya geneli'],
     ['TR', 'Türkiye'],
     ['US', 'ABD'],
     ['GB', 'Birleşik Krallık'],
@@ -23,7 +24,7 @@
     ['science', 'Bilim'],
     ['technology', 'Teknoloji']
   ];
-  const state = { items: [], loading: false, error: '', refreshedAt: '', sourceLabel: 'Google Trends Bilim ve Teknoloji', country: 'all', window: '24h', category: 'all', countries: COUNTRIES, windows: WINDOWS, categories: CATEGORIES };
+  const state = { items: [], loading: false, error: '', refreshedAt: '', sourceLabel: 'Google Trends · Şu Anda Trend Olanlar', country: 'all', window: '24h', category: 'all', countries: COUNTRIES, windows: WINDOWS, categories: CATEGORIES, sync: [], turkeyCount: 0, worldCount: 0 };
 
   function esc(value) {
     return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -51,6 +52,7 @@
       .tb-gt-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
       .tb-gt-card{border:1px solid #e5e7eb;border-radius:16px;background:#fff;padding:14px;box-shadow:0 4px 12px rgba(15,23,42,.04);border-top:4px solid #f04a0a}
       .tb-gt-card h3{font:700 20px/1.25 'Fira Sans Condensed',sans-serif;color:#111827;margin:8px 0;overflow-wrap:anywhere}
+      .tb-gt-section-title{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 0 0;padding:12px 2px 4px;border-bottom:1px solid #e2e8f0}.tb-gt-section-title h3{margin:0;font-size:18px}.tb-gt-section-title span{font-size:11px;color:#64748b}
       .tb-gt-meta{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}.tb-gt-chip{border:1px solid #e5e7eb;border-radius:999px;background:#f8fafc;color:#475569;padding:5px 8px;font-size:11px;font-weight:800}
       .tb-gt-chip.hot{border-color:#fdba74;background:#fff7ed;color:#c2410c}.tb-gt-chip.tech{border-color:#93c5fd;background:#eff6ff;color:#1d4ed8}.tb-gt-chip.country{border-color:#fed7aa;background:#fff7ed;color:#9a3412}
       .tb-gt-summary{font-size:12px;line-height:1.55;color:#475569}.tb-gt-link{display:inline-flex;margin-top:10px;color:#f04a0a;text-decoration:none;font-size:12px;font-weight:900}.tb-gt-link:hover{text-decoration:underline}
@@ -62,7 +64,8 @@
   function mount() { return document.querySelector('#tb-google-trends-wrap') || document.querySelector('#tb-layout main') || document.querySelector('main'); }
   function itemUrl(item) { return item.category_url || item.url || item.link || item.source_url || '#'; }
   function itemScore(item) { return item.trend_score ?? item.total_score ?? item.discover_score ?? 0; }
-  function itemSummary(item) { return item.summary || item.description || item.excerpt || 'Google Trends Bilim ve Teknoloji kategorisinden yükselen konu.'; }
+  function itemSummary(item) { return item.summary || item.description || item.excerpt || 'Bu trend için ilişkili sorgu bilgisi bulunmuyor.'; }
+  function compact(value) { return new Intl.NumberFormat('tr-TR', { notation: 'compact', maximumFractionDigits: 1 }).format(Number(value || 0)); }
   function countryLabel(code) { return COUNTRIES.find(([value]) => value === code)?.[1] || code || 'Bilinmiyor'; }
   function windowLabel(value) { return WINDOWS.find(([key]) => key === value)?.[1] || value || 'Son 24 saat'; }
   function categoryLabel(value) { return CATEGORIES.find(([key]) => key === value)?.[1] || value || 'Bilim + Teknoloji'; }
@@ -74,25 +77,31 @@
     if (!target) return false;
     let wrap = document.getElementById('tb-google-trends-wrap');
     if (!wrap) { wrap = document.createElement('section'); wrap.id = 'tb-google-trends-wrap'; target.appendChild(wrap); }
-    const cards = state.items.map((item) => `
+    const card = (item) => `
       <article class="tb-gt-card">
         <div class="tb-gt-meta">
           <span class="tb-gt-chip country">${esc(item.country_name || countryLabel(item.country_code))}</span>
-          <span class="tb-gt-chip hot">Skor ${esc(itemScore(item))}</span>
+          <span class="tb-gt-chip hot">${esc(compact(item.search_volume))}+ arama</span>
+          <span class="tb-gt-chip hot">%${esc(item.growth_percentage || 0)} artış</span>
+          <span class="tb-gt-chip ${item.is_active ? 'tech' : ''}">${item.is_active ? 'Etkin' : 'Sona erdi'}</span>
+          ${item.stale ? '<span class="tb-gt-chip">Son sağlam veri</span>' : ''}
           <span class="tb-gt-chip tech">${esc(item.category || categoryLabel(state.category))}</span>
           <span class="tb-gt-chip">${esc(item.window_label || windowLabel(state.window))}</span>
-          <span class="tb-gt-chip">${esc(fmtDate(item.published_at || item.created_at || item.updated_at))}</span>
+          <span class="tb-gt-chip">Başlangıç ${esc(fmtDate(item.published_at || item.created_at || item.updated_at))}</span>
         </div>
         <h3>${esc(item.title)}</h3>
         <div class="tb-gt-summary">${esc(itemSummary(item))}</div>
-        <a class="tb-gt-link" href="${esc(itemUrl(item))}" target="_blank" rel="noopener noreferrer">Google Trends kategorisini aç</a>
+        <a class="tb-gt-link" href="${esc(item.url || itemUrl(item))}" target="_blank" rel="noopener noreferrer">Google Trends'te incele</a>
       </article>
-    `).join('');
+    `;
+    const turkey = state.items.filter((item) => item.country_code === 'TR');
+    const world = state.items.filter((item) => item.country_code !== 'TR');
+    const cards = `${turkey.length ? `<div class="tb-gt-section-title"><h3>🇹🇷 Türkiye</h3><span>${turkey.length} güncel Bilim/Teknoloji trendi</span></div><div class="tb-gt-grid">${turkey.map(card).join('')}</div>` : ''}${world.length ? `<div class="tb-gt-section-title"><h3>🌍 Dünya</h3><span>${world.length} güncel Bilim/Teknoloji trendi</span></div><div class="tb-gt-grid">${world.map(card).join('')}</div>` : ''}`;
     wrap.innerHTML = `
       <div class="tb-gt-head">
         <div>
           <h2>${esc(state.sourceLabel)}</h2>
-          <p>Google Trends kategori URL'leri esas alınır. Türkiye için örnek yapı: geo=TR, category=15 veya category=18 ve seçilen saat penceresi. Önce Türkiye, ardından diğer ülkeler gösterilir.</p>
+          <p>Google Trends'in kullandığı güncel Trending Now veri akışıyla ortalama 10 dakikada bir eşzamanlanır. Yalnızca Google'ın kategori kimliği 15 (Bilim) ve 18 (Teknoloji) olarak işaretlediği gerçek trendler gösterilir; RSS veya anahtar kelime filtresi kullanılmaz.</p>
         </div>
         <div class="tb-gt-controls">
           <div class="tb-gt-control"><label for="tb-gt-country">Ülke</label><select id="tb-gt-country">${options(state.countries, state.country)}</select></div>
@@ -101,8 +110,8 @@
           <button type="button" class="tb-gt-refresh" ${state.loading ? 'disabled' : ''}>Trendleri Yenile</button>
         </div>
       </div>
-      <div class="tb-gt-status" data-error="${state.error ? '1' : '0'}">${esc(state.loading ? 'Akış yükleniyor...' : state.error || `Son kontrol: ${fmtDate(state.refreshedAt) || 'henüz yok'} · Kategori: ${categoryLabel(state.category)} · Zaman: ${windowLabel(state.window)} · Konu: ${state.items.length}`)}</div>
-      ${cards ? `<div class="tb-gt-grid">${cards}</div>` : '<div class="tb-gt-empty">Seçili kategori ve zaman penceresinde Google Trends verisi bulunamadı.</div>'}
+      <div class="tb-gt-status" data-error="${state.error ? '1' : '0'}">${esc(state.loading ? 'Google Trends ile eşzamanlanıyor...' : state.error || `Son eşzamanlama: ${fmtDate(state.refreshedAt) || 'henüz yok'} · ${categoryLabel(state.category)} · ${windowLabel(state.window)} · Türkiye ${state.turkeyCount} · Dünya ${state.worldCount}`)}</div>
+      ${cards || '<div class="tb-gt-empty">Google Trends seçili ülke, kategori ve zaman penceresinde eşleşen güncel trend döndürmedi. Genel gündemle doldurma yapılmadı.</div>'}
     `;
     wrap.querySelector('.tb-gt-refresh')?.addEventListener('click', load);
     wrap.querySelector('#tb-gt-country')?.addEventListener('change', (event) => { state.country = event.target.value || 'all'; load(); });
@@ -121,12 +130,15 @@
   async function load() {
     state.loading = true; state.error = ''; render();
     try {
-      const params = new URLSearchParams({ google_trends: '1', limit: '48', geo: state.country, category: state.category, window: state.window, _: String(Date.now()) });
+      const params = new URLSearchParams({ google_trends: '1', limit: '72', geo: state.country, category: state.category, window: state.window, _: String(Date.now()) });
       const data = await fetchJson(`/api/trend-overview?${params.toString()}`);
       state.items = Array.isArray(data.items) ? data.items : [];
       state.refreshedAt = data.refreshed_at || new Date().toISOString();
-      state.sourceLabel = data.source || 'Google Trends Bilim ve Teknoloji';
-      if (Array.isArray(data.countries) && data.countries.length) state.countries = [['all', 'Türkiye + dünya'], ...data.countries.map((country) => [country.code, country.name])];
+      state.sourceLabel = data.source || 'Google Trends · Şu Anda Trend Olanlar';
+      state.sync = Array.isArray(data.sync) ? data.sync : [];
+      state.turkeyCount = Number(data.turkey_count || 0);
+      state.worldCount = Number(data.world_count || 0);
+      if (Array.isArray(data.countries) && data.countries.length) state.countries = [['all', 'Türkiye + dünya'], ['WORLD', 'Dünya geneli'], ...data.countries.map((country) => [country.code, country.name])];
       if (Array.isArray(data.available_windows) && data.available_windows.length) state.windows = data.available_windows.map((item) => [item.key, item.label]);
       if (Array.isArray(data.categories) && data.categories.length) state.categories = [['all', 'Bilim + Teknoloji'], ...data.categories.map((item) => [item.key, item.name])];
     } catch (error) {
@@ -137,7 +149,7 @@
     }
   }
 
-  function start() { if (!render()) return setTimeout(start, 200); load(); }
+  function start() { if (!render()) return setTimeout(start, 200); load(); setInterval(() => { if (location.hash === '#google-trends') load(); }, 10 * 60000); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
   else start();
 })();
