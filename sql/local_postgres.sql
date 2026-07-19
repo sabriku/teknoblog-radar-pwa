@@ -359,6 +359,44 @@ CREATE TABLE IF NOT EXISTS weekly_intelligence_reports (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS cluster_lifecycle_events (
+  id BIGSERIAL PRIMARY KEY,
+  cluster_key TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  from_stage TEXT,
+  to_stage TEXT,
+  source_name TEXT,
+  occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  UNIQUE(cluster_key,event_type,to_stage,occurred_at)
+);
+
+CREATE TABLE IF NOT EXISTS source_leadership_stats (
+  source_id TEXT NOT NULL,
+  source_name TEXT NOT NULL,
+  beat TEXT NOT NULL,
+  sample_count INTEGER NOT NULL DEFAULT 0,
+  first_break_count INTEGER NOT NULL DEFAULT 0,
+  corroboration_count INTEGER NOT NULL DEFAULT 0,
+  avg_lead_minutes INTEGER NOT NULL DEFAULT 0,
+  leadership_score INTEGER NOT NULL DEFAULT 0,
+  success_score INTEGER NOT NULL DEFAULT 0,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY(source_id,beat)
+);
+
+CREATE TABLE IF NOT EXISTS radar_watchlists (
+  id BIGSERIAL PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  keywords JSONB NOT NULL DEFAULT '[]'::jsonb,
+  beats JSONB NOT NULL DEFAULT '[]'::jsonb,
+  source_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+  alert_threshold INTEGER NOT NULL DEFAULT 65,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 ALTER TABLE sources ADD COLUMN IF NOT EXISTS description TEXT;
 ALTER TABLE sources ADD COLUMN IF NOT EXISTS rss_url TEXT;
 ALTER TABLE sources ADD COLUMN IF NOT EXISTS site_url TEXT;
@@ -412,6 +450,20 @@ ALTER TABLE content_clusters ADD COLUMN IF NOT EXISTS owned_coverage BOOLEAN DEF
 ALTER TABLE content_clusters ADD COLUMN IF NOT EXISTS lead_window_minutes INTEGER DEFAULT 0;
 ALTER TABLE content_clusters ADD COLUMN IF NOT EXISTS signal_stage TEXT DEFAULT 'watch';
 ALTER TABLE content_clusters ADD COLUMN IF NOT EXISTS first_source_name TEXT;
+ALTER TABLE content_clusters ADD COLUMN IF NOT EXISTS lifecycle_stage TEXT DEFAULT 'detected';
+ALTER TABLE content_clusters ADD COLUMN IF NOT EXISTS novelty_score INTEGER DEFAULT 0;
+ALTER TABLE content_clusters ADD COLUMN IF NOT EXISTS spread_score INTEGER DEFAULT 0;
+ALTER TABLE content_clusters ADD COLUMN IF NOT EXISTS opportunity_minutes INTEGER DEFAULT 0;
+ALTER TABLE content_clusters ADD COLUMN IF NOT EXISTS opportunity_expires_at TIMESTAMPTZ;
+ALTER TABLE content_clusters ADD COLUMN IF NOT EXISTS story_type TEXT DEFAULT 'news';
+ALTER TABLE content_clusters ADD COLUMN IF NOT EXISTS beat TEXT DEFAULT 'general';
+ALTER TABLE content_clusters ADD COLUMN IF NOT EXISTS country_count INTEGER DEFAULT 0;
+ALTER TABLE content_clusters ADD COLUMN IF NOT EXISTS countries JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE content_clusters ADD COLUMN IF NOT EXISTS source_timeline JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE content_clusters ADD COLUMN IF NOT EXISTS editorial_package JSONB DEFAULT '{}'::jsonb;
+
+ALTER TABLE editorial_feedback ADD COLUMN IF NOT EXISTS reason_code TEXT;
+ALTER TABLE editorial_feedback ADD COLUMN IF NOT EXISTS cluster_key TEXT;
 
 ALTER TABLE trend_signals ADD COLUMN IF NOT EXISTS signal_hash TEXT;
 ALTER TABLE trend_signals ADD COLUMN IF NOT EXISTS source_type TEXT;
@@ -452,6 +504,19 @@ CREATE INDEX IF NOT EXISTS idx_topic_candidates_search ON topic_candidates USING
 CREATE INDEX IF NOT EXISTS idx_raw_feed_items_search ON raw_feed_items USING GIN (to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(summary,'') || ' ' || coalesce(source_name,'')));
 CREATE INDEX IF NOT EXISTS idx_content_clusters_search ON content_clusters USING GIN (to_tsvector('simple', coalesce(cluster_name,'') || ' ' || coalesce(payload::text,'')));
 CREATE INDEX IF NOT EXISTS idx_content_clusters_early ON content_clusters(owned_coverage,first_mover_score DESC,last_seen_at DESC);
+CREATE INDEX IF NOT EXISTS idx_content_clusters_lifecycle ON content_clusters(lifecycle_stage,opportunity_expires_at,first_mover_score DESC);
+CREATE INDEX IF NOT EXISTS idx_cluster_events_key ON cluster_lifecycle_events(cluster_key,occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_cluster_events_type ON cluster_lifecycle_events(event_type,occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_source_leadership_score ON source_leadership_stats(leadership_score DESC,updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_watchlists_active ON radar_watchlists(is_active,updated_at DESC);
+
+INSERT INTO radar_watchlists(name,keywords,beats,alert_threshold) VALUES
+  ('Apple & Ekosistem','["apple","iphone","ipad","macbook","ios","macos","vision pro"]'::jsonb,'["apple"]'::jsonb,68),
+  ('Android & Mobil','["android","samsung","galaxy","pixel","xiaomi","one ui","snapdragon"]'::jsonb,'["android","mobile"]'::jsonb,66),
+  ('Yapay Zekâ','["yapay zeka","ai","openai","chatgpt","gemini","claude","copilot"]'::jsonb,'["ai"]'::jsonb,65),
+  ('Siber Güvenlik','["güvenlik açığı","siber saldırı","veri ihlali","malware","ransomware","zero day"]'::jsonb,'["security"]'::jsonb,70),
+  ('Türkiye Fiyat & Erişim','["türkiye","tl","fiyat","satışa çıktı","ön sipariş","kampanya"]'::jsonb,'["deals","mobile"]'::jsonb,64)
+ON CONFLICT(name) DO NOTHING;
 CREATE INDEX IF NOT EXISTS idx_early_signal_snapshots_time ON early_signal_snapshots(capture_bucket DESC,first_mover_score DESC);
 CREATE INDEX IF NOT EXISTS idx_google_trends_cache_expiry ON google_trends_cache(expires_at DESC);
 CREATE INDEX IF NOT EXISTS idx_google_news_cache_expiry ON google_news_cache(expires_at DESC);

@@ -34,6 +34,64 @@ function overlap(a = [], b = []) {
 function clamp(value) { return Math.max(0, Math.min(100, Math.round(Number(value) || 0))); }
 function hash(value) { return createHash('sha1').update(String(value)).digest('hex'); }
 
+function beatFor(title = '') {
+  const value = String(title).toLocaleLowerCase('tr-TR');
+  if (/openai|chatgpt|gemini|claude|copilot|yapay zeka|\bai\b/.test(value)) return 'ai';
+  if (/iphone|ipad|macbook|macos|\bios\b|apple|vision pro/.test(value)) return 'apple';
+  if (/android|samsung|galaxy|pixel|xiaomi|one ui|snapdragon|telefon|tablet/.test(value)) return 'android';
+  if (/güvenlik|siber|malware|ransomware|zero.day|veri ihlali|vulnerability/.test(value)) return 'security';
+  if (/nvidia|amd|intel|işlemci|ekran kartı|gpu|cpu|çip|chip/.test(value)) return 'hardware';
+  if (/windows|microsoft|linux|uygulama|software|yazılım|güncelleme/.test(value)) return 'software';
+  if (/fiyat|indirim|kampanya|satış|ön sipariş|deal|discount/.test(value)) return 'deals';
+  if (/otomobil|elektrikli araç|tesla|otomotiv|vehicle|car/.test(value)) return 'mobility';
+  if (/uzay|nasa|spacex|roket|space|astronomi/.test(value)) return 'science-space';
+  return 'general-tech';
+}
+
+function storyTypeFor(title = '', officialCount = 0) {
+  const value = String(title).toLocaleLowerCase('tr-TR');
+  if (/sızıntı|iddia|rumor|leak|reportedly|could|may |bekleniyor/.test(value)) return 'rumor';
+  if (/inceleme|review|rehber|nasıl|liste|karşılaştırma|tavsiy/.test(value)) return 'explainer';
+  if (/fiyat|indirim|kampanya|satış|ön sipariş|deal|discount/.test(value)) return 'deal';
+  if (/güncelleme|update|beta|rollout|yama|patch/.test(value)) return 'update';
+  if (/tanıttı|duyurdu|lansman|launch|announc|unveil|introduc/.test(value)) return officialCount ? 'official_launch' : 'launch';
+  if (officialCount) return 'official_news';
+  return 'news';
+}
+
+function marketFor(meta = {}) {
+  const value = String(meta.market_relevance || '').toLowerCase();
+  return /turkey|local|türkiye/.test(value) || meta.source_type === 'competitor' || meta.source_type === 'owned' ? 'TR' : 'GLOBAL';
+}
+
+function opportunityWindow({ sourceCount = 1, competitorCount = 0, officialCount = 0, novelty = 0 }) {
+  if (competitorCount >= 3) return 0;
+  if (competitorCount === 2) return 25;
+  if (competitorCount === 1) return 60;
+  const base = officialCount ? 480 : sourceCount >= 2 ? 210 : 360;
+  return Math.round(base * (novelty >= 70 ? 1 : novelty >= 45 ? .8 : .55));
+}
+
+function editorialPackageFor(cluster) {
+  const references = (cluster.items || []).slice(0, 6).map((item) => ({ title: item.title, source: item.source_name, url: item.url, published_at: item.published_at || item.created_at }));
+  const angleByBeat = {
+    ai: 'Kullanıcıya etkisini, erişim durumunu ve rakip modellerden farkını öne çıkar.',
+    apple: 'Desteklenen cihazlar, kullanıcı etkisi ve Türkiye erişimini netleştir.',
+    android: 'Model listesi, dağıtım takvimi ve kullanıcıya gelen yenilikleri öne çıkar.',
+    security: 'Kimlerin etkilendiğini, risk seviyesini ve alınması gereken önlemi açıkla.',
+    deals: 'Güncel fiyatı, geçmiş fiyatı ve fırsatın gerçekten avantajlı olup olmadığını doğrula.',
+    hardware: 'Performans farkını, hedef kullanıcıyı ve fiyat/erişim bilgisini öne çıkar.'
+  };
+  return {
+    decision: cluster.opportunity_minutes > 30 && cluster.novelty_score >= 55 ? 'write_now' : cluster.opportunity_minutes > 0 ? 'verify_first' : 'monitor',
+    angle: angleByBeat[cluster.beat] || 'Gelişmenin kullanıcıya etkisini, Türkiye bağlantısını ve yeni olan kısmını öne çıkar.',
+    source_claims: references.slice(0, 4).map((item) => `${item.source}: ${item.title}`),
+    open_questions: ['Ana iddia bağımsız bir kaynakla doğrulandı mı?', 'Türkiye erişimi, fiyatı veya takvimi belli mi?', 'Önceki habere göre gerçekten yeni olan ayrıntı ne?'],
+    headline_options: [`${cluster.cluster_name}`, `${cluster.cluster_name}: Bilinenler ve öne çıkan ayrıntılar`, `${cluster.cluster_name} hakkında yeni gelişme`],
+    references
+  };
+}
+
 async function syncTeknoblog() {
   let page = 1;
   let totalPages = 1;
@@ -107,7 +165,7 @@ async function recentCandidates(limit = 600) {
   return result.rows;
 }
 
-function buildClusters(items = [], sourceMeta = new Map(), ownedPosts = []) {
+function buildClusters(items = [], sourceMeta = new Map(), ownedPosts = [], context = {}) {
   const groups = [];
   for (const item of items) {
     const itemTokens = tokens(item.title);
@@ -135,7 +193,7 @@ function buildClusters(items = [], sourceMeta = new Map(), ownedPosts = []) {
     const recentCount = sorted.filter((item) => Date.now() - new Date(item.published_at || item.created_at).getTime() <= 6 * 3600000).length;
     const last90 = sorted.filter((item) => Date.now() - new Date(item.published_at || item.created_at).getTime() <= 90 * 60000).length;
     const previous90 = sorted.filter((item) => { const age = Date.now() - new Date(item.published_at || item.created_at).getTime(); return age > 90 * 60000 && age <= 180 * 60000; }).length;
-    const metas = timeline.map((item) => sourceMeta.get(String(item.source_id || '')) || { source_type: 'news', trust_score: 70 });
+    const metas = timeline.map((item) => sourceMeta.get(String(item.source_id || '')) || { source_type: 'news', trust_score: 70, market_relevance: 'global' });
     const officialCount = new Set(timeline.filter((item, index) => metas[index].source_type === 'official').map((item) => item.source_name)).size;
     const competitorItems = timeline.filter((item, index) => metas[index].source_type === 'competitor');
     const competitorCount = new Set(competitorItems.map((item) => item.source_name)).size;
@@ -168,8 +226,37 @@ function buildClusters(items = [], sourceMeta = new Map(), ownedPosts = []) {
     ].filter(Boolean);
     const momentum = clamp(25 + sources.length * 12 + recentCount * 9 - ageHours * 2);
     const confidence = clamp(30 + sources.length * 15 + (sorted[0]?.image_url ? 8 : 0) + (sorted.length > 2 ? 10 : 0));
-    return {
-      cluster_key: hash(group.tokens.slice(0, 6).sort().join('|')),
+    const clusterKey = hash(group.tokens.slice(0, 6).sort().join('|'));
+    const beat = beatFor(sorted[0]?.title || '');
+    const storyType = storyTypeFor(sorted[0]?.title || '', officialCount);
+    let historicalOverlap = ownedMatch;
+    for (const historical of context.previousClusters || []) {
+      if (historical.cluster_key === clusterKey) continue;
+      historicalOverlap = Math.max(historicalOverlap, overlap(titleTokens, tokens(historical.cluster_name)));
+    }
+    const novelty = clamp(100 - historicalOverlap * 100 + (officialCount ? 8 : 0) - (storyType === 'explainer' ? 18 : 0));
+    const markets = [...new Set(metas.map(marketFor))];
+    const spread = clamp(sources.length * 14 + markets.length * 18 + recentCount * 8 + Math.max(0, last90 - previous90) * 12);
+    const windowMinutes = opportunityWindow({ sourceCount: sources.length, competitorCount, officialCount, novelty });
+    const opportunityExpiresAt = new Date(first + windowMinutes * 60000);
+    const opportunityMinutes = Math.max(0, Math.round((opportunityExpiresAt.getTime() - Date.now()) / 60000));
+    const queueMatch = sorted.some((item) => context.queueUrls?.has(String(item.url || '').replace(/\/+$/, '')));
+    const lifecycleStage = ownedCoverage ? 'published' : queueMatch ? 'queued' : opportunityMinutes <= 0 ? 'expired' : sources.length >= 2 && momentum >= 55 ? 'accelerating' : sources.length >= 2 ? 'corroborated' : 'detected';
+    const seenTimelineSources = new Set();
+    const sourceTimeline = timeline.flatMap((item, index) => {
+      const key = String(item.source_id || item.source_name || '');
+      if (seenTimelineSources.has(key)) return [];
+      seenTimelineSources.add(key);
+      return [{ source_id: item.source_id, source_name: item.source_name, source_type: metas[index].source_type, market: marketFor(metas[index]), published_at: item.published_at || item.created_at, url: item.url }];
+    });
+    const watchlists = (context.watchlists || []).filter((watch) => {
+      const words = Array.isArray(watch.keywords) ? watch.keywords : [];
+      const beats = Array.isArray(watch.beats) ? watch.beats : [];
+      const text = String(sorted[0]?.title || '').toLocaleLowerCase('tr-TR');
+      return beats.includes(beat) || words.some((word) => text.includes(String(word).toLocaleLowerCase('tr-TR')));
+    }).map((watch) => watch.name);
+    const cluster = {
+      cluster_key: clusterKey,
       cluster_name: sorted[0].title,
       source_count: sources.length,
       item_count: sorted.length,
@@ -186,42 +273,106 @@ function buildClusters(items = [], sourceMeta = new Map(), ownedPosts = []) {
       signal_stage: stage,
       first_source_name: firstSource,
       acceleration_score: acceleration,
+      novelty_score: novelty,
+      spread_score: spread,
+      story_type: storyType,
+      beat,
+      markets,
+      country_count: markets.length,
+      propagation_stage: markets.includes('TR') && markets.includes('GLOBAL') ? 'entering_turkey' : markets.includes('TR') ? 'turkey_only' : 'global_only',
+      opportunity_window_minutes: windowMinutes,
+      opportunity_minutes: opportunityMinutes,
+      opportunity_expires_at: opportunityExpiresAt.toISOString(),
+      lifecycle_stage: lifecycleStage,
+      source_timeline: sourceTimeline,
+      watchlists,
       reasons,
       first_seen_at: new Date(first).toISOString(),
       last_seen_at: new Date(last).toISOString(),
       sources,
       items: sorted.slice(0, 8)
     };
+    cluster.editorial_package = editorialPackageFor(cluster);
+    return cluster;
   }).sort((a, b) => b.first_mover_score - a.first_mover_score || b.momentum_score - a.momentum_score || b.source_count - a.source_count);
 }
 
+async function updateSourceLeadership(clusters = []) {
+  const stats = new Map();
+  for (const cluster of clusters) {
+    const timeline = cluster.source_timeline || [];
+    const firstAt = timeline[0]?.published_at ? new Date(timeline[0].published_at).getTime() : 0;
+    const secondAt = timeline[1]?.published_at ? new Date(timeline[1].published_at).getTime() : firstAt;
+    for (let index = 0; index < timeline.length; index += 1) {
+      const item = timeline[index];
+      if (!item.source_id) continue;
+      const key = `${item.source_id}|${cluster.beat}`;
+      const stat = stats.get(key) || { source_id: String(item.source_id), source_name: item.source_name || '', beat: cluster.beat, samples: 0, first: 0, corroborations: 0, lead_total: 0, successes: 0 };
+      stat.samples += 1;
+      if (index === 0) { stat.first += 1; stat.lead_total += Math.max(0, Math.round((secondAt - firstAt) / 60000)); }
+      else stat.corroborations += 1;
+      if (cluster.owned_coverage || cluster.lifecycle_stage === 'queued') stat.successes += 1;
+      stats.set(key, stat);
+    }
+  }
+  for (const stat of stats.values()) {
+    const avgLead = stat.first ? Math.round(stat.lead_total / stat.first) : 0;
+    const leadership = clamp((stat.first / Math.max(1, stat.samples)) * 65 + Math.min(35, avgLead / 3));
+    const success = clamp((stat.successes / Math.max(1, stat.samples)) * 100);
+    await queryLocal(`INSERT INTO source_leadership_stats(source_id,source_name,beat,sample_count,first_break_count,corroboration_count,avg_lead_minutes,leadership_score,success_score,updated_at)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW()) ON CONFLICT(source_id,beat) DO UPDATE SET
+      source_name=EXCLUDED.source_name,sample_count=EXCLUDED.sample_count,first_break_count=EXCLUDED.first_break_count,
+      corroboration_count=EXCLUDED.corroboration_count,avg_lead_minutes=EXCLUDED.avg_lead_minutes,
+      leadership_score=EXCLUDED.leadership_score,success_score=EXCLUDED.success_score,updated_at=NOW()`,
+    [stat.source_id, stat.source_name, stat.beat, stat.samples, stat.first, stat.corroborations, avgLead, leadership, success]);
+  }
+}
+
 async function clustersSection() {
-  const [candidates, sources, owned] = await Promise.all([
+  const [candidates, sources, owned, previous, queue, watchlists] = await Promise.all([
     recentCandidates(),
-    queryLocal(`SELECT id,source_type,trust_score,priority_weight FROM sources`),
-    queryLocal(`SELECT title,url,published_at FROM teknoblog_content WHERE published_at>=NOW()-INTERVAL '14 days' ORDER BY published_at DESC LIMIT 500`)
+    queryLocal(`SELECT id,source_type,trust_score,priority_weight,market_relevance FROM sources`),
+    queryLocal(`SELECT title,url,published_at FROM teknoblog_content WHERE published_at>=NOW()-INTERVAL '14 days' ORDER BY published_at DESC LIMIT 500`),
+    queryLocal(`SELECT cluster_key,cluster_name,lifecycle_stage,last_seen_at FROM content_clusters WHERE last_seen_at>=NOW()-INTERVAL '30 days' ORDER BY last_seen_at DESC LIMIT 500`),
+    queryLocal(`SELECT url FROM editorial_queue WHERE status NOT IN ('published','skipped')`),
+    queryLocal(`SELECT name,keywords,beats,source_ids,alert_threshold FROM radar_watchlists WHERE is_active=true ORDER BY name`)
   ]);
   const sourceMeta = new Map(sources.rows.map((source) => [String(source.id), source]));
-  const clusters = buildClusters(candidates, sourceMeta, owned.rows);
+  const previousMap = new Map(previous.rows.map((item) => [item.cluster_key, item]));
+  const queueUrls = new Set(queue.rows.map((item) => String(item.url || '').replace(/\/+$/, '')));
+  const clusters = buildClusters(candidates, sourceMeta, owned.rows, { previousClusters: previous.rows, queueUrls, watchlists: watchlists.rows });
   for (const cluster of clusters.slice(0, 80)) {
     await queryLocal(`INSERT INTO content_clusters(cluster_key,cluster_name,source_count,item_count,momentum_score,confidence_score,first_seen_at,last_seen_at,payload,
-      early_signal_score,first_mover_score,breakout_probability,competitor_count,official_source_count,owned_coverage,lead_window_minutes,signal_stage,first_source_name,updated_at)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,NOW()) ON CONFLICT(cluster_key) DO UPDATE SET
+      early_signal_score,first_mover_score,breakout_probability,competitor_count,official_source_count,owned_coverage,lead_window_minutes,signal_stage,first_source_name,
+      lifecycle_stage,novelty_score,spread_score,opportunity_minutes,opportunity_expires_at,story_type,beat,country_count,countries,source_timeline,editorial_package,updated_at)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,NOW()) ON CONFLICT(cluster_key) DO UPDATE SET
       cluster_name=EXCLUDED.cluster_name,source_count=EXCLUDED.source_count,item_count=EXCLUDED.item_count,
       momentum_score=EXCLUDED.momentum_score,confidence_score=EXCLUDED.confidence_score,last_seen_at=EXCLUDED.last_seen_at,payload=EXCLUDED.payload,
       early_signal_score=EXCLUDED.early_signal_score,first_mover_score=EXCLUDED.first_mover_score,breakout_probability=EXCLUDED.breakout_probability,
       competitor_count=EXCLUDED.competitor_count,official_source_count=EXCLUDED.official_source_count,owned_coverage=EXCLUDED.owned_coverage,
-      lead_window_minutes=EXCLUDED.lead_window_minutes,signal_stage=EXCLUDED.signal_stage,first_source_name=EXCLUDED.first_source_name,updated_at=NOW()`,
+      lead_window_minutes=EXCLUDED.lead_window_minutes,signal_stage=EXCLUDED.signal_stage,first_source_name=EXCLUDED.first_source_name,
+      lifecycle_stage=EXCLUDED.lifecycle_stage,novelty_score=EXCLUDED.novelty_score,spread_score=EXCLUDED.spread_score,
+      opportunity_minutes=EXCLUDED.opportunity_minutes,opportunity_expires_at=EXCLUDED.opportunity_expires_at,story_type=EXCLUDED.story_type,
+      beat=EXCLUDED.beat,country_count=EXCLUDED.country_count,countries=EXCLUDED.countries,source_timeline=EXCLUDED.source_timeline,
+      editorial_package=EXCLUDED.editorial_package,updated_at=NOW()`,
     [cluster.cluster_key, cluster.cluster_name, cluster.source_count, cluster.item_count, cluster.momentum_score, cluster.confidence_score, cluster.first_seen_at, cluster.last_seen_at,
-      JSON.stringify({ sources: cluster.sources, items: cluster.items, reasons: cluster.reasons, acceleration_score: cluster.acceleration_score, matched_post: cluster.matched_post }),
+      JSON.stringify({ sources: cluster.sources, items: cluster.items, reasons: cluster.reasons, acceleration_score: cluster.acceleration_score, matched_post: cluster.matched_post, propagation_stage: cluster.propagation_stage, watchlists: cluster.watchlists }),
       cluster.early_signal_score, cluster.first_mover_score, cluster.breakout_probability, cluster.competitor_count, cluster.official_source_count,
-      cluster.owned_coverage, cluster.lead_window_minutes, cluster.signal_stage, cluster.first_source_name]);
+      cluster.owned_coverage, cluster.lead_window_minutes, cluster.signal_stage, cluster.first_source_name, cluster.lifecycle_stage, cluster.novelty_score,
+      cluster.spread_score, cluster.opportunity_minutes, cluster.opportunity_expires_at, cluster.story_type, cluster.beat, cluster.country_count,
+      JSON.stringify(cluster.markets), JSON.stringify(cluster.source_timeline), JSON.stringify(cluster.editorial_package)]);
+    const previousStage = previousMap.get(cluster.cluster_key)?.lifecycle_stage || null;
+    if (previousStage !== cluster.lifecycle_stage) {
+      await queryLocal(`INSERT INTO cluster_lifecycle_events(cluster_key,event_type,from_stage,to_stage,source_name,occurred_at,payload)
+        VALUES($1,$2,$3,$4,$5,NOW(),$6)`, [cluster.cluster_key, 'stage_changed', previousStage, cluster.lifecycle_stage, cluster.first_source_name, JSON.stringify({ title: cluster.cluster_name, opportunity_minutes: cluster.opportunity_minutes, source_count: cluster.source_count, competitor_count: cluster.competitor_count })]);
+    }
     await queryLocal(`INSERT INTO early_signal_snapshots(cluster_key,capture_bucket,early_signal_score,first_mover_score,breakout_probability,source_count,competitor_count,payload)
       VALUES($1,date_trunc('hour',NOW()) + floor(extract(minute from NOW())/15)*interval '15 minutes',$2,$3,$4,$5,$6,$7)
       ON CONFLICT(cluster_key,capture_bucket) DO UPDATE SET early_signal_score=EXCLUDED.early_signal_score,first_mover_score=EXCLUDED.first_mover_score,
       breakout_probability=EXCLUDED.breakout_probability,source_count=EXCLUDED.source_count,competitor_count=EXCLUDED.competitor_count,payload=EXCLUDED.payload`,
     [cluster.cluster_key, cluster.early_signal_score, cluster.first_mover_score, cluster.breakout_probability, cluster.source_count, cluster.competitor_count, JSON.stringify({ stage: cluster.signal_stage, title: cluster.cluster_name })]);
   }
+  await updateSourceLeadership(clusters.slice(0, 80));
   return clusters.slice(0, 60);
 }
 
@@ -229,12 +380,15 @@ function isEarlySignal(item) {
   return !item.owned_coverage
     && Number(item.source_count) === 1
     && Number(item.competitor_count) === 0
-    && Number(item.first_mover_score) >= 52;
+    && Number(item.first_mover_score) >= 52
+    && Number(item.novelty_score) >= 45
+    && Number(item.opportunity_minutes) > 0;
 }
 
 function isRisingCluster(item) {
   return !item.owned_coverage
-    && Number(item.source_count) >= 2;
+    && Number(item.source_count) >= 2
+    && Number(item.opportunity_minutes) > 0;
 }
 
 function risingClusters(items = []) {
@@ -242,6 +396,58 @@ function risingClusters(items = []) {
     .sort((a, b) => b.momentum_score - a.momentum_score
       || b.source_count - a.source_count
       || b.confidence_score - a.confidence_score);
+}
+
+async function lifecycleSection() {
+  const clusters = await clustersSection();
+  const stages = ['detected', 'corroborated', 'accelerating', 'queued', 'published', 'expired'];
+  const counts = Object.fromEntries(stages.map((stage) => [stage, clusters.filter((item) => item.lifecycle_stage === stage).length]));
+  const events = (await queryLocal(`SELECT * FROM cluster_lifecycle_events WHERE occurred_at>=NOW()-INTERVAL '48 hours' ORDER BY occurred_at DESC LIMIT 120`)).rows;
+  return {
+    generated_at: nowIso(), counts, events,
+    urgent: clusters.filter((item) => item.opportunity_minutes > 0 && item.opportunity_minutes <= 60 && !item.owned_coverage).sort((a, b) => a.opportunity_minutes - b.opportunity_minutes).slice(0, 20),
+    items: clusters.sort((a, b) => b.opportunity_minutes - a.opportunity_minutes || b.first_mover_score - a.first_mover_score).slice(0, 60)
+  };
+}
+
+async function leadershipSection() {
+  const rows = (await queryLocal(`SELECT l.*,s.source_type,s.market_relevance,s.trust_score FROM source_leadership_stats l
+    LEFT JOIN sources s ON s.id=l.source_id ORDER BY l.leadership_score DESC,l.sample_count DESC,l.source_name LIMIT 150`)).rows;
+  return { generated_at: nowIso(), items: rows };
+}
+
+async function watchlistsSection() {
+  const [lists, clusters] = await Promise.all([
+    queryLocal(`SELECT * FROM radar_watchlists ORDER BY is_active DESC,name`),
+    clustersSection()
+  ]);
+  return {
+    items: lists.rows.map((watch) => ({ ...watch, matches: clusters.filter((cluster) => cluster.watchlists?.includes(watch.name)).slice(0, 12) })),
+    generated_at: nowIso()
+  };
+}
+
+async function pioneerMetricsSection() {
+  const [clusters, outcomes, decisions, leaders] = await Promise.all([
+    queryLocal(`SELECT
+      COUNT(*)::int AS tracked,
+      COUNT(*) FILTER(WHERE lifecycle_stage='published' OR owned_coverage=true)::int AS published,
+      COUNT(*) FILTER(WHERE opportunity_minutes>0 AND owned_coverage=false)::int AS open_windows,
+      COUNT(*) FILTER(WHERE novelty_score>=70)::int AS novel_topics,
+      ROUND(AVG(novelty_score))::int AS avg_novelty,
+      ROUND(AVG(spread_score))::int AS avg_spread,
+      ROUND(AVG(lead_window_minutes))::int AS avg_lead_minutes
+      FROM content_clusters WHERE updated_at>=NOW()-INTERVAL '30 days'`),
+    queryLocal(`SELECT COUNT(*)::int AS observed,
+      COUNT(*) FILTER(WHERE discover_clicks>=3 OR discover_impressions>=100)::int AS discover_wins,
+      COUNT(*) FILTER(WHERE news_clicks>=3 OR news_impressions>=100)::int AS news_wins,
+      ROUND(AVG(discover_clicks+news_clicks))::int AS avg_clicks
+      FROM prediction_outcomes WHERE matched_at>=NOW()-INTERVAL '30 days'`),
+    queryLocal(`SELECT decision,COALESCE(reason_code,'unspecified') AS reason_code,COUNT(*)::int AS count FROM editorial_feedback WHERE created_at>=NOW()-INTERVAL '30 days' GROUP BY decision,COALESCE(reason_code,'unspecified') ORDER BY count DESC`),
+    queryLocal(`SELECT source_name,beat,leadership_score,sample_count,avg_lead_minutes,success_score FROM source_leadership_stats ORDER BY leadership_score DESC,sample_count DESC LIMIT 15`)
+  ]);
+  const outcome = outcomes.rows[0] || {};
+  return { summary: { ...(clusters.rows[0] || {}), ...outcome, discover_success_rate: outcome.observed ? Math.round(outcome.discover_wins / outcome.observed * 100) : 0, news_success_rate: outcome.observed ? Math.round(outcome.news_wins / outcome.observed * 100) : 0 }, decisions: decisions.rows, leaders: leaders.rows, generated_at: nowIso() };
 }
 
 async function earlySignalsSection() {
@@ -498,21 +704,48 @@ async function queueAction(body) {
     completed_at=CASE WHEN EXCLUDED.status='published' THEN NOW() ELSE editorial_queue.completed_at END RETURNING *`,
   [body.candidate_id || null, body.title || 'Başlıksız', url, body.source_name || '', body.image_url || '', body.status || 'new', clamp(body.priority || 50), body.notes || '', body.assigned_to || '', body.published_url || null]);
   const features = extractIntelligenceFeatures({ title: body.title, source_name: body.source_name, image_url: body.image_url }).features;
-  await queryLocal(`INSERT INTO editorial_feedback(url,title,source_name,decision,notes,features) VALUES($1,$2,$3,$4,$5,$6)`,
-    [url, body.title || 'Başlıksız', body.source_name || '', body.status || 'new', body.notes || '', JSON.stringify(features)]);
+  await queryLocal(`INSERT INTO editorial_feedback(url,title,source_name,decision,reason_code,cluster_key,notes,features) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
+    [url, body.title || 'Başlıksız', body.source_name || '', body.status || 'new', body.reason_code || null, body.cluster_key || null, body.notes || '', JSON.stringify(features)]);
   if (body.status === 'published') await reconcilePredictionOutcomes();
+  return result.rows[0];
+}
+
+async function feedbackAction(body) {
+  const url = String(body.url || '').trim();
+  if (!url) throw new Error('url gerekli');
+  const decision = String(body.decision || '').trim();
+  if (!['useful', 'waiting', 'skipped', 'duplicate', 'unreliable'].includes(decision)) throw new Error('Geçersiz değerlendirme');
+  const features = extractIntelligenceFeatures({ title: body.title, source_name: body.source_name, image_url: body.image_url }).features;
+  const result = await queryLocal(`INSERT INTO editorial_feedback(url,title,source_name,decision,reason_code,cluster_key,notes,features)
+    VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`, [url, body.title || '', body.source_name || '', decision, body.reason_code || decision, body.cluster_key || null, body.notes || '', JSON.stringify(features)]);
+  return result.rows[0];
+}
+
+async function watchlistAction(body) {
+  const name = String(body.name || '').trim();
+  if (!name) throw new Error('İzleme listesi adı gerekli');
+  const keywords = Array.isArray(body.keywords) ? body.keywords : String(body.keywords || '').split(',').map((item) => item.trim()).filter(Boolean);
+  const beats = Array.isArray(body.beats) ? body.beats : [];
+  const result = await queryLocal(`INSERT INTO radar_watchlists(name,keywords,beats,source_ids,alert_threshold,is_active,updated_at)
+    VALUES($1,$2,$3,$4,$5,$6,NOW()) ON CONFLICT(name) DO UPDATE SET keywords=EXCLUDED.keywords,beats=EXCLUDED.beats,
+    source_ids=EXCLUDED.source_ids,alert_threshold=EXCLUDED.alert_threshold,is_active=EXCLUDED.is_active,updated_at=NOW() RETURNING *`,
+  [name, JSON.stringify(keywords), JSON.stringify(beats), JSON.stringify(body.source_ids || []), clamp(body.alert_threshold || 65), body.is_active !== false]);
   return result.rows[0];
 }
 
 async function runAlerts() {
   const clusters = await clustersSection();
   const stale = (await queryLocal(`SELECT * FROM editorial_queue WHERE status NOT IN ('published','skipped') AND created_at<NOW()-INTERVAL '2 hours' ORDER BY priority DESC LIMIT 10`)).rows;
+  const recentEvents = (await queryLocal(`SELECT * FROM cluster_lifecycle_events WHERE occurred_at>=NOW()-INTERVAL '30 minutes' ORDER BY occurred_at DESC LIMIT 50`)).rows;
   const drift = (await queryLocal(`SELECT COUNT(*)::int AS observed,AVG(discover_probability)/100.0 AS predicted,
     AVG(CASE WHEN discover_impressions>=100 OR discover_clicks>=3 THEN 1 ELSE 0 END) AS actual FROM prediction_outcomes WHERE observed_at>=NOW()-INTERVAL '30 days'`)).rows[0] || {};
   const driftGap = Math.abs(Number(drift.predicted || 0) - Number(drift.actual || 0));
   const alerts = [
     ...clusters.filter((item) => isEarlySignal(item) && item.first_mover_score >= 70).slice(0, 8).map((item) => ({ type: 'first_mover', key: `first-mover:${item.cluster_key}:${new Date().toISOString().slice(0,13)}`, title: item.cluster_name, payload: item })),
     ...risingClusters(clusters).filter((item) => item.momentum_score >= 55).slice(0, 8).map((item) => ({ type: 'momentum', key: `momentum:${item.cluster_key}:${new Date().toISOString().slice(0,13)}`, title: item.cluster_name, payload: item })),
+    ...clusters.filter((item) => item.opportunity_minutes > 0 && item.opportunity_minutes <= 30 && !item.owned_coverage).slice(0, 8).map((item) => ({ type: 'deadline', key: `deadline:${item.cluster_key}:${new Date().toISOString().slice(0,13)}`, title: item.cluster_name, payload: item })),
+    ...clusters.filter((item) => item.watchlists?.length && item.first_mover_score >= 65 && item.opportunity_minutes > 0).slice(0, 8).map((item) => ({ type: 'watchlist', key: `watchlist:${item.cluster_key}:${new Date().toISOString().slice(0,13)}`, title: item.cluster_name, payload: item })),
+    ...recentEvents.filter((item) => ['corroborated', 'accelerating'].includes(item.to_stage)).map((item) => ({ type: 'corroborated', key: `corroborated:${item.cluster_key}:${new Date(item.occurred_at).toISOString().slice(0,13)}`, title: item.payload?.title || item.cluster_key, payload: item.payload || item })),
     ...stale.map((item) => ({ type: 'queue_stale', key: `queue:${item.id}:${new Date().toISOString().slice(0,10)}`, title: item.title, payload: item })),
     ...(Number(drift.observed || 0) >= 20 && driftGap >= .2 ? [{ type: 'model_drift', key: `drift:${new Date().toISOString().slice(0,10)}`, title: `Discover tahmin sapması %${Math.round(driftGap * 100)}`, payload: drift }] : [])
   ];
@@ -525,7 +758,8 @@ async function runAlerts() {
   }
   const webhook = process.env.SLACK_KAYNAK_WEBHOOK_URL || process.env.SLACK_WEBHOOK_URL || '';
   if (webhook && newAlerts.length) {
-    const lines = ['*Teknoblog Radar · Erken Sinyal Uyarıları*', ...newAlerts.slice(0, 12).map((alert) => `• ${alert.type === 'first_mover' ? '🚨 İlk yayın fırsatı' : alert.type === 'momentum' ? '📈 Hızlanıyor' : '⏳ Bekliyor'}: ${alert.title}${alert.type === 'first_mover' ? ` · Öncülük ${alert.payload.first_mover_score} · Rakip ${alert.payload.competitor_count}` : ''}`)];
+    const labels = { first_mover: '🚨 İlk yayın fırsatı', momentum: '📈 Hızlanıyor', deadline: '⏱️ Fırsat penceresi kapanıyor', watchlist: '🎯 İzleme listesi eşleşmesi', corroborated: '✅ İkinci kaynak doğruladı', queue_stale: '⏳ Görev bekliyor' };
+    const lines = ['*Teknoblog Radar · Öncü Haber Uyarıları*', ...newAlerts.slice(0, 12).map((alert) => `• ${labels[alert.type] || 'Radar uyarısı'}: ${alert.title}${alert.type === 'first_mover' ? ` · Öncülük ${alert.payload.first_mover_score} · Rakip ${alert.payload.competitor_count}` : alert.type === 'deadline' ? ` · ${alert.payload.opportunity_minutes} dakika kaldı` : ''}`)];
     const response = await fetch(webhook, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: lines.join('\n') }) });
     if (response.ok) {
       await queryLocal(`UPDATE smart_alerts SET status='sent',sent_at=NOW() WHERE id=ANY($1::bigint[])`, [newAlerts.map((alert) => alert.id)]);
@@ -541,6 +775,7 @@ async function maintenance() {
   result.pipeline_runs = (await queryLocal(`DELETE FROM pipeline_runs WHERE created_at<NOW()-INTERVAL '30 days' AND status<>'running' RETURNING id`)).rowCount;
   result.alerts = (await queryLocal(`DELETE FROM smart_alerts WHERE created_at<NOW()-INTERVAL '30 days' RETURNING id`)).rowCount;
   result.early_signal_snapshots = (await queryLocal(`DELETE FROM early_signal_snapshots WHERE capture_bucket<NOW()-INTERVAL '14 days' RETURNING id`)).rowCount;
+  result.lifecycle_events = (await queryLocal(`DELETE FROM cluster_lifecycle_events WHERE occurred_at<NOW()-INTERVAL '60 days' RETURNING id`)).rowCount;
   result.source_quality = await recalculateSourceQuality();
   result.weekly_report = await weeklyReportSection();
   result.disk = diskStatus();
@@ -574,6 +809,10 @@ export default async function handler(req, res) {
         const items = risingClusters(await clustersSection());
         return json(res, 200, { criteria: 'En az iki bağımsız kaynakla doğrulanan, ivmesine göre sıralanan konu kümeleri', items: items.slice(0, 40) });
       }
+      if (section === 'lifecycle') return json(res, 200, await lifecycleSection());
+      if (section === 'leadership') return json(res, 200, await leadershipSection());
+      if (section === 'watchlists') return json(res, 200, await watchlistsSection());
+      if (section === 'pioneer-metrics') return json(res, 200, await pioneerMetricsSection());
       if (section === 'coverage') return json(res, 200, { items: await coverageSection() });
       if (section === 'queue') return json(res, 200, { items: await queueSection() });
       if (section === 'sources') return json(res, 200, { items: await sourceHealthSection() });
@@ -587,7 +826,9 @@ export default async function handler(req, res) {
     if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
     const body = bodyOf(req);
     if (body.action === 'queue_upsert') return json(res, 200, { item: await queueAction(body) });
+    if (body.action === 'feedback_record') return json(res, 200, { item: await feedbackAction(body) });
     if (!authorized(req)) return json(res, 401, { error: 'Yetkisiz istek' });
+    if (body.action === 'watchlist_upsert') return json(res, 200, { item: await watchlistAction(body) });
     if (body.action === 'sync_teknoblog') return json(res, 200, { ok: true, stored: await syncTeknoblog() });
     if (body.action === 'sync_gsc') return json(res, 200, { ok: true, stored: await syncGsc() });
     if (body.action === 'train_model') return json(res, 200, { ok: true, model: await trainIntelligenceModel() });

@@ -21,8 +21,8 @@ const TYPE_GROUPS = {
   guide: /nasıl|rehber|hangi|liste|karşılaştırma|en iyi/i,
   regulation: /yasak|ceza|dava|düzenleme|regülasyon|mahkeme/i
 };
-const POSITIVE_DECISIONS = new Set(['approved', 'writing', 'published', 'instagram', 'write', 'yazılacak', 'yazıldı']);
-const NEGATIVE_DECISIONS = new Set(['skipped', 'skip', 'geç', 'rejected']);
+const POSITIVE_DECISIONS = new Set(['approved', 'writing', 'published', 'instagram', 'write', 'yazılacak', 'yazıldı', 'useful']);
+const NEGATIVE_DECISIONS = new Set(['skipped', 'skip', 'geç', 'rejected', 'duplicate', 'unreliable']);
 
 function clean(value = '') { return String(value).toLocaleLowerCase('tr-TR').replace(/[^a-z0-9çğıöşü\s]/gi, ' ').replace(/\s+/g, ' ').trim(); }
 function sigmoid(value) { return 1 / (1 + Math.exp(-Math.max(-12, Math.min(12, value)))); }
@@ -164,7 +164,7 @@ export async function trainIntelligenceModel() {
   const news = buildChannel(training, 'news_positive');
 
   const feedbackRows = (await queryLocal(`SELECT DISTINCT ON(url) url,title,source_name,decision,features,created_at FROM editorial_feedback
-    WHERE decision IN ('approved','writing','published','instagram','skipped','rejected') AND title IS NOT NULL
+    WHERE decision IN ('approved','writing','published','instagram','skipped','rejected','useful','duplicate','unreliable') AND title IS NOT NULL
     ORDER BY url,created_at DESC LIMIT 1500`)).rows;
   const feedbackSamples = feedbackRows.map((row) => ({
     ...row,

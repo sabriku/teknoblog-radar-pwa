@@ -20,7 +20,11 @@ try {
   }
 
   console.log(JSON.stringify(data));
-  for (const action of ['sync_teknoblog', 'run_alerts', 'sync_gsc']) {
+  const minute = new Date().getUTCMinutes();
+  const followupActions = ['run_alerts'];
+  if (minute % 15 < 5) followupActions.push('sync_teknoblog');
+  if (minute < 5) followupActions.push('sync_gsc');
+  for (const action of followupActions) {
     try {
       const followup = await fetch(`${baseUrl}/api/intelligence?token=${encodeURIComponent(token)}`, {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action }), signal: controller.signal
@@ -31,7 +35,8 @@ try {
       console.log(JSON.stringify({ action, ok: false, skipped: true, error: error?.message || String(error) }));
     }
   }
-  for (const window of ['4h', '24h']) {
+  const trendWindows = minute % 15 < 5 ? ['4h', '24h'] : ['4h'];
+  for (const window of trendWindows) {
     try {
       const trends = await fetch(`${baseUrl}/api/trend-overview?google_trends=1&geo=all&category=all&window=${window}&limit=72`, { cache: 'no-store', signal: controller.signal });
       const trendsData = await trends.json().catch(() => ({}));

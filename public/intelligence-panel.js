@@ -1,26 +1,30 @@
 (() => {
   const VIEW_KEY = 'tb_decision_center_view';
   const sections = {
-    today: ['Bugünün Kararı', 'summary'], early: ['Erken Sinyaller', 'early-signals'], clusters: ['Yükselen Konular', 'clusters'], coverage: ['Teknoblog Kapsamı', 'coverage'],
+    today: ['Bugünün Kararı', 'summary'], early: ['Erken Sinyaller', 'early-signals'], clusters: ['Yükselen Konular', 'clusters'], lifecycle: ['Sinyal Akışı', 'lifecycle'], coverage: ['Teknoblog Kapsamı', 'coverage'],
     queue: ['Yazılacaklar', 'queue'], performance: ['Discover & News', 'performance'], accuracy: ['Model Doğruluğu', 'accuracy'], weekly: ['Haftalık Öğrenme', 'weekly-report'],
-    lab: ['Puan Kontrolü', 'scoring-lab'], sources: ['Kaynak Sağlığı', 'sources'], system: ['Sistem Bakımı', 'system']
+    pioneer: ['Öncülük Başarısı', 'pioneer-metrics'], lab: ['Puan Kontrolü', 'scoring-lab'], leadership: ['Kaynak Öncülüğü', 'leadership'], watchlists: ['İzleme Listeleri', 'watchlists'], sources: ['Kaynak Sağlığı', 'sources'], system: ['Sistem Bakımı', 'system']
   };
   const groups = [
-    { key: 'decide', label: 'Bugün & Sinyaller', icon: '⚡', views: ['today', 'early', 'clusters', 'coverage'] },
+    { key: 'decide', label: 'Bugün & Sinyaller', icon: '⚡', views: ['today', 'early', 'clusters', 'lifecycle', 'coverage'] },
     { key: 'workflow', label: 'Yazılacaklar', icon: '✍️', views: ['queue'] },
-    { key: 'learning', label: 'Performans & Öğrenme', icon: '📊', views: ['performance', 'accuracy', 'weekly', 'lab'] },
-    { key: 'health', label: 'Sistem Sağlığı', icon: '🩺', views: ['sources', 'system'] }
+    { key: 'learning', label: 'Performans & Öğrenme', icon: '📊', views: ['performance', 'pioneer', 'accuracy', 'weekly', 'lab'] },
+    { key: 'health', label: 'Kaynaklar & Sistem', icon: '🩺', views: ['leadership', 'watchlists', 'sources', 'system'] }
   ];
   const descriptions = {
     today: 'Şu anda dikkat isteyen fırsatları, yükselen konuları ve kaynak sorunlarını birlikte gösterir.',
     early: 'Tek kaynakta beliren, rakiplerde henüz görünmeyen ve ilk yayın avantajı taşıyan gelişmeler.',
     clusters: 'En az iki bağımsız kaynağın doğruladığı, yayılma ivmesine göre sıralanan konu kümeleri.',
+    lifecycle: 'Her konunun ilk sinyalden doğrulama, görev ve yayın sonucuna uzanan zaman çizelgesi.',
     coverage: 'Yeni haber mi yazılmalı, mevcut Teknoblog içeriği mi güncellenmeli?',
     queue: 'Yazılacak haberlerin görev durumu ve tamamlanma ilerlemesi.',
     performance: 'Search Console’dan gelen gerçek Discover ve Google News sonuçları.',
+    pioneer: 'Radar önerilerinin ilk yayın avantajına, Discover ve Google News başarısına gerçek katkısı.',
     accuracy: 'Radar tahminlerinin yayımlanan haberlerin gerçek performansıyla karşılaştırması.',
     weekly: 'Kazanan konular, güçlü kaynaklar ve kaçırılan yüksek potansiyelli adaylar.',
     lab: 'Puanların 100’e yığılmasını ve kaynak bazlı dağılımı denetler.',
+    leadership: 'Hangi kaynağın hangi konu alanında haberi önce verdiğini ve doğrulama değerini gösterir.',
+    watchlists: 'Öncelikli marka ve konular için takip profilleri ve eşleşen güncel sinyaller.',
     sources: 'Haber kaynaklarının güncellik, kalite ve veri üretim durumu.',
     system: 'Yerel PostgreSQL, görseller, uyarılar ve bakım işlemleri.'
   };
@@ -51,6 +55,15 @@
   const img = (item) => item?.image_url ? `<img class="tb-i-img" src="${esc(item.image_url)}" alt="" loading="lazy" onerror="this.hidden=true">` : '';
   const pill = (text, cls = '') => `<span class="tb-i-pill ${cls}">${esc(text)}</span>`;
   const empty = (text) => `<div class="tb-i-empty">${esc(text)}</div>`;
+  const stageName = (stage) => ({ detected: 'İlk sinyal', corroborated: 'Doğrulandı', accelerating: 'Hızlanıyor', queued: 'Yazılacak', published: 'Yayımlandı', expired: 'Fırsat geçti' })[stage] || stage || 'İzleniyor';
+  const beatName = (beat) => ({ ai: 'Yapay zekâ', apple: 'Apple', android: 'Android', security: 'Güvenlik', hardware: 'Donanım', software: 'Yazılım', deals: 'Fırsat', mobility: 'Mobilite', 'science-space': 'Bilim/Uzay', 'general-tech': 'Teknoloji' })[beat] || beat || 'Teknoloji';
+  function packageDetails(item) {
+    const pack = item.editorial_package || {};
+    const timeline = item.source_timeline || [];
+    if (!pack.references?.length && !timeline.length) return '';
+    const copyText = `Konu: ${item.cluster_name || ''}\nKarar: ${pack.decision || ''}\nAçı: ${pack.angle || ''}\n\nKaynak iddiaları:\n${(pack.source_claims || []).map((claim) => `- ${claim}`).join('\n')}\n\nKontrol edilecekler:\n${(pack.open_questions || []).map((question) => `- ${question}`).join('\n')}\n\nBaşlık seçenekleri:\n${(pack.headline_options || []).map((headline) => `- ${headline}`).join('\n')}\n\nReferanslar:\n${(pack.references || []).map((ref) => `- ${ref.source}: ${ref.url}`).join('\n')}`;
+    return `<div class="tb-i-details"><details><summary>⏱️ Kaynak zaman çizelgesi</summary>${timeline.map((source, index) => `<p><b>${index + 1}. ${esc(source.source_name)}</b> · ${fmt(source.published_at)} · ${esc(source.market || '')}${source.url ? ` · <a href="${esc(source.url)}" target="_blank">haber</a>` : ''}</p>`).join('') || '<p>Henüz tek kaynak var.</p>'}</details><details><summary>📝 Hazır yayın paketi</summary><p><b>Karar:</b> ${esc(pack.decision === 'write_now' ? 'Hemen yaz' : pack.decision === 'verify_first' ? 'Önce doğrula' : 'Takip et')}</p><p><b>Açı:</b> ${esc(pack.angle || '')}</p><b>Kaynakların söylediği</b><ul>${(pack.source_claims || []).map((claim) => `<li>${esc(claim)}</li>`).join('')}</ul><b>Kontrol edilecekler</b><ul>${(pack.open_questions || []).map((question) => `<li>${esc(question)}</li>`).join('')}</ul><b>Başlık seçenekleri</b><ul>${(pack.headline_options || []).map((headline) => `<li>${esc(headline)}</li>`).join('')}</ul><button data-copy-brief="${esc(copyText)}">Paketi kopyala</button></details></div>`;
+  }
   function cards(items, mode) {
     if (!items?.length) return empty('Bu bölüm için henüz veri yok.');
     return `<div class="tb-i-grid">${items.map((item) => {
@@ -59,16 +72,35 @@
       let badges = '';
       if (mode === 'clusters') badges = pill(`Momentum ${item.momentum_score}`, item.momentum_score >= 70 ? 'hot' : '') + pill(`${item.source_count} kaynak`) + pill(`Güven ${item.confidence_score}`);
       if (mode === 'early') badges = pill(item.signal_stage === 'act_now' ? 'Şimdi yaz' : item.signal_stage === 'emerging' ? 'Yükseliyor' : 'İzle', item.signal_stage === 'act_now' ? 'bad' : item.signal_stage === 'emerging' ? 'hot' : '') + pill(`Öncülük ${item.first_mover_score}`) + pill(`Patlama %${item.breakout_probability}`) + pill(`${item.competitor_count} rakip`);
+      if (item.cluster_key) badges += pill(stageName(item.lifecycle_stage), item.lifecycle_stage === 'accelerating' ? 'hot' : item.lifecycle_stage === 'expired' ? 'bad' : item.lifecycle_stage === 'published' ? 'good' : '') + pill(`Yeni ${item.novelty_score}`) + pill(beatName(item.beat)) + (item.opportunity_minutes > 0 ? pill(`⏱ ${item.opportunity_minutes} dk`, item.opportunity_minutes <= 30 ? 'bad' : 'hot') : pill('Fırsat süresi geçti', 'bad')) + (item.propagation_stage === 'entering_turkey' ? pill('🌍 → 🇹🇷', 'good') : '') + (item.watchlists || []).map((name) => pill(`🎯 ${name}`)).join('');
       if (mode === 'coverage') badges = pill(item.recommendation === 'new_article' ? 'Yeni haber' : item.recommendation === 'update_existing' ? 'Güncelle' : 'Yazıldı') + pill(`Eşleşme ${item.match_score}`);
-      const queueItem = { candidate_id: news.id, title: item.cluster_name || news.title, url: news.url, source_name: news.source_name, image_url: news.image_url, status: 'new', priority: Math.max(news.discover_score || 50, item.first_mover_score || 0, item.momentum_score || 0) };
+      const queueItem = { candidate_id: news.id, cluster_key: item.cluster_key, title: item.cluster_name || news.title, url: news.url, source_name: news.source_name, image_url: news.image_url, status: 'new', priority: Math.max(news.discover_score || 50, item.first_mover_score || 0, item.momentum_score || 0) };
       const reasons = mode === 'early' && item.reasons?.length ? `<ul class="tb-i-reasons">${item.reasons.slice(0, 4).map((reason) => `<li>${esc(reason)}</li>`).join('')}</ul>` : '';
       const brief = `Teknoblog için editoryal karar ver.\nKonu: ${queueItem.title || ''}\nKaynak: ${queueItem.source_name || ''}\nURL: ${queueItem.url || ''}\nİstenen: Yaz/Bekle/Geç kararı, ilk yayın açısı, Discover başlığı, Google News başlığı ve 5 maddelik kısa haber planı.`;
-      return `<article class="tb-i-card">${img(news)}<div class="tb-i-body"><div>${badges}</div><h3>${esc(item.cluster_name || news.title)}</h3><p>${esc(meta)}</p>${reasons}${item.matched_post ? `<p>Teknoblog eşleşmesi: <a href="${esc(item.matched_post.url)}" target="_blank">${esc(item.matched_post.title)}</a></p>` : ''}<div class="tb-i-actions"><a href="${esc(news.url || '#')}" target="_blank">Kaynağı aç</a><button data-queue='${esc(JSON.stringify(queueItem))}'>＋ Yazılacaklara</button><button data-slack='${esc(JSON.stringify(queueItem))}'>Slack’e gönder</button><button data-copy-brief="${esc(brief)}">✨ Karar briefi</button></div></div></article>`;
+      return `<article class="tb-i-card">${img(news)}<div class="tb-i-body"><div>${badges}</div><h3>${esc(item.cluster_name || news.title)}</h3><p>${esc(meta)}</p>${reasons}${item.matched_post ? `<p>Teknoblog eşleşmesi: <a href="${esc(item.matched_post.url)}" target="_blank">${esc(item.matched_post.title)}</a></p>` : ''}${packageDetails(item)}<div class="tb-i-actions"><a href="${esc(news.url || '#')}" target="_blank">Kaynağı aç</a><button data-queue='${esc(JSON.stringify(queueItem))}'>＋ Yazılacaklara</button><button data-slack='${esc(JSON.stringify(queueItem))}'>Slack’e gönder</button><button data-copy-brief="${esc(brief)}">✨ Karar briefi</button></div>${item.cluster_key ? `<details class="tb-i-feedback"><summary>Bu öneriyi değerlendir</summary><button data-feedback="useful" data-item='${esc(JSON.stringify(queueItem))}'>Faydalı</button><button data-feedback="duplicate" data-item='${esc(JSON.stringify(queueItem))}'>Tekrar</button><button data-feedback="unreliable" data-item='${esc(JSON.stringify(queueItem))}'>Kaynak zayıf</button><button data-feedback="skipped" data-item='${esc(JSON.stringify(queueItem))}'>Uygun değil</button></details>` : ''}</div></article>`;
     }).join('')}</div>`;
   }
   function summary(data) {
     const d = data.data || {};
     return `<div class="tb-i-metrics"><div><b>${d.fresh_candidates || 0}</b><span>24 saatlik aday</span></div><div><b>${d.active_sources || 0}</b><span>aktif kaynak</span></div><div><b>${d.queue_open || 0}</b><span>açık görev</span></div><div><b>${d.published_today || 0}</b><span>bugün yayımlandı</span></div><div><b>${d.images_24h || 0}</b><span>görselli içerik</span></div><div><b>%${d.disk?.used_percent ?? 0}</b><span>disk kullanımı</span></div></div><h3>İlk yayın fırsatları</h3>${cards(d.first_mover_opportunities || [], 'early')}<h3>Hızlanan konular</h3>${cards(d.rising_clusters || [], 'clusters')}<h3>İlgi isteyen kaynaklar</h3>${sourceTable(d.unhealthy_sources || [])}`;
+  }
+  function lifecycle(data) {
+    const counts = data.counts || {};
+    const timeline = data.events?.length ? `<div class="tb-i-timeline">${data.events.slice(0, 30).map((event) => `<div><i></i><b>${esc(event.payload?.title || event.cluster_key)}</b><span>${stageName(event.from_stage)} → ${stageName(event.to_stage)} · ${fmt(event.occurred_at)}</span></div>`).join('')}</div>` : empty('Henüz aşama değişikliği kaydedilmedi.');
+    return `<div class="tb-i-metrics"><div><b>${counts.detected || 0}</b><span>ilk sinyal</span></div><div><b>${counts.corroborated || 0}</b><span>doğrulandı</span></div><div><b>${counts.accelerating || 0}</b><span>hızlanıyor</span></div><div><b>${counts.queued || 0}</b><span>yazılacak</span></div><div><b>${counts.published || 0}</b><span>yayımlandı</span></div><div><b>${counts.expired || 0}</b><span>fırsat geçti</span></div></div><h3>Fırsat süresi dolmak üzere</h3>${cards(data.urgent || [], 'early')}<h3>Son aşama değişiklikleri</h3>${timeline}`;
+  }
+  function leadership(data) {
+    if (!data.items?.length) return empty('Kaynak öncülük istatistikleri ilk küme taramasından sonra oluşacak.');
+    return `<div class="tb-i-table">${data.items.map((item) => `<div><b>${esc(item.source_name)}</b>${pill(beatName(item.beat))}${pill(`Öncülük ${item.leadership_score}`, item.leadership_score >= 70 ? 'good' : '')}${pill(`${item.sample_count} konu`)}<span>İlk veren ${item.first_break_count} · Ortalama avantaj ${item.avg_lead_minutes} dk · Yayına katkı %${item.success_score}</span></div>`).join('')}</div>`;
+  }
+  function watchlists(data) {
+    if (!data.items?.length) return empty('İzleme listesi bulunmuyor.');
+    return `<div class="tb-i-watch-grid">${data.items.map((watch) => `<section><header><div><b>${esc(watch.name)}</b><p>${(watch.keywords || []).map((word) => esc(word)).join(' · ')}</p></div>${pill(watch.is_active ? 'Aktif' : 'Kapalı', watch.is_active ? 'good' : 'bad')}</header><p>Uyarı eşiği: ${watch.alert_threshold}</p>${watch.matches?.length ? cards(watch.matches.slice(0, 3), 'early') : empty('Son 48 saatte eşleşme yok.')}</section>`).join('')}</div><details class="tb-i-callout"><summary>＋ Yeni izleme listesi</summary><div class="tb-i-form"><label>Liste adı<input id="tb-watch-name" placeholder="Örn. Samsung etkinlikleri"></label><label>Anahtar kelimeler<input id="tb-watch-keywords" placeholder="samsung, galaxy, one ui"></label><label>Uyarı eşiği<input id="tb-watch-threshold" type="number" min="1" max="100" value="65"></label><button data-watch-save>İzleme listesini kaydet</button></div></details>`;
+  }
+  function pioneer(data) {
+    const s = data.summary || {};
+    const decisions = data.decisions?.length ? `<div class="tb-i-table">${data.decisions.map((item) => `<div><b>${esc(item.reason_code)}</b>${pill(item.decision)}${pill(`${item.count} karar`)}<span>Son 30 günlük editoryal geri bildirim</span></div>`).join('')}</div>` : empty('Henüz yeterli editoryal geri bildirim yok.');
+    return `<div class="tb-i-metrics"><div><b>${s.tracked || 0}</b><span>izlenen konu</span></div><div><b>${s.published || 0}</b><span>yayına dönüşen</span></div><div><b>${s.open_windows || 0}</b><span>açık fırsat penceresi</span></div><div><b>${s.avg_lead_minutes || 0} dk</b><span>ortalama öncülük</span></div><div><b>%${s.discover_success_rate || 0}</b><span>Discover başarısı</span></div><div><b>%${s.news_success_rate || 0}</b><span>Google News başarısı</span></div><div><b>${s.avg_novelty || 0}</b><span>ortalama yenilik</span></div><div><b>${s.avg_spread || 0}</b><span>ortalama yayılım</span></div></div><h3>En güçlü öncü kaynaklar</h3>${leadership({ items: data.leaders || [] })}<h3>Editoryal kararların öğrettikleri</h3>${decisions}`;
   }
   function sourceTable(items) {
     if (!items?.length) return empty('Sorunlu kaynak bulunmuyor.');
@@ -116,13 +148,17 @@
     if (state.tab === 'today') return summary(data);
     if (state.tab === 'early') return data.items?.length ? cards(data.items, 'early') : empty('Şu anda rakiplerden önce yakalanmış tek kaynaklı bir sinyal yok.');
     if (state.tab === 'clusters') return data.items?.length ? cards(data.items, 'clusters') : empty('Şu anda en az iki bağımsız kaynakla doğrulanmış yükselen konu yok.');
+    if (state.tab === 'lifecycle') return lifecycle(data);
     if (state.tab === 'coverage') return cards(data.items, 'coverage');
     if (state.tab === 'queue') return queue(data.items);
     if (state.tab === 'sources') return sourceTable(data.items);
     if (state.tab === 'performance') return performance(data);
+    if (state.tab === 'pioneer') return pioneer(data);
     if (state.tab === 'accuracy') return accuracy(data);
     if (state.tab === 'weekly') return weekly(data);
     if (state.tab === 'lab') return lab(data);
+    if (state.tab === 'leadership') return leadership(data);
+    if (state.tab === 'watchlists') return watchlists(data);
     return system(data);
   }
   function render() {
@@ -132,7 +168,7 @@
       #tb-intelligence-root{padding:0;overflow:hidden}.tb-i-hero{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;padding:20px;background:linear-gradient(135deg,#111827,#1e293b 58%,#312e81);color:#fff}.tb-i-hero h2{font:800 30px/1 'Fira Sans Condensed',sans-serif;margin:0 0 8px}.tb-i-hero p{max-width:720px;margin:0;color:#cbd5e1;font-size:13px;line-height:1.55}.tb-i-reload{border:1px solid rgba(255,255,255,.45);background:rgba(255,255,255,.1);color:#fff;border-radius:11px;padding:9px 12px;font-weight:900;cursor:pointer}
       .tb-i-groups{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:12px 16px;background:#f8fafc;border-bottom:1px solid #e2e8f0}.tb-i-group{display:flex;align-items:center;justify-content:center;gap:7px;border:1px solid #dbe3ef;background:#fff;color:#334155;border-radius:13px;padding:10px;font-size:12px;font-weight:900;cursor:pointer}.tb-i-group.on{border-color:#f04a0a;background:#fff1eb;color:#c2410c;box-shadow:0 5px 14px rgba(240,74,10,.1)}
       .tb-i-subnav,.tb-i-actions,.tb-i-card .tb-i-actions{display:flex;gap:7px;flex-wrap:wrap}.tb-i-subnav{padding:13px 16px 0;overflow:auto}.tb-i-subnav button,.tb-i-actions button,.tb-i-actions a,.tb-i-card button,.tb-i-card a,.tb-i-table button,.tb-i-table a,.tb-i-callout button{border:1px solid #cbd5e1;background:#fff;color:#334155;border-radius:10px;padding:8px 10px;font-size:11px;font-weight:900;text-decoration:none;cursor:pointer}.tb-i-subnav button.on{border-color:#4338ca;background:#4338ca;color:#fff}.tb-i-view-note{margin:12px 16px 0;padding:10px 12px;border-left:4px solid #6366f1;border-radius:9px;background:#eef2ff;color:#475569;font-size:12px;line-height:1.5}.tb-i-content{padding:16px}
-      .tb-i-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:12px 0}.tb-i-metrics>div{border:1px solid #e2e8f0;border-radius:15px;padding:13px;background:#f8fafc}.tb-i-metrics b{font-size:25px;display:block;color:#111827}.tb-i-metrics span,.tb-i-card p,.tb-i-table span{font-size:12px;color:#64748b}.tb-i-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:12px}.tb-i-card{border:1px solid #e2e8f0;border-radius:17px;overflow:hidden;background:#fff;box-shadow:0 4px 14px rgba(15,23,42,.05)}.tb-i-img{width:100%;aspect-ratio:16/9;object-fit:cover;background:#f1f5f9}.tb-i-body{padding:13px}.tb-i-card h3{font-size:18px;line-height:1.25;margin:8px 0}.tb-i-reasons{padding-left:18px;margin:8px 0;color:#475569;font-size:12px;line-height:1.45}.tb-i-pill{display:inline-block;border-radius:999px;padding:4px 7px;margin:2px;background:#eef2ff;color:#3730a3;font-size:10px;font-weight:900}.tb-i-pill.hot{background:#ffedd5;color:#c2410c}.tb-i-pill.good{background:#dcfce7;color:#166534}.tb-i-pill.bad{background:#fee2e2;color:#991b1b}.tb-i-table{display:grid;gap:8px}.tb-i-table>div{display:grid;grid-template-columns:auto auto auto 1fr;gap:8px;align-items:center;border:1px solid #e2e8f0;border-radius:13px;padding:10px;background:#fff}.tb-i-table img{width:70px;height:46px;object-fit:cover;border-radius:8px}.tb-i-table nav{grid-column:1/-1;display:flex;gap:5px;flex-wrap:wrap}.tb-i-empty,.tb-i-callout{padding:16px;border:1px dashed #c7d2fe;border-radius:14px;color:#64748b;background:#f8fafc}.tb-i-form{display:grid;grid-template-columns:repeat(2,minmax(220px,1fr));gap:10px;margin-top:14px}.tb-i-form label{display:grid;gap:5px;font-size:12px;font-weight:800;color:#334155}.tb-i-form input{border:1px solid #cbd5e1;border-radius:10px;padding:10px;background:#fff;min-width:0}.tb-i-form button{align-self:end}.tb-i-progress{height:11px;background:#e2e8f0;border-radius:999px;overflow:hidden}.tb-i-progress i{display:block;height:100%;background:linear-gradient(90deg,#f04a0a,#22c55e)}
+      .tb-i-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:12px 0}.tb-i-metrics>div{border:1px solid #e2e8f0;border-radius:15px;padding:13px;background:#f8fafc}.tb-i-metrics b{font-size:25px;display:block;color:#111827}.tb-i-metrics span,.tb-i-card p,.tb-i-table span{font-size:12px;color:#64748b}.tb-i-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:12px}.tb-i-card{border:1px solid #e2e8f0;border-radius:17px;overflow:hidden;background:#fff;box-shadow:0 4px 14px rgba(15,23,42,.05)}.tb-i-img{width:100%;aspect-ratio:16/9;object-fit:cover;background:#f1f5f9}.tb-i-body{padding:13px}.tb-i-card h3{font-size:18px;line-height:1.25;margin:8px 0}.tb-i-reasons{padding-left:18px;margin:8px 0;color:#475569;font-size:12px;line-height:1.45}.tb-i-pill{display:inline-block;border-radius:999px;padding:4px 7px;margin:2px;background:#eef2ff;color:#3730a3;font-size:10px;font-weight:900}.tb-i-pill.hot{background:#ffedd5;color:#c2410c}.tb-i-pill.good{background:#dcfce7;color:#166534}.tb-i-pill.bad{background:#fee2e2;color:#991b1b}.tb-i-table{display:grid;gap:8px}.tb-i-table>div{display:grid;grid-template-columns:auto auto auto 1fr;gap:8px;align-items:center;border:1px solid #e2e8f0;border-radius:13px;padding:10px;background:#fff}.tb-i-table img{width:70px;height:46px;object-fit:cover;border-radius:8px}.tb-i-table nav{grid-column:1/-1;display:flex;gap:5px;flex-wrap:wrap}.tb-i-empty,.tb-i-callout{padding:16px;border:1px dashed #c7d2fe;border-radius:14px;color:#64748b;background:#f8fafc}.tb-i-form{display:grid;grid-template-columns:repeat(2,minmax(220px,1fr));gap:10px;margin-top:14px}.tb-i-form label{display:grid;gap:5px;font-size:12px;font-weight:800;color:#334155}.tb-i-form input{border:1px solid #cbd5e1;border-radius:10px;padding:10px;background:#fff;min-width:0}.tb-i-form button{align-self:end}.tb-i-progress{height:11px;background:#e2e8f0;border-radius:999px;overflow:hidden}.tb-i-progress i{display:block;height:100%;background:linear-gradient(90deg,#f04a0a,#22c55e)}.tb-i-details{display:grid;gap:6px;margin:10px 0}.tb-i-details details,.tb-i-feedback{border:1px solid #e2e8f0;border-radius:10px;padding:8px;background:#f8fafc;font-size:12px}.tb-i-details summary,.tb-i-feedback summary{font-weight:900;cursor:pointer;color:#334155}.tb-i-details ul{padding-left:18px;line-height:1.5}.tb-i-feedback{margin-top:9px}.tb-i-feedback button{margin:7px 4px 0 0}.tb-i-timeline{border-left:3px solid #c7d2fe;margin-left:8px;padding-left:18px;display:grid;gap:12px}.tb-i-timeline>div{position:relative;display:grid;gap:3px}.tb-i-timeline i{position:absolute;width:11px;height:11px;border-radius:50%;background:#4f46e5;left:-25px;top:4px}.tb-i-timeline span{font-size:12px;color:#64748b}.tb-i-watch-grid{display:grid;gap:14px}.tb-i-watch-grid>section{border:1px solid #e2e8f0;background:#fff;border-radius:16px;padding:14px}.tb-i-watch-grid header{display:flex;justify-content:space-between;gap:10px}.tb-i-watch-grid header p{font-size:11px;color:#64748b;margin:4px 0}
       @media(max-width:800px){.tb-i-groups{grid-template-columns:repeat(2,minmax(0,1fr))}.tb-i-hero{padding:16px}.tb-i-content{padding:12px}.tb-i-table>div,.tb-i-form{grid-template-columns:1fr}.tb-i-table nav{grid-column:1}.tb-i-grid{grid-template-columns:1fr}}@media(max-width:460px){.tb-i-groups{grid-template-columns:1fr}.tb-i-group{justify-content:flex-start}}
     </style><div class="tb-i-hero"><div><h2>🎯 Editoryal Karar Merkezi</h2><p>Trend/Karar, Editoryal, Intelligence ve Operasyon araçlarının güncel, tek çalışma alanı. Sinyali yakala, kararı ver, göreve dönüştür ve gerçek performanstan öğren.</p></div><button class="tb-i-reload" data-reload>↻ Bu görünümü yenile</button></div><div class="tb-i-groups">${groups.map((group) => `<button class="tb-i-group ${group.key === activeGroup.key ? 'on' : ''}" data-i-group="${group.key}"><span>${group.icon}</span>${group.label}</button>`).join('')}</div><div class="tb-i-subnav">${activeGroup.views.map((key) => `<button class="${key === state.tab ? 'on' : ''}" data-i-tab="${key}">${sections[key][0]}</button>`).join('')}</div><div class="tb-i-view-note">${esc(descriptions[state.tab] || '')}</div><div class="tb-i-content" id="tb-i-content">${content()}</div>`;
   }
@@ -168,7 +204,27 @@
       return;
     }
     const copy = event.target.closest('[data-copy-brief]');
-    if (copy) { try { await navigator.clipboard.writeText(copy.dataset.copyBrief || ''); copy.textContent = '✓ Brief kopyalandı'; setTimeout(() => { copy.textContent = '✨ Karar briefi'; }, 1400); } catch (e) { alert(`Kopyalama hatası: ${e.message || e}`); } return; }
+    if (copy) { try { const label = copy.textContent; await navigator.clipboard.writeText(copy.dataset.copyBrief || ''); copy.textContent = '✓ Kopyalandı'; setTimeout(() => { copy.textContent = label; }, 1400); } catch (e) { alert(`Kopyalama hatası: ${e.message || e}`); } return; }
+    const feedback = event.target.closest('[data-feedback]');
+    if (feedback) {
+      feedback.disabled = true;
+      try {
+        const item = JSON.parse(feedback.dataset.item || '{}');
+        const reasons = { useful: 'useful_signal', duplicate: 'duplicate_story', unreliable: 'source_unreliable', skipped: 'not_relevant' };
+        await post({ action: 'feedback_record', ...item, decision: feedback.dataset.feedback, reason_code: reasons[feedback.dataset.feedback] || feedback.dataset.feedback });
+        feedback.textContent = '✓ Kaydedildi';
+      } catch (e) { feedback.disabled = false; alert(e.message); }
+      return;
+    }
+    const watchSave = event.target.closest('[data-watch-save]');
+    if (watchSave) {
+      watchSave.disabled = true;
+      try {
+        await post({ action: 'watchlist_upsert', name: document.getElementById('tb-watch-name')?.value || '', keywords: document.getElementById('tb-watch-keywords')?.value || '', alert_threshold: Number(document.getElementById('tb-watch-threshold')?.value || 65) }, true);
+        state.data.watchlists = null; await load('watchlists', true);
+      } catch (e) { alert(e.message); } finally { watchSave.disabled = false; }
+      return;
+    }
     const status = event.target.closest('[data-status]');
     if (status) { try { const item = JSON.parse(status.dataset.item); const publishedUrl = status.dataset.status === 'published' ? window.prompt('Teknoblog yayın URL’si', item.published_url || '') : item.published_url; if (status.dataset.status === 'published' && !publishedUrl) return; await post({ action: 'queue_upsert', ...item, status: status.dataset.status, published_url: publishedUrl || null }); await load('queue', true); } catch (e) { alert(e.message); } return; }
     const connect = event.target.closest('[data-google-connect]');
