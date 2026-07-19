@@ -10,11 +10,10 @@
     'google-trends',
     'google-news',
     'instagram',
-    'decision',
-    'editorial',
-    'intelligence',
-    'ops'
+    'decision-center'
   ]);
+
+  const LEGACY_TABS = new Set(['decision', 'editorial', 'intelligence', 'ops']);
 
   const LABELS = {
     news: 'Haberler',
@@ -25,10 +24,7 @@
     'google-trends': 'Google Trends',
     'google-news': 'Google News',
     instagram: 'Instagram',
-    decision: 'Trend/Karar',
-    editorial: 'Editoryal',
-    intelligence: 'Radar Intelligence',
-    ops: 'Operasyon'
+    'decision-center': 'Karar Merkezi'
   };
 
   const ICONS = {
@@ -40,20 +36,19 @@
     'google-trends': '📈',
     'google-news': '🌐',
     instagram: '📸',
-    decision: '⚡',
-    editorial: '🧭',
-    intelligence: '🧠',
-    ops: '🛠️'
+    'decision-center': '🎯'
   };
 
   function activeFromHash() {
     const hash = decodeURIComponent(String(window.location.hash || '').replace(/^#/, ''));
+    if (LEGACY_TABS.has(hash)) return 'decision-center';
     if (VALID_TABS.has(hash)) return hash;
     if (localStorage.getItem(FOCUS_KEY) !== '1') {
       localStorage.setItem(FOCUS_KEY, '1');
       return 'early-signals';
     }
     const saved = localStorage.getItem(TAB_KEY);
+    if (LEGACY_TABS.has(saved)) return 'decision-center';
     if (VALID_TABS.has(saved)) return saved;
     return 'early-signals';
   }
@@ -83,10 +78,6 @@
       localStorage.setItem('tb_tabs_lite_open', '1');
       localStorage.setItem('tb_tabs_lite_tab', 'opportunity');
     }
-    if (active === 'editorial') {
-      localStorage.setItem('tb_tabs_lite_open', '1');
-      localStorage.setItem('tb_tabs_lite_tab', 'today');
-    }
     if (active === 'google-news') localStorage.setItem('tb_google_news_open', '1');
 
     window.dispatchEvent(new CustomEvent('tb-spa-tab-change', { detail: { tab: active } }));
@@ -106,10 +97,7 @@
       'google-trends': 'Türkiye Google Trends ve teknoloji sinyalleri.',
       'google-news': 'Google News Türkiye teknoloji gündemi.',
       instagram: 'Instagram karusel ve sosyal medya potansiyeli yüksek içerikler.',
-      decision: 'Trend kümeleri ve haberleştirme kararı katmanı.',
-      editorial: 'Günlük yazılacak haberler ve Discover adayları.',
-      intelligence: 'Kümeler, kapsam boşlukları, iş akışı, gerçek performans ve sistem sağlığı.',
-      ops: 'Operasyon, sağlık ve bakım kontrolleri.'
+      'decision-center': 'Güncel sinyallerden yayın kararına, yazılacaklardan gerçek performansa kadar tek çalışma alanı.'
     };
     return map[tab] || 'Teknoblog Radar paneli.';
   }

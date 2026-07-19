@@ -38,10 +38,7 @@
       <button class="tb-spa-tab" type="button" role="tab" data-spa-tab="google-trends">📈 Google Trends</button>
       <button class="tb-spa-tab" type="button" role="tab" data-spa-tab="google-news">🌐 Google News</button>
       <button class="tb-spa-tab" type="button" role="tab" data-spa-tab="instagram">📸 Instagram</button>
-      <button class="tb-spa-tab" type="button" role="tab" data-spa-tab="decision">⚡ Trend/Karar</button>
-      <button class="tb-spa-tab" type="button" role="tab" data-spa-tab="editorial">🧭 Editoryal</button>
-      <button class="tb-spa-tab" type="button" role="tab" data-spa-tab="intelligence">🧠 Intelligence</button>
-      <button class="tb-spa-tab" type="button" role="tab" data-spa-tab="ops">🛠️ Operasyon</button>
+      <button class="tb-spa-tab" type="button" role="tab" data-spa-tab="decision-center">🎯 Karar Merkezi</button>
     </nav>
 
     <section class="tb-panel" data-spa-panel="news" role="tabpanel">
@@ -90,22 +87,19 @@
       <section class="tb-source-card" style="margin-top:16px"><h2>Mevcut kaynaklar</h2><div id="sources-status" class="tb-source-status">Kaynaklar yükleniyor...</div><div id="sources-list" class="tb-source-list"></div></section>
     </section>
 
-    <section class="tb-panel" data-spa-panel="opportunities" role="tabpanel"><main class="tb-panel-card" id="tb-opportunity-page-main"><div class="tb-legacy-note">Fırsatlar, Editoryal karar merkezinin Fırsatlar sekmesi içinde gösterilir. Panel yüklenince burada görünür.</div></main></section>
+    <section class="tb-panel" data-spa-panel="opportunities" role="tabpanel"><main class="tb-panel-card" id="tb-opportunity-page-main"><div class="tb-legacy-note">Teknoloji fırsatları yükleniyor…</div></main></section>
     <section class="tb-panel" data-spa-panel="google-trends" role="tabpanel"><main class="tb-panel-card" id="tb-google-trends-wrap"></main></section>
     <section class="tb-panel" data-spa-panel="google-news" role="tabpanel"><main class="tb-panel-card" id="tb-google-news-wrap"></main></section>
     <section class="tb-panel" data-spa-panel="instagram" role="tabpanel"><main class="tb-panel-card" id="tb-instagram-radar-wrap"></main></section>
-    <section class="tb-panel" data-spa-panel="decision" role="tabpanel"><div class="tb-panel-card"><main><section id="tb-trend-radar-wrap"></section><section id="tb-phase2-bar"></section></main></div></section>
-    <section class="tb-panel" data-spa-panel="editorial" role="tabpanel"><main class="tb-panel-card" id="tb-editorial-page-main"></main></section>
-    <section class="tb-panel" data-spa-panel="intelligence" role="tabpanel"><main class="tb-panel-card" id="tb-intelligence-root"><div class="tb-legacy-note">Radar Intelligence yükleniyor…</div></main></section>
-    <section class="tb-panel" data-spa-panel="ops" role="tabpanel"><div class="tb-panel-card"><div class="tb-legacy-note">Operasyon paneli ikinci aşamada bu tek sayfa kabuğuna taşınacak. Şimdilik sistem sağlığı ve deploy kontrolleri bu bölümde toplanacak.</div></div></section>
+    <section class="tb-panel" data-spa-panel="decision-center" role="tabpanel"><main class="tb-panel-card" id="tb-intelligence-root"><div class="tb-legacy-note">Karar Merkezi hazırlanıyor…</div></main></section>
 
     <footer class="tb-footer-bar"><div class="tb-footer-title">Tek sayfa Radar</div><div style="font-size:12px;color:#64748b;line-height:1.55">Tüm modüller aynı uygulama kabuğu içinde sekmelerle çalışır. Eski ayrı sayfalar geriye dönük uyumluluk için korunur.</div></footer>
   </div>
 
-  <script>document.getElementById('tb-shell-date').textContent=new Intl.DateTimeFormat('tr-TR',{weekday:'long',day:'numeric',month:'long',year:'numeric',timeZone:'Europe/Istanbul'}).format(new Date());localStorage.setItem('tb_google_news_open','1');localStorage.setItem('tb_tabs_lite_open','1');</script>
+  <script>document.getElementById('tb-shell-date').textContent=new Intl.DateTimeFormat('tr-TR',{weekday:'long',day:'numeric',month:'long',year:'numeric',timeZone:'Europe/Istanbul'}).format(new Date());localStorage.setItem('tb_google_news_open','1');</script>
   <script src="/auth-gate.js?v=20260423-1" defer></script>
   <script src="/radar-token-reset.js?v=20260523-1" defer></script>
-  <script src="/radar-spa.js?v=20260719-1" defer></script>
+  <script src="/radar-spa.js?v=20260719-2" defer></script>
   <script src="/search-panel.js?v=20260719-1" defer></script>
   <script src="/early-signal-panel.js?v=20260719-1" defer></script>
   <script src="/news-controls-restore.js?v=20260622-1" defer></script>
@@ -116,15 +110,10 @@
   <script src="/google-trends-panel.js?v=20260719-4" defer></script>
   <script src="/google-news-panel.js?v=20260719-1" defer></script>
   <script src="/instagram-radar-panel.js?v=20260524-1" defer></script>
-  <script src="/editorial-tabs-lite.js?v=20260718-6" defer></script>
-  <script src="/intelligence-panel.js?v=20260719-1" defer></script>
-  <script src="/trend-radar.js?v=20260514-2" defer></script>
-  <script src="/trend-phase2.js?v=20260514-1" defer></script>
-  <script src="/trend-panel-controls.js?v=20260523-1" defer></script>
-  <script src="/trend-refresh-ui.js?v=20260523-2" defer></script>
-  <script src="/trend-noise-filter.js?v=20260523-2" defer></script>
+  <script src="/opportunity-radar-panel.js?v=20260719-1" defer></script>
+  <script src="/intelligence-panel.js?v=20260719-2" defer></script>
   <script src="/radar-ux-optimizer.js?v=20260618-1" defer></script>
-  <script src="/logo-fix.js?v=20260419-3" defer></script>
+  <script src="/logo-fix.js?v=20260719-1" defer></script>
   <script src="/slack-push.js?v=20260622-1" defer></script>
   <script src="/refresh-token-guard.js?v=20260718-1" defer></script>
 </body>

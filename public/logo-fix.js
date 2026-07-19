@@ -57,15 +57,6 @@
     return true;
   }
 
-  function loadEditorialCenter() {
-    if (document.getElementById('tb-editorial-command-center-script')) return;
-    const script = document.createElement('script');
-    script.id = 'tb-editorial-command-center-script';
-    script.src = `/editorial-tabs-lite.js?v=20260524-2&_=${Date.now()}`;
-    script.defer = true;
-    document.body.appendChild(script);
-  }
-
   let tries = 0;
   const timer = setInterval(() => {
     tries += 1;
@@ -74,8 +65,5 @@
 
   document.addEventListener('DOMContentLoaded', () => {
     applyLogoFix();
-    loadEditorialCenter();
   });
-
-  if (document.readyState !== 'loading') loadEditorialCenter();
 })();

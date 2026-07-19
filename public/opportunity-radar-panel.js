@@ -2,7 +2,7 @@
   const STORAGE_KEY = 'tb_opportunity_radar_open';
   const REFRESH_MS = 60 * 60 * 1000;
   const state = {
-    open: localStorage.getItem(STORAGE_KEY) === '1',
+    open: true,
     loading: false,
     items: [],
     stores: [],
@@ -45,7 +45,7 @@
   }
 
   function findMountTarget() {
-    return document.querySelector('#tb-layout main') || document.querySelector('main') || document.querySelector('#tb-grid')?.parentElement;
+    return document.getElementById('tb-opportunity-page-main');
   }
 
   function ensureStyle() {
@@ -115,7 +115,7 @@
     if (!wrap) {
       wrap = document.createElement('section');
       wrap.id = 'tb-opportunity-radar-wrap';
-      target.appendChild(wrap);
+      target.replaceChildren(wrap);
     }
 
     wrap.setAttribute('data-open', state.open ? '1' : '0');

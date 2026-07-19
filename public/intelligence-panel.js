@@ -1,10 +1,31 @@
 (() => {
-  const state = { tab: 'early', loading: false, data: {}, error: '' };
+  const VIEW_KEY = 'tb_decision_center_view';
   const sections = {
-    early: ['Erken Sinyaller', 'early-signals'], today: ['Bugün', 'summary'], clusters: ['Kümeler', 'clusters'], coverage: ['Kapsam', 'coverage'],
-    queue: ['Yazılacaklar', 'queue'], sources: ['Kaynak Sağlığı', 'sources'], performance: ['Performans', 'performance'], accuracy: ['Model Doğruluğu', 'accuracy'],
-    weekly: ['Haftalık Rapor', 'weekly-report'], lab: ['Puan Lab', 'scoring-lab'], system: ['Sistem', 'system']
+    today: ['Bugünün Kararı', 'summary'], early: ['Erken Sinyaller', 'early-signals'], clusters: ['Yükselen Konular', 'clusters'], coverage: ['Teknoblog Kapsamı', 'coverage'],
+    queue: ['Yazılacaklar', 'queue'], performance: ['Discover & News', 'performance'], accuracy: ['Model Doğruluğu', 'accuracy'], weekly: ['Haftalık Öğrenme', 'weekly-report'],
+    lab: ['Puan Kontrolü', 'scoring-lab'], sources: ['Kaynak Sağlığı', 'sources'], system: ['Sistem Bakımı', 'system']
   };
+  const groups = [
+    { key: 'decide', label: 'Bugün & Sinyaller', icon: '⚡', views: ['today', 'early', 'clusters', 'coverage'] },
+    { key: 'workflow', label: 'Yazılacaklar', icon: '✍️', views: ['queue'] },
+    { key: 'learning', label: 'Performans & Öğrenme', icon: '📊', views: ['performance', 'accuracy', 'weekly', 'lab'] },
+    { key: 'health', label: 'Sistem Sağlığı', icon: '🩺', views: ['sources', 'system'] }
+  ];
+  const descriptions = {
+    today: 'Şu anda dikkat isteyen fırsatları, yükselen konuları ve kaynak sorunlarını birlikte gösterir.',
+    early: 'Rakiplerden önce yakalanan ve ilk yayın avantajı taşıyan gelişmeler.',
+    clusters: 'Birden fazla kaynağın doğruladığı, yayılma hızı artan konu kümeleri.',
+    coverage: 'Yeni haber mi yazılmalı, mevcut Teknoblog içeriği mi güncellenmeli?',
+    queue: 'Yazılacak haberlerin görev durumu ve tamamlanma ilerlemesi.',
+    performance: 'Search Console’dan gelen gerçek Discover ve Google News sonuçları.',
+    accuracy: 'Radar tahminlerinin yayımlanan haberlerin gerçek performansıyla karşılaştırması.',
+    weekly: 'Kazanan konular, güçlü kaynaklar ve kaçırılan yüksek potansiyelli adaylar.',
+    lab: 'Puanların 100’e yığılmasını ve kaynak bazlı dağılımı denetler.',
+    sources: 'Haber kaynaklarının güncellik, kalite ve veri üretim durumu.',
+    system: 'Yerel PostgreSQL, görseller, uyarılar ve bakım işlemleri.'
+  };
+  const savedView = localStorage.getItem(VIEW_KEY);
+  const state = { tab: sections[savedView] ? savedView : 'today', loading: false, data: {}, error: '' };
   const esc = (v = '') => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const fmt = (v) => v ? new Intl.DateTimeFormat('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' }).format(new Date(v)) : '—';
   const token = () => localStorage.getItem('tb_radar_cron_token') || localStorage.getItem('tb_cron_token') || '';
@@ -39,7 +60,10 @@
       if (mode === 'clusters') badges = pill(`Momentum ${item.momentum_score}`, item.momentum_score >= 70 ? 'hot' : '') + pill(`${item.source_count} kaynak`) + pill(`Güven ${item.confidence_score}`);
       if (mode === 'early') badges = pill(item.signal_stage === 'act_now' ? 'Şimdi yaz' : item.signal_stage === 'emerging' ? 'Yükseliyor' : 'İzle', item.signal_stage === 'act_now' ? 'bad' : item.signal_stage === 'emerging' ? 'hot' : '') + pill(`Öncülük ${item.first_mover_score}`) + pill(`Patlama %${item.breakout_probability}`) + pill(`${item.competitor_count} rakip`);
       if (mode === 'coverage') badges = pill(item.recommendation === 'new_article' ? 'Yeni haber' : item.recommendation === 'update_existing' ? 'Güncelle' : 'Yazıldı') + pill(`Eşleşme ${item.match_score}`);
-      return `<article class="tb-i-card">${img(news)}<div class="tb-i-body"><div>${badges}</div><h3>${esc(item.cluster_name || news.title)}</h3><p>${esc(meta)}</p>${item.matched_post ? `<p>Teknoblog eşleşmesi: <a href="${esc(item.matched_post.url)}" target="_blank">${esc(item.matched_post.title)}</a></p>` : ''}<div class="tb-i-actions"><a href="${esc(news.url || '#')}" target="_blank">Kaynak</a><button data-queue='${esc(JSON.stringify({ candidate_id: news.id, title: news.title, url: news.url, source_name: news.source_name, image_url: news.image_url, status: 'new', priority: Math.max(news.discover_score || 50, item.momentum_score || 0) }))}'>Yazılacaklara ekle</button></div></div></article>`;
+      const queueItem = { candidate_id: news.id, title: item.cluster_name || news.title, url: news.url, source_name: news.source_name, image_url: news.image_url, status: 'new', priority: Math.max(news.discover_score || 50, item.first_mover_score || 0, item.momentum_score || 0) };
+      const reasons = mode === 'early' && item.reasons?.length ? `<ul class="tb-i-reasons">${item.reasons.slice(0, 4).map((reason) => `<li>${esc(reason)}</li>`).join('')}</ul>` : '';
+      const brief = `Teknoblog için editoryal karar ver.\nKonu: ${queueItem.title || ''}\nKaynak: ${queueItem.source_name || ''}\nURL: ${queueItem.url || ''}\nİstenen: Yaz/Bekle/Geç kararı, ilk yayın açısı, Discover başlığı, Google News başlığı ve 5 maddelik kısa haber planı.`;
+      return `<article class="tb-i-card">${img(news)}<div class="tb-i-body"><div>${badges}</div><h3>${esc(item.cluster_name || news.title)}</h3><p>${esc(meta)}</p>${reasons}${item.matched_post ? `<p>Teknoblog eşleşmesi: <a href="${esc(item.matched_post.url)}" target="_blank">${esc(item.matched_post.title)}</a></p>` : ''}<div class="tb-i-actions"><a href="${esc(news.url || '#')}" target="_blank">Kaynağı aç</a><button data-queue='${esc(JSON.stringify(queueItem))}'>＋ Yazılacaklara</button><button data-slack='${esc(JSON.stringify(queueItem))}'>Slack’e gönder</button><button data-copy-brief="${esc(brief)}">✨ Karar briefi</button></div></div></article>`;
     }).join('')}</div>`;
   }
   function summary(data) {
@@ -53,7 +77,8 @@
   function queue(items) {
     if (!items?.length) return empty('Yazılacaklar havuzu boş.');
     const done = items.filter((i) => i.status === 'published').length;
-    return `<div class="tb-i-progress"><i style="width:${Math.round(done / Math.max(1, items.length) * 100)}%"></i></div><p>${done}/${items.length} tamamlandı</p><div class="tb-i-table">${items.map((i) => `<div>${i.image_url ? `<img src="${esc(i.image_url)}" loading="lazy" onerror="this.hidden=true">` : ''}<b>${esc(i.title)}</b>${pill(i.status)}${pill(`Öncelik ${i.priority}`)}<span>${esc(i.source_name || '')} · ${fmt(i.created_at)}</span><nav><a href="${esc(i.url)}" target="_blank">Kaynak</a>${['approved', 'writing', 'published', 'waiting', 'skipped'].map((status) => `<button data-status="${status}" data-item='${esc(JSON.stringify(i))}'>${status}</button>`).join('')}</nav></div>`).join('')}</div>`;
+    const statuses = [['approved', 'Onayla'], ['writing', 'Yazılıyor'], ['published', 'Yayımlandı'], ['waiting', 'Beklet'], ['skipped', 'Geç']];
+    return `<div class="tb-i-progress"><i style="width:${Math.round(done / Math.max(1, items.length) * 100)}%"></i></div><p><b>${done}/${items.length}</b> görev tamamlandı</p><div class="tb-i-table">${items.map((i) => `<div>${i.image_url ? `<img src="${esc(i.image_url)}" loading="lazy" onerror="this.hidden=true">` : ''}<b>${esc(i.title)}</b>${pill(({ new: 'Yeni', approved: 'Onaylandı', writing: 'Yazılıyor', published: 'Yayımlandı', waiting: 'Bekliyor', skipped: 'Geçildi' })[i.status] || i.status)}${pill(`Öncelik ${i.priority}`)}<span>${esc(i.source_name || '')} · ${fmt(i.created_at)}</span><nav><a href="${esc(i.url)}" target="_blank">Kaynak</a>${statuses.map(([status, label]) => `<button data-status="${status}" data-item='${esc(JSON.stringify(i))}'>${label}</button>`).join('')}</nav></div>`).join('')}</div>`;
   }
   function performance(data) {
     const oauth = data.oauth || {};
@@ -102,10 +127,18 @@
   }
   function render() {
     const root = document.getElementById('tb-intelligence-root'); if (!root) return;
-    root.innerHTML = `<style>.tb-i-head{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}.tb-i-tabs,.tb-i-actions,.tb-i-card .tb-i-actions{display:flex;gap:7px;flex-wrap:wrap}.tb-i-tabs{margin:14px 0;overflow:auto}.tb-i-tabs button,.tb-i-actions button,.tb-i-actions a,.tb-i-card button,.tb-i-card a,.tb-i-table button,.tb-i-table a,.tb-i-callout button{border:1px solid #c7d2fe;background:#fff;color:#3730a3;border-radius:10px;padding:8px 10px;font-size:12px;font-weight:800;text-decoration:none;cursor:pointer}.tb-i-tabs button.on{background:#4338ca;color:#fff}.tb-i-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:12px 0}.tb-i-metrics>div{border:1px solid #e2e8f0;border-radius:15px;padding:13px;background:#f8fafc}.tb-i-metrics b{font-size:25px;display:block;color:#111827}.tb-i-metrics span,.tb-i-card p,.tb-i-table span{font-size:12px;color:#64748b}.tb-i-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}.tb-i-card{border:1px solid #e2e8f0;border-radius:17px;overflow:hidden;background:#fff}.tb-i-img{width:100%;aspect-ratio:16/9;object-fit:cover;background:#f1f5f9}.tb-i-body{padding:13px}.tb-i-card h3{font-size:18px;line-height:1.25;margin:8px 0}.tb-i-pill{display:inline-block;border-radius:999px;padding:4px 7px;margin:2px;background:#eef2ff;color:#3730a3;font-size:10px;font-weight:900}.tb-i-pill.hot{background:#ffedd5;color:#c2410c}.tb-i-pill.good{background:#dcfce7;color:#166534}.tb-i-pill.bad{background:#fee2e2;color:#991b1b}.tb-i-table{display:grid;gap:8px}.tb-i-table>div{display:grid;grid-template-columns:auto auto auto 1fr;gap:8px;align-items:center;border:1px solid #e2e8f0;border-radius:13px;padding:10px}.tb-i-table img{width:70px;height:46px;object-fit:cover;border-radius:8px}.tb-i-table nav{grid-column:1/-1;display:flex;gap:5px;flex-wrap:wrap}.tb-i-empty,.tb-i-callout{padding:16px;border:1px dashed #c7d2fe;border-radius:14px;color:#64748b;background:#f8fafc}.tb-i-form{display:grid;grid-template-columns:repeat(2,minmax(220px,1fr));gap:10px;margin-top:14px}.tb-i-form label{display:grid;gap:5px;font-size:12px;font-weight:800;color:#334155}.tb-i-form input{border:1px solid #cbd5e1;border-radius:10px;padding:10px;background:#fff;min-width:0}.tb-i-form button{align-self:end}.tb-i-progress{height:10px;background:#e2e8f0;border-radius:999px;overflow:hidden}.tb-i-progress i{display:block;height:100%;background:#4f46e5}@media(max-width:700px){.tb-i-table>div,.tb-i-form{grid-template-columns:1fr}.tb-i-table nav{grid-column:1}.tb-i-grid{grid-template-columns:1fr}}</style><div class="tb-i-head"><div><h2>🧠 Radar Intelligence</h2><p>Karar, iş akışı ve sistem sağlığı tek yerde.</p></div><button data-reload>Yenile</button></div><div class="tb-i-tabs">${Object.entries(sections).map(([key, [label]]) => `<button class="${key === state.tab ? 'on' : ''}" data-i-tab="${key}">${label}</button>`).join('')}</div><div id="tb-i-content">${content()}</div>`;
+    const activeGroup = groups.find((group) => group.views.includes(state.tab)) || groups[0];
+    root.innerHTML = `<style>
+      #tb-intelligence-root{padding:0;overflow:hidden}.tb-i-hero{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;padding:20px;background:linear-gradient(135deg,#111827,#1e293b 58%,#312e81);color:#fff}.tb-i-hero h2{font:800 30px/1 'Fira Sans Condensed',sans-serif;margin:0 0 8px}.tb-i-hero p{max-width:720px;margin:0;color:#cbd5e1;font-size:13px;line-height:1.55}.tb-i-reload{border:1px solid rgba(255,255,255,.45);background:rgba(255,255,255,.1);color:#fff;border-radius:11px;padding:9px 12px;font-weight:900;cursor:pointer}
+      .tb-i-groups{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:12px 16px;background:#f8fafc;border-bottom:1px solid #e2e8f0}.tb-i-group{display:flex;align-items:center;justify-content:center;gap:7px;border:1px solid #dbe3ef;background:#fff;color:#334155;border-radius:13px;padding:10px;font-size:12px;font-weight:900;cursor:pointer}.tb-i-group.on{border-color:#f04a0a;background:#fff1eb;color:#c2410c;box-shadow:0 5px 14px rgba(240,74,10,.1)}
+      .tb-i-subnav,.tb-i-actions,.tb-i-card .tb-i-actions{display:flex;gap:7px;flex-wrap:wrap}.tb-i-subnav{padding:13px 16px 0;overflow:auto}.tb-i-subnav button,.tb-i-actions button,.tb-i-actions a,.tb-i-card button,.tb-i-card a,.tb-i-table button,.tb-i-table a,.tb-i-callout button{border:1px solid #cbd5e1;background:#fff;color:#334155;border-radius:10px;padding:8px 10px;font-size:11px;font-weight:900;text-decoration:none;cursor:pointer}.tb-i-subnav button.on{border-color:#4338ca;background:#4338ca;color:#fff}.tb-i-view-note{margin:12px 16px 0;padding:10px 12px;border-left:4px solid #6366f1;border-radius:9px;background:#eef2ff;color:#475569;font-size:12px;line-height:1.5}.tb-i-content{padding:16px}
+      .tb-i-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:12px 0}.tb-i-metrics>div{border:1px solid #e2e8f0;border-radius:15px;padding:13px;background:#f8fafc}.tb-i-metrics b{font-size:25px;display:block;color:#111827}.tb-i-metrics span,.tb-i-card p,.tb-i-table span{font-size:12px;color:#64748b}.tb-i-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:12px}.tb-i-card{border:1px solid #e2e8f0;border-radius:17px;overflow:hidden;background:#fff;box-shadow:0 4px 14px rgba(15,23,42,.05)}.tb-i-img{width:100%;aspect-ratio:16/9;object-fit:cover;background:#f1f5f9}.tb-i-body{padding:13px}.tb-i-card h3{font-size:18px;line-height:1.25;margin:8px 0}.tb-i-reasons{padding-left:18px;margin:8px 0;color:#475569;font-size:12px;line-height:1.45}.tb-i-pill{display:inline-block;border-radius:999px;padding:4px 7px;margin:2px;background:#eef2ff;color:#3730a3;font-size:10px;font-weight:900}.tb-i-pill.hot{background:#ffedd5;color:#c2410c}.tb-i-pill.good{background:#dcfce7;color:#166534}.tb-i-pill.bad{background:#fee2e2;color:#991b1b}.tb-i-table{display:grid;gap:8px}.tb-i-table>div{display:grid;grid-template-columns:auto auto auto 1fr;gap:8px;align-items:center;border:1px solid #e2e8f0;border-radius:13px;padding:10px;background:#fff}.tb-i-table img{width:70px;height:46px;object-fit:cover;border-radius:8px}.tb-i-table nav{grid-column:1/-1;display:flex;gap:5px;flex-wrap:wrap}.tb-i-empty,.tb-i-callout{padding:16px;border:1px dashed #c7d2fe;border-radius:14px;color:#64748b;background:#f8fafc}.tb-i-form{display:grid;grid-template-columns:repeat(2,minmax(220px,1fr));gap:10px;margin-top:14px}.tb-i-form label{display:grid;gap:5px;font-size:12px;font-weight:800;color:#334155}.tb-i-form input{border:1px solid #cbd5e1;border-radius:10px;padding:10px;background:#fff;min-width:0}.tb-i-form button{align-self:end}.tb-i-progress{height:11px;background:#e2e8f0;border-radius:999px;overflow:hidden}.tb-i-progress i{display:block;height:100%;background:linear-gradient(90deg,#f04a0a,#22c55e)}
+      @media(max-width:800px){.tb-i-groups{grid-template-columns:repeat(2,minmax(0,1fr))}.tb-i-hero{padding:16px}.tb-i-content{padding:12px}.tb-i-table>div,.tb-i-form{grid-template-columns:1fr}.tb-i-table nav{grid-column:1}.tb-i-grid{grid-template-columns:1fr}}@media(max-width:460px){.tb-i-groups{grid-template-columns:1fr}.tb-i-group{justify-content:flex-start}}
+    </style><div class="tb-i-hero"><div><h2>🎯 Editoryal Karar Merkezi</h2><p>Trend/Karar, Editoryal, Intelligence ve Operasyon araçlarının güncel, tek çalışma alanı. Sinyali yakala, kararı ver, göreve dönüştür ve gerçek performanstan öğren.</p></div><button class="tb-i-reload" data-reload>↻ Bu görünümü yenile</button></div><div class="tb-i-groups">${groups.map((group) => `<button class="tb-i-group ${group.key === activeGroup.key ? 'on' : ''}" data-i-group="${group.key}"><span>${group.icon}</span>${group.label}</button>`).join('')}</div><div class="tb-i-subnav">${activeGroup.views.map((key) => `<button class="${key === state.tab ? 'on' : ''}" data-i-tab="${key}">${sections[key][0]}</button>`).join('')}</div><div class="tb-i-view-note">${esc(descriptions[state.tab] || '')}</div><div class="tb-i-content" id="tb-i-content">${content()}</div>`;
   }
   async function load(tab = state.tab, force = false) {
-    state.tab = tab; state.error = '';
+    state.tab = sections[tab] ? tab : 'today'; state.error = '';
+    localStorage.setItem(VIEW_KEY, state.tab);
     if (state.data[tab] && !force) { render(); return; }
     state.loading = true; render();
     try {
@@ -115,10 +148,27 @@
     finally { state.loading = false; render(); }
   }
   document.addEventListener('click', async (event) => {
+    const group = event.target.closest('[data-i-group]');
+    if (group) { const target = groups.find((item) => item.key === group.dataset.iGroup); if (target) return load(target.views[0]); }
     const tab = event.target.closest('[data-i-tab]'); if (tab) return load(tab.dataset.iTab);
     if (event.target.closest('[data-reload]')) return load(state.tab, true);
     const queued = event.target.closest('[data-queue],[data-add-queue]');
     if (queued) { try { await post({ action: 'queue_upsert', ...JSON.parse(queued.dataset.queue || queued.dataset.addQueue) }); queued.textContent = 'Eklendi'; state.data.queue = null; } catch (e) { alert(e.message); } return; }
+    const slack = event.target.closest('[data-slack]');
+    if (slack) {
+      slack.disabled = true;
+      try {
+        const item = JSON.parse(slack.dataset.slack || '{}');
+        const response = await fetch('/api/push-to-slack', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ items: [item] }) });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || data.ok === false) throw new Error(data.error || data.errors?.[0] || `HTTP ${response.status}`);
+        await post({ action: 'queue_upsert', ...item });
+        slack.textContent = '✓ Slack’e gönderildi'; state.data.queue = null;
+      } catch (e) { slack.disabled = false; alert(`Slack hatası: ${e.message || e}`); }
+      return;
+    }
+    const copy = event.target.closest('[data-copy-brief]');
+    if (copy) { try { await navigator.clipboard.writeText(copy.dataset.copyBrief || ''); copy.textContent = '✓ Brief kopyalandı'; setTimeout(() => { copy.textContent = '✨ Karar briefi'; }, 1400); } catch (e) { alert(`Kopyalama hatası: ${e.message || e}`); } return; }
     const status = event.target.closest('[data-status]');
     if (status) { try { const item = JSON.parse(status.dataset.item); const publishedUrl = status.dataset.status === 'published' ? window.prompt('Teknoblog yayın URL’si', item.published_url || '') : item.published_url; if (status.dataset.status === 'published' && !publishedUrl) return; await post({ action: 'queue_upsert', ...item, status: status.dataset.status, published_url: publishedUrl || null }); await load('queue', true); } catch (e) { alert(e.message); } return; }
     const connect = event.target.closest('[data-google-connect]');
@@ -136,6 +186,7 @@
     if (action) { action.disabled = true; try { await post({ action: action.dataset.action }, true); state.data = {}; await load(state.tab, true); } catch (e) { alert(e.message); } finally { action.disabled = false; } }
   });
   window.addEventListener('message', (event) => { if (event.origin === location.origin && event.data?.type === 'tb-gsc-connected') load('performance', true); });
-  function start() { render(); load('early'); }
+  window.addEventListener('tb-spa-tab-change', (event) => { if (event.detail?.tab === 'decision-center' && !state.data[state.tab]) load(state.tab); });
+  function start() { render(); if (location.hash === '#decision-center' || ['#decision', '#editorial', '#intelligence', '#ops'].includes(location.hash)) load(state.tab); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true }); else start();
 })();
