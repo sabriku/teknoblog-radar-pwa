@@ -29,6 +29,7 @@ const API_ROUTES = {
   '/api/push-to-slack': './api/push-to-slack.js',
   '/api/recommendations': './api/recommendations.js',
   '/api/run-pipeline': './api/run-pipeline.js',
+  '/api/search': './api/search.js',
   '/api/score': './api/score/index.js',
   '/api/score-batch': './api/score-batch.js',
   '/api/slack': './api/slack.js',

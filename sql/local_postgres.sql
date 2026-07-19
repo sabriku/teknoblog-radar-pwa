@@ -408,3 +408,6 @@ CREATE INDEX IF NOT EXISTS idx_predictions_probability ON content_predictions(di
 CREATE INDEX IF NOT EXISTS idx_feedback_url ON editorial_feedback(url,created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_prediction_outcomes_published ON prediction_outcomes(published_url,observed_at DESC);
 CREATE INDEX IF NOT EXISTS idx_prediction_outcomes_model ON prediction_outcomes(model_version,matched_at DESC);
+CREATE INDEX IF NOT EXISTS idx_topic_candidates_search ON topic_candidates USING GIN (to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(summary,'') || ' ' || coalesce(source_name,'')));
+CREATE INDEX IF NOT EXISTS idx_raw_feed_items_search ON raw_feed_items USING GIN (to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(summary,'') || ' ' || coalesce(source_name,'')));
+CREATE INDEX IF NOT EXISTS idx_content_clusters_search ON content_clusters USING GIN (to_tsvector('simple', coalesce(cluster_name,'') || ' ' || coalesce(payload::text,'')));

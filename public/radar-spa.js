@@ -2,6 +2,7 @@
   const TAB_KEY = 'tb_spa_active_tab';
   const VALID_TABS = new Set([
     'news',
+    'search',
     'sources',
     'opportunities',
     'google-trends',
@@ -15,6 +16,7 @@
 
   const LABELS = {
     news: 'Haberler',
+    search: 'Arama',
     sources: 'Kaynaklar',
     opportunities: 'Fırsatlar',
     'google-trends': 'Google Trends',
@@ -28,6 +30,7 @@
 
   const ICONS = {
     news: '📰',
+    search: '🔎',
     sources: '🗂️',
     opportunities: '🏷️',
     'google-trends': '📈',
@@ -88,6 +91,7 @@
   function descriptionFor(tab) {
     const map = {
       news: 'Ana haber akışı, kaynak filtresi ve görünüm seçenekleri.',
+      search: 'Haberler, Teknoblog arşivi, trend kümeleri ve kaynaklarda birleşik arama.',
       sources: 'RSS kaynaklarını ekleme, toplu içe aktarma ve kaynak listesini yönetme.',
       opportunities: 'Fırsat ve fiyat sinyallerini editoryal bağlamda izleme.',
       'google-trends': 'Türkiye Google Trends ve teknoloji sinyalleri.',

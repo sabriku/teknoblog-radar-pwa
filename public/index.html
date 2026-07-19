@@ -23,10 +23,15 @@
         <div class="tb-date" id="tb-shell-date"></div>
         <div class="tb-panel-context"><strong id="tb-spa-current-title">📰 Haberler</strong><span id="tb-spa-current-desc">Ana haber akışı, kaynak filtresi ve görünüm seçenekleri.</span></div>
       </div>
+      <form class="tb-global-search" id="tb-global-search-form" role="search">
+        <input id="tb-global-search-input" type="search" placeholder="Radar'da ara…" aria-label="Radar'da ara" autocomplete="off">
+        <button type="submit" aria-label="Ara">🔎 Ara</button>
+      </form>
     </header>
 
     <nav class="tb-spa-tabs" role="tablist" aria-label="Radar bölümleri">
       <button class="tb-spa-tab" type="button" role="tab" data-spa-tab="news">📰 Haberler</button>
+      <button class="tb-spa-tab" type="button" role="tab" data-spa-tab="search">🔎 Arama</button>
       <button class="tb-spa-tab" type="button" role="tab" data-spa-tab="sources">🗂️ Kaynaklar</button>
       <button class="tb-spa-tab" type="button" role="tab" data-spa-tab="opportunities">🏷️ Fırsatlar</button>
       <button class="tb-spa-tab" type="button" role="tab" data-spa-tab="google-trends">📈 Google Trends</button>
@@ -72,6 +77,8 @@
       </div>
     </section>
 
+    <section class="tb-panel" data-spa-panel="search" role="tabpanel"><main class="tb-panel-card" id="tb-search-root"><div class="tb-legacy-note">Arama motoru yükleniyor…</div></main></section>
+
     <section class="tb-panel" data-spa-panel="sources" role="tabpanel">
       <div class="tb-source-grid">
         <section class="tb-source-card"><h2>Toplu RSS ekle</h2><p class="tb-legacy-note">Her satıra bir RSS/Atom URL girin. Sistem mevcut RSS ve site adreslerini eleyerek sadece yeni kaynakları ekler.</p><label for="bulk-rss">RSS URL listesi</label><textarea id="bulk-rss" placeholder="https://example.com/feed/&#10;https://example.com/rss.xml"></textarea><div class="tb-source-actions"><button id="bulk-submit" type="button" class="tb-primary-btn">Toplu ekle</button><button id="bulk-clear" class="tb-small-btn" type="button">Temizle</button></div><div id="bulk-status" class="tb-source-status"></div><div id="bulk-results"></div></section>
@@ -96,6 +103,7 @@
   <script src="/auth-gate.js?v=20260423-1" defer></script>
   <script src="/radar-token-reset.js?v=20260523-1" defer></script>
   <script src="/radar-spa.js?v=20260718-2" defer></script>
+  <script src="/search-panel.js?v=20260719-1" defer></script>
   <script src="/news-controls-restore.js?v=20260622-1" defer></script>
   <script src="/app.js?v=20260718-3" defer></script>
   <script src="/discover-default.js?v=20260622-1" defer></script>
