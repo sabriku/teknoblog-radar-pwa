@@ -71,14 +71,20 @@ function parseRpcRows(text = '') {
 async function fetchTrendingRows(country, win) {
   const request = JSON.stringify(trendsRequest(country, win));
   const body = new URLSearchParams({ 'f.req': JSON.stringify([[[GOOGLE_TRENDS_RPC, request, null, 'generic']]]) });
-  const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  try {
-    const response = await fetch(trendsRpcUrl(country), { method: 'POST', signal: controller.signal, headers: { 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8', 'user-agent': 'Mozilla/5.0 TeknoblogRadar/2.0', 'x-same-domain': '1', origin: country.domain, referer: `${country.domain}/trending?geo=${country.code}` }, body: body.toString() });
-    if (!response.ok) throw new Error(`Google Trends HTTP ${response.status}`);
-    const rows = parseRpcRows(await response.text());
-    if (!rows.length) throw new Error('Google Trends boş yanıt döndürdü.');
-    return rows;
-  } finally { clearTimeout(timer); }
+  let lastError = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    try {
+      if (attempt) await new Promise((resolve) => setTimeout(resolve, 350 * attempt));
+      const response = await fetch(trendsRpcUrl(country), { method: 'POST', signal: controller.signal, headers: { 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8', 'user-agent': 'Mozilla/5.0 TeknoblogRadar/2.0', 'x-same-domain': '1', origin: country.domain, referer: `${country.domain}/trending?geo=${country.code}` }, body: body.toString() });
+      if (!response.ok) throw new Error(`Google Trends HTTP ${response.status}`);
+      const rows = parseRpcRows(await response.text());
+      if (!rows.length) throw new Error('Google Trends boş yanıt döndürdü.');
+      return rows;
+    } catch (error) { lastError = new Error(`${error?.message || String(error)}${error?.cause?.code ? ` (${error.cause.code})` : ''}`); }
+    finally { clearTimeout(timer); }
+  }
+  throw lastError || new Error('Google Trends bağlantısı kurulamadı.');
 }
 async function cachedTrendingRows(country, win) {
   const key = `${country.code}:${win.hours}`;
@@ -126,9 +132,15 @@ function diversifyCountries(items, limit) {
   }
   return selected;
 }
+async function mapLimited(items, concurrency, task) {
+  const results = new Array(items.length); let cursor = 0;
+  async function worker() { while (cursor < items.length) { const index = cursor; cursor += 1; try { results[index] = { status: 'fulfilled', value: await task(items[index], index) }; } catch (reason) { results[index] = { status: 'rejected', reason }; } } }
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker));
+  return results;
+}
 async function googleTrendsItems(limit, geo, categoryKey, windowKey) {
   const win = pickWindow(windowKey); const countries = countryList(geo); const categories = selectedCategories(categoryKey);
-  const batches = await Promise.allSettled(countries.map(async (country) => { const sync = await cachedTrendingRows(country, win); return { country, sync, items: sync.rows.map((row) => rowToItem(row, country, categories, win, sync)).filter(Boolean) }; }));
+  const batches = await mapLimited(countries, 2, async (country) => { const sync = await cachedTrendingRows(country, win); return { country, sync, items: sync.rows.map((row) => rowToItem(row, country, categories, win, sync)).filter(Boolean) }; });
   const items = []; const sync = [];
   batches.forEach((result, index) => { if (result.status !== 'fulfilled') { sync.push({ country_code: countries[index].code, cache: 'error', stale: false, count: 0, error: result.reason?.message || String(result.reason) }); return; } items.push(...result.value.items); sync.push({ country_code: result.value.country.code, fetched_at: new Date(result.value.sync.fetchedAt).toISOString(), cache: result.value.sync.cache, stale: Boolean(result.value.sync.stale), count: result.value.items.length }); });
   if (!batches.some((result) => result.status === 'fulfilled')) throw new Error('Google Trends ülkelerinden güncel veri alınamadı.');
