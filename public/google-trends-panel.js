@@ -56,7 +56,10 @@
       .tb-gt-meta{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}.tb-gt-chip{border:1px solid #e5e7eb;border-radius:999px;background:#f8fafc;color:#475569;padding:5px 8px;font-size:11px;font-weight:800}
       .tb-gt-chip.hot{border-color:#fdba74;background:#fff7ed;color:#c2410c}.tb-gt-chip.tech{border-color:#93c5fd;background:#eff6ff;color:#1d4ed8}.tb-gt-chip.country{border-color:#fed7aa;background:#fff7ed;color:#9a3412}
       .tb-gt-summary{font-size:12px;line-height:1.55;color:#475569}.tb-gt-link{display:inline-flex;margin-top:10px;color:#f04a0a;text-decoration:none;font-size:12px;font-weight:900}.tb-gt-link:hover{text-decoration:underline}
+      .tb-gt-card-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:10px}.tb-gt-news-toggle,.tb-gt-news-action{border:1px solid #f04a0a;border-radius:10px;background:#fff;color:#c2410c;padding:8px 10px;font-size:11px;font-weight:900;cursor:pointer}.tb-gt-news-toggle{background:#fff7ed}.tb-gt-news-toggle:disabled,.tb-gt-news-action:disabled{opacity:.58;cursor:not-allowed}
+      .tb-gt-featured{margin-top:11px;border-top:1px solid #e2e8f0;padding-top:10px}.tb-gt-featured[hidden]{display:none}.tb-gt-featured-title{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;font-size:11px;font-weight:900;color:#334155}.tb-gt-featured-list{display:flex;flex-direction:column;gap:9px}.tb-gt-news{display:grid;grid-template-columns:76px minmax(0,1fr);gap:9px;border:1px solid #e2e8f0;border-radius:12px;padding:8px;background:#f8fafc}.tb-gt-news>img{width:76px;height:68px;border-radius:9px;object-fit:cover;background:#e2e8f0}.tb-gt-news-body{min-width:0}.tb-gt-news-body>a{display:block;color:#0f172a;text-decoration:none;font-size:12px;font-weight:900;line-height:1.35}.tb-gt-news-body>a:hover{text-decoration:underline}.tb-gt-news-meta{font-size:10px;color:#64748b;margin:4px 0 7px}.tb-gt-news-actions{display:flex;gap:6px;flex-wrap:wrap}.tb-gt-news-action{padding:6px 8px;font-size:10px;background:#fff}.tb-gt-news-empty{padding:10px;border:1px dashed #cbd5e1;border-radius:10px;color:#64748b;font-size:11px;text-align:center}
       .tb-gt-empty{border:1px dashed #cbd5e1;border-radius:14px;padding:16px;text-align:center;color:#64748b;font-size:13px}
+      @media(max-width:560px){.tb-gt-news{grid-template-columns:64px minmax(0,1fr)}.tb-gt-news>img{width:64px;height:62px}}
     `;
     document.head.appendChild(style);
   }
@@ -70,6 +73,15 @@
   function windowLabel(value) { return WINDOWS.find(([key]) => key === value)?.[1] || value || 'Son 24 saat'; }
   function categoryLabel(value) { return CATEGORIES.find(([key]) => key === value)?.[1] || value || 'Bilim + Teknoloji'; }
   function options(list, current) { return list.map(([value, label]) => `<option value="${esc(value)}"${value === current ? ' selected' : ''}>${esc(label)}</option>`).join(''); }
+  function authToken() { return localStorage.getItem('tb_radar_cron_token') || localStorage.getItem('tb_cron_token') || ''; }
+  function newsPayload(item) { return { candidate_id: null, title: item.title, url: item.url, source_name: item.source_name || 'Google Trends', image_url: item.image_url || '', published_at: item.published_at || '', status: 'new', priority: 75, notes: 'Google Trends tarafından ilgili haber olarak öne çıkarıldı.' }; }
+  function featuredNewsHtml(items = []) {
+    if (!items.length) return '<div class="tb-gt-news-empty">Google Trends bu konu için erişilebilir bir ilgili haber döndürmedi.</div>';
+    return `<div class="tb-gt-featured-title"><span>📰 Google Trends’te ilgili haberler</span><span>${items.length} haber</span></div><div class="tb-gt-featured-list">${items.map((item) => {
+      const payload = esc(JSON.stringify(newsPayload(item)));
+      return `<article class="tb-gt-news">${item.image_url ? `<img src="${esc(item.image_url)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.hidden=true">` : ''}<div class="tb-gt-news-body"><a href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">${esc(item.title)}</a><div class="tb-gt-news-meta">${esc(item.source_name || 'Google Trends')} · ${esc(fmtDate(item.published_at) || 'Tarih yok')}</div><div class="tb-gt-news-actions"><button type="button" class="tb-gt-news-action" data-gt-news-queue="${payload}">＋ Yazılacaklara</button><button type="button" class="tb-gt-news-action" data-gt-news-slack="${payload}">Slack’e gönder</button></div></div></article>`;
+    }).join('')}</div>`;
+  }
 
   function render() {
     ensureStyle();
@@ -91,7 +103,11 @@
         </div>
         <h3>${esc(item.title)}</h3>
         <div class="tb-gt-summary">${esc(itemSummary(item))}</div>
-        <a class="tb-gt-link" href="${esc(item.url || itemUrl(item))}" target="_blank" rel="noopener noreferrer">Google Trends'te incele</a>
+        <div class="tb-gt-card-actions">
+          <a class="tb-gt-link" href="${esc(item.url || itemUrl(item))}" target="_blank" rel="noopener noreferrer">Google Trends'te incele</a>
+          ${item.featured_news_token ? `<button type="button" class="tb-gt-news-toggle" data-gt-news-token="${esc(item.featured_news_token)}">📰 Öne çıkan haberler</button>` : ''}
+        </div>
+        <div class="tb-gt-featured" hidden></div>
       </article>
     `;
     const turkey = state.items.filter((item) => item.country_code === 'TR');
@@ -117,7 +133,49 @@
     wrap.querySelector('#tb-gt-country')?.addEventListener('change', (event) => { state.country = event.target.value || 'all'; load(); });
     wrap.querySelector('#tb-gt-category')?.addEventListener('change', (event) => { state.category = event.target.value || 'all'; load(); });
     wrap.querySelector('#tb-gt-window')?.addEventListener('change', (event) => { state.window = event.target.value || '24h'; load(); });
+    wrap.querySelectorAll('[data-gt-news-token]').forEach((button) => button.addEventListener('click', () => toggleFeaturedNews(button)));
+    wrap.querySelectorAll('[data-gt-news-queue]').forEach((button) => button.addEventListener('click', () => addFeaturedToQueue(button)));
+    wrap.querySelectorAll('[data-gt-news-slack]').forEach((button) => button.addEventListener('click', () => sendFeaturedToSlack(button)));
     return true;
+  }
+
+  async function toggleFeaturedNews(button) {
+    const host = button.closest('.tb-gt-card')?.querySelector('.tb-gt-featured');
+    if (!host) return;
+    if (host.dataset.loaded === '1') { host.hidden = !host.hidden; button.textContent = host.hidden ? `📰 Öne çıkan haberler (${host.dataset.count || 0})` : '▴ Haberleri daralt'; return; }
+    button.disabled = true; button.textContent = 'Haberler yükleniyor…'; host.hidden = false; host.innerHTML = '<div class="tb-gt-news-empty">Google Trends’in ilişkilendirdiği haberler alınıyor…</div>';
+    try {
+      const params = new URLSearchParams({ google_trends_news: '1', token: button.dataset.gtNewsToken || '', _: String(Date.now()) });
+      const data = await fetchJson(`/api/trend-overview?${params.toString()}`);
+      const items = Array.isArray(data.items) ? data.items : [];
+      host.innerHTML = featuredNewsHtml(items); host.dataset.loaded = '1'; host.dataset.count = String(items.length); host.hidden = false;
+      button.textContent = '▴ Haberleri daralt';
+      host.querySelectorAll('[data-gt-news-queue]').forEach((action) => action.addEventListener('click', () => addFeaturedToQueue(action)));
+      host.querySelectorAll('[data-gt-news-slack]').forEach((action) => action.addEventListener('click', () => sendFeaturedToSlack(action)));
+    } catch (error) { host.innerHTML = `<div class="tb-gt-news-empty">İlgili haberler alınamadı: ${esc(error?.message || 'Bilinmeyen hata')}</div>`; button.textContent = '↻ Haberleri yeniden dene'; }
+    finally { button.disabled = false; }
+  }
+
+  async function addFeaturedToQueue(button) {
+    const item = JSON.parse(button.dataset.gtNewsQueue || '{}');
+    button.disabled = true;
+    try {
+      const response = await fetch(`/api/intelligence?token=${encodeURIComponent(authToken())}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'queue_upsert', ...item }) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      button.textContent = '✓ Yazılacaklara eklendi';
+    } catch (error) { button.disabled = false; alert(`Yazılacaklar hatası: ${error?.message || 'Bilinmeyen hata'}`); }
+  }
+
+  async function sendFeaturedToSlack(button) {
+    const item = JSON.parse(button.dataset.gtNewsSlack || '{}');
+    button.disabled = true;
+    try {
+      const response = await fetch('/api/push-to-slack', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ items: [item] }) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.ok === false) throw new Error(data.error || data.errors?.[0] || `HTTP ${response.status}`);
+      button.textContent = '✓ Slack’e gönderildi';
+    } catch (error) { button.disabled = false; alert(`Slack hatası: ${error?.message || 'Bilinmeyen hata'}`); }
   }
 
   async function fetchJson(url) {
