@@ -13,8 +13,8 @@
   ];
   const descriptions = {
     today: 'Şu anda dikkat isteyen fırsatları, yükselen konuları ve kaynak sorunlarını birlikte gösterir.',
-    early: 'Rakiplerden önce yakalanan ve ilk yayın avantajı taşıyan gelişmeler.',
-    clusters: 'Birden fazla kaynağın doğruladığı, yayılma hızı artan konu kümeleri.',
+    early: 'Tek kaynakta beliren, rakiplerde henüz görünmeyen ve ilk yayın avantajı taşıyan gelişmeler.',
+    clusters: 'En az iki bağımsız kaynağın doğruladığı, yayılma ivmesine göre sıralanan konu kümeleri.',
     coverage: 'Yeni haber mi yazılmalı, mevcut Teknoblog içeriği mi güncellenmeli?',
     queue: 'Yazılacak haberlerin görev durumu ve tamamlanma ilerlemesi.',
     performance: 'Search Console’dan gelen gerçek Discover ve Google News sonuçları.',
@@ -114,8 +114,8 @@
     if (state.error) return empty(`Hata: ${state.error}`);
     if (!data) return empty('Bölüm yüklenmedi.');
     if (state.tab === 'today') return summary(data);
-    if (state.tab === 'early') return cards(data.items, 'early');
-    if (state.tab === 'clusters') return cards(data.items, 'clusters');
+    if (state.tab === 'early') return data.items?.length ? cards(data.items, 'early') : empty('Şu anda rakiplerden önce yakalanmış tek kaynaklı bir sinyal yok.');
+    if (state.tab === 'clusters') return data.items?.length ? cards(data.items, 'clusters') : empty('Şu anda en az iki bağımsız kaynakla doğrulanmış yükselen konu yok.');
     if (state.tab === 'coverage') return cards(data.items, 'coverage');
     if (state.tab === 'queue') return queue(data.items);
     if (state.tab === 'sources') return sourceTable(data.items);
