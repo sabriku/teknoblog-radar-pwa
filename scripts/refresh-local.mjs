@@ -45,6 +45,15 @@ try {
       console.log(JSON.stringify({ action: 'sync_google_trends', window, ok: false, error: error?.message || String(error) }));
     }
   }
+  if (minute % 30 < 5) {
+    try {
+      const opportunities = await fetch(`${baseUrl}/api/opportunity-radar?refresh=1&limit=60`, { cache: 'no-store', signal: controller.signal });
+      const opportunityData = await opportunities.json().catch(() => ({}));
+      console.log(JSON.stringify({ action: 'sync_opportunities', ok: opportunities.ok, count: opportunityData.count || 0, scanned: opportunityData.scan?.found || 0 }));
+    } catch (error) {
+      console.log(JSON.stringify({ action: 'sync_opportunities', ok: false, error: error?.message || String(error) }));
+    }
+  }
 } finally {
   clearTimeout(timer);
 }

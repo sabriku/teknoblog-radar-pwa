@@ -78,6 +78,35 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS opportunity_offers (
+  offer_key TEXT PRIMARY KEY,
+  product_key TEXT NOT NULL,
+  product_name TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'Diğer',
+  store_name TEXT NOT NULL,
+  comparison_source TEXT NOT NULL,
+  price NUMERIC(14,2) NOT NULL,
+  old_price NUMERIC(14,2),
+  market_lowest_price NUMERIC(14,2),
+  product_url TEXT NOT NULL,
+  comparison_url TEXT NOT NULL,
+  image_url TEXT,
+  first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE TABLE IF NOT EXISTS opportunity_scan_runs (
+  id BIGSERIAL PRIMARY KEY,
+  source_name TEXT NOT NULL,
+  status TEXT NOT NULL,
+  offer_count INTEGER NOT NULL DEFAULT 0,
+  duration_ms INTEGER NOT NULL DEFAULT 0,
+  error_message TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS trend_signals (
   id TEXT PRIMARY KEY,
   signal_hash TEXT UNIQUE,
@@ -484,6 +513,10 @@ CREATE INDEX IF NOT EXISTS idx_raw_items_published ON raw_feed_items(published_a
 CREATE INDEX IF NOT EXISTS idx_candidates_status_created ON topic_candidates(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_candidates_status_published ON topic_candidates(status, published_at DESC NULLS LAST);
 CREATE INDEX IF NOT EXISTS idx_pipeline_runs_status ON pipeline_runs(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_opportunity_offers_recent ON opportunity_offers(last_seen_at DESC, price ASC);
+CREATE INDEX IF NOT EXISTS idx_opportunity_offers_product ON opportunity_offers(product_key, price ASC);
+CREATE INDEX IF NOT EXISTS idx_opportunity_offers_store ON opportunity_offers(store_name, last_seen_at DESC);
+CREATE INDEX IF NOT EXISTS idx_opportunity_scan_runs_recent ON opportunity_scan_runs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_trend_signals_detected ON trend_signals(detected_at DESC);
 CREATE INDEX IF NOT EXISTS idx_trend_clusters_status_seen ON trend_clusters(status, last_seen_at DESC NULLS LAST);
 CREATE INDEX IF NOT EXISTS idx_trend_links_cluster ON trend_news_links(cluster_id);
