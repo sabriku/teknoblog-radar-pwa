@@ -7,6 +7,7 @@
   const token = () => localStorage.getItem('tb_radar_cron_token') || localStorage.getItem('tb_cron_token') || '';
   const fmtPrice = (value) => Number(value || 0) ? new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 2 }).format(Number(value)) + ' TL' : '—';
   const fmtDate = (value) => {
+    if (!value) return '—';
     const d = new Date(value || 0); if (Number.isNaN(d.getTime())) return '—';
     return new Intl.DateTimeFormat('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Istanbul' }).format(d);
   };
@@ -38,7 +39,18 @@
     if (state.sort === 'price') items.sort((a, b) => a.sale_price - b.sale_price);
     else if (state.sort === 'score') items.sort((a, b) => b.score - a.score);
     else if (state.sort === 'discount') items.sort((a, b) => b.discount_rate - a.discount_rate || b.score - a.score);
-    else items.sort((a, b) => Number(b.is_new) - Number(a.is_new) || new Date(b.first_seen_at) - new Date(a.first_seen_at) || b.score - a.score);
+    else {
+      items.sort((a, b) => Number(b.is_new) - Number(a.is_new) || new Date(b.first_seen_at) - new Date(a.first_seen_at) || b.score - a.score);
+      if (state.store === 'all') {
+        const buckets = new Map();
+        for (const item of items) { if (!buckets.has(item.store)) buckets.set(item.store, []); buckets.get(item.store).push(item); }
+        const diverse = [];
+        while ([...buckets.values()].some((list) => list.length)) {
+          for (const store of state.stores.map((entry) => entry.store)) { const next = buckets.get(store)?.shift(); if (next) diverse.push(next); }
+        }
+        items = diverse;
+      }
+    }
     return items;
   }
 
