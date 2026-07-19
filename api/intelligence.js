@@ -225,17 +225,37 @@ async function clustersSection() {
   return clusters.slice(0, 60);
 }
 
+function isEarlySignal(item) {
+  return !item.owned_coverage
+    && Number(item.source_count) === 1
+    && Number(item.competitor_count) === 0
+    && Number(item.first_mover_score) >= 52;
+}
+
+function isRisingCluster(item) {
+  return !item.owned_coverage
+    && Number(item.source_count) >= 2;
+}
+
+function risingClusters(items = []) {
+  return items.filter(isRisingCluster)
+    .sort((a, b) => b.momentum_score - a.momentum_score
+      || b.source_count - a.source_count
+      || b.confidence_score - a.confidence_score);
+}
+
 async function earlySignalsSection() {
   const clusters = await clustersSection();
-  const items = clusters.filter((item) => !item.owned_coverage && item.first_mover_score >= 48)
+  const items = clusters.filter(isEarlySignal)
     .sort((a, b) => b.first_mover_score - a.first_mover_score || b.breakout_probability - a.breakout_probability);
   return {
     generated_at: nowIso(),
     scan_interval_minutes: 15,
+    criteria: 'Tek kaynaklı, rakiplerde henüz görünmeyen ilk yayın fırsatları',
     act_now: items.filter((item) => item.signal_stage === 'act_now').length,
     emerging: items.filter((item) => item.signal_stage === 'emerging').length,
     watch: items.filter((item) => item.signal_stage === 'watch').length,
-    items: items.slice(0, 50)
+    items: items.slice(0, 30)
   };
 }
 
@@ -415,7 +435,7 @@ async function summarySection() {
       (SELECT COUNT(*) FROM teknoblog_content WHERE published_at>=date_trunc('day',NOW() AT TIME ZONE 'Europe/Istanbul') AT TIME ZONE 'Europe/Istanbul')::int AS published_today`),
     queueSection(), sourceHealthSection(), clustersSection(), performanceSection()
   ]);
-  return { ...counts.rows[0], queue_progress: { total: queue.length, completed: queue.filter((item) => item.status === 'published').length }, unhealthy_sources: health.filter((item) => Number(item.quality_score) < 45).slice(0, 10), rising_clusters: clusters.filter((item) => item.momentum_score >= 60).slice(0, 8), first_mover_opportunities: clusters.filter((item) => !item.owned_coverage && item.first_mover_score >= 65).slice(0, 8), performance_configured: performance.configured, disk: diskStatus(), generated_at: nowIso() };
+  return { ...counts.rows[0], queue_progress: { total: queue.length, completed: queue.filter((item) => item.status === 'published').length }, unhealthy_sources: health.filter((item) => Number(item.quality_score) < 45).slice(0, 10), rising_clusters: risingClusters(clusters).slice(0, 8), first_mover_opportunities: clusters.filter(isEarlySignal).slice(0, 8), performance_configured: performance.configured, disk: diskStatus(), generated_at: nowIso() };
 }
 
 async function syncGsc() {
@@ -491,8 +511,8 @@ async function runAlerts() {
     AVG(CASE WHEN discover_impressions>=100 OR discover_clicks>=3 THEN 1 ELSE 0 END) AS actual FROM prediction_outcomes WHERE observed_at>=NOW()-INTERVAL '30 days'`)).rows[0] || {};
   const driftGap = Math.abs(Number(drift.predicted || 0) - Number(drift.actual || 0));
   const alerts = [
-    ...clusters.filter((item) => !item.owned_coverage && item.first_mover_score >= 78).slice(0, 8).map((item) => ({ type: 'first_mover', key: `first-mover:${item.cluster_key}:${new Date().toISOString().slice(0,13)}`, title: item.cluster_name, payload: item })),
-    ...clusters.filter((item) => item.momentum_score >= 75 && item.source_count >= 2 && item.first_mover_score < 78).slice(0, 8).map((item) => ({ type: 'momentum', key: `momentum:${item.cluster_key}:${new Date().toISOString().slice(0,13)}`, title: item.cluster_name, payload: item })),
+    ...clusters.filter((item) => isEarlySignal(item) && item.first_mover_score >= 70).slice(0, 8).map((item) => ({ type: 'first_mover', key: `first-mover:${item.cluster_key}:${new Date().toISOString().slice(0,13)}`, title: item.cluster_name, payload: item })),
+    ...risingClusters(clusters).filter((item) => item.momentum_score >= 55).slice(0, 8).map((item) => ({ type: 'momentum', key: `momentum:${item.cluster_key}:${new Date().toISOString().slice(0,13)}`, title: item.cluster_name, payload: item })),
     ...stale.map((item) => ({ type: 'queue_stale', key: `queue:${item.id}:${new Date().toISOString().slice(0,10)}`, title: item.title, payload: item })),
     ...(Number(drift.observed || 0) >= 20 && driftGap >= .2 ? [{ type: 'model_drift', key: `drift:${new Date().toISOString().slice(0,10)}`, title: `Discover tahmin sapması %${Math.round(driftGap * 100)}`, payload: drift }] : [])
   ];
@@ -550,7 +570,10 @@ export default async function handler(req, res) {
     if (req.method === 'GET') {
       if (section === 'summary') return json(res, 200, { data: await summarySection() });
       if (section === 'early-signals') return json(res, 200, await earlySignalsSection());
-      if (section === 'clusters') return json(res, 200, { items: await clustersSection() });
+      if (section === 'clusters') {
+        const items = risingClusters(await clustersSection());
+        return json(res, 200, { criteria: 'En az iki bağımsız kaynakla doğrulanan, ivmesine göre sıralanan konu kümeleri', items: items.slice(0, 40) });
+      }
       if (section === 'coverage') return json(res, 200, { items: await coverageSection() });
       if (section === 'queue') return json(res, 200, { items: await queueSection() });
       if (section === 'sources') return json(res, 200, { items: await sourceHealthSection() });
