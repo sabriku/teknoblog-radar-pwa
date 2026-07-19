@@ -196,6 +196,20 @@ CREATE TABLE IF NOT EXISTS content_clusters (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS early_signal_snapshots (
+  id BIGSERIAL PRIMARY KEY,
+  cluster_key TEXT NOT NULL,
+  capture_bucket TIMESTAMPTZ NOT NULL,
+  early_signal_score INTEGER NOT NULL DEFAULT 0,
+  first_mover_score INTEGER NOT NULL DEFAULT 0,
+  breakout_probability INTEGER NOT NULL DEFAULT 0,
+  source_count INTEGER NOT NULL DEFAULT 0,
+  competitor_count INTEGER NOT NULL DEFAULT 0,
+  payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(cluster_key,capture_bucket)
+);
+
 CREATE TABLE IF NOT EXISTS teknoblog_content (
   id BIGSERIAL PRIMARY KEY,
   wp_id BIGINT UNIQUE,
@@ -372,6 +386,15 @@ ALTER TABLE content_predictions ADD COLUMN IF NOT EXISTS features JSONB DEFAULT 
 ALTER TABLE editorial_feedback ADD COLUMN IF NOT EXISTS title TEXT;
 ALTER TABLE editorial_feedback ADD COLUMN IF NOT EXISTS source_name TEXT;
 ALTER TABLE editorial_feedback ADD COLUMN IF NOT EXISTS features JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE content_clusters ADD COLUMN IF NOT EXISTS early_signal_score INTEGER DEFAULT 0;
+ALTER TABLE content_clusters ADD COLUMN IF NOT EXISTS first_mover_score INTEGER DEFAULT 0;
+ALTER TABLE content_clusters ADD COLUMN IF NOT EXISTS breakout_probability INTEGER DEFAULT 0;
+ALTER TABLE content_clusters ADD COLUMN IF NOT EXISTS competitor_count INTEGER DEFAULT 0;
+ALTER TABLE content_clusters ADD COLUMN IF NOT EXISTS official_source_count INTEGER DEFAULT 0;
+ALTER TABLE content_clusters ADD COLUMN IF NOT EXISTS owned_coverage BOOLEAN DEFAULT FALSE;
+ALTER TABLE content_clusters ADD COLUMN IF NOT EXISTS lead_window_minutes INTEGER DEFAULT 0;
+ALTER TABLE content_clusters ADD COLUMN IF NOT EXISTS signal_stage TEXT DEFAULT 'watch';
+ALTER TABLE content_clusters ADD COLUMN IF NOT EXISTS first_source_name TEXT;
 
 ALTER TABLE trend_signals ADD COLUMN IF NOT EXISTS signal_hash TEXT;
 ALTER TABLE trend_signals ADD COLUMN IF NOT EXISTS source_type TEXT;
@@ -411,3 +434,5 @@ CREATE INDEX IF NOT EXISTS idx_prediction_outcomes_model ON prediction_outcomes(
 CREATE INDEX IF NOT EXISTS idx_topic_candidates_search ON topic_candidates USING GIN (to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(summary,'') || ' ' || coalesce(source_name,'')));
 CREATE INDEX IF NOT EXISTS idx_raw_feed_items_search ON raw_feed_items USING GIN (to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(summary,'') || ' ' || coalesce(source_name,'')));
 CREATE INDEX IF NOT EXISTS idx_content_clusters_search ON content_clusters USING GIN (to_tsvector('simple', coalesce(cluster_name,'') || ' ' || coalesce(payload::text,'')));
+CREATE INDEX IF NOT EXISTS idx_content_clusters_early ON content_clusters(owned_coverage,first_mover_score DESC,last_seen_at DESC);
+CREATE INDEX IF NOT EXISTS idx_early_signal_snapshots_time ON early_signal_snapshots(capture_bucket DESC,first_mover_score DESC);

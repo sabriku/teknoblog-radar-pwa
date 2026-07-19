@@ -100,14 +100,14 @@ async function reconcilePredictionOutcomes() {
 }
 
 async function recentCandidates(limit = 600) {
-  const result = await queryLocal(`SELECT id,title,url,source_name,image_url,published_at,created_at,
+  const result = await queryLocal(`SELECT id,source_id,title,url,source_name,image_url,published_at,created_at,
     total_score,discover_score,traffic_score,social_score,editorial_score,conversion_score
     FROM topic_candidates WHERE status='active' AND COALESCE(published_at,created_at) >= NOW()-INTERVAL '48 hours'
     ORDER BY COALESCE(published_at,created_at) DESC LIMIT $1`, [limit]);
   return result.rows;
 }
 
-function buildClusters(items = []) {
+function buildClusters(items = [], sourceMeta = new Map(), ownedPosts = []) {
   const groups = [];
   for (const item of items) {
     const itemTokens = tokens(item.title);
@@ -127,11 +127,45 @@ function buildClusters(items = []) {
   }
   return groups.map((group) => {
     const sorted = group.items.sort((a, b) => new Date(b.published_at || b.created_at) - new Date(a.published_at || a.created_at));
+    const timeline = [...sorted].sort((a, b) => new Date(a.published_at || a.created_at) - new Date(b.published_at || b.created_at));
     const sources = [...new Set(sorted.map((item) => item.source_name).filter(Boolean))];
     const first = Math.min(...sorted.map((item) => new Date(item.published_at || item.created_at).getTime()));
     const last = Math.max(...sorted.map((item) => new Date(item.published_at || item.created_at).getTime()));
     const ageHours = Math.max(0, (Date.now() - last) / 3600000);
     const recentCount = sorted.filter((item) => Date.now() - new Date(item.published_at || item.created_at).getTime() <= 6 * 3600000).length;
+    const last90 = sorted.filter((item) => Date.now() - new Date(item.published_at || item.created_at).getTime() <= 90 * 60000).length;
+    const previous90 = sorted.filter((item) => { const age = Date.now() - new Date(item.published_at || item.created_at).getTime(); return age > 90 * 60000 && age <= 180 * 60000; }).length;
+    const metas = timeline.map((item) => sourceMeta.get(String(item.source_id || '')) || { source_type: 'news', trust_score: 70 });
+    const officialCount = new Set(timeline.filter((item, index) => metas[index].source_type === 'official').map((item) => item.source_name)).size;
+    const competitorItems = timeline.filter((item, index) => metas[index].source_type === 'competitor');
+    const competitorCount = new Set(competitorItems.map((item) => item.source_name)).size;
+    const firstSource = timeline[0]?.source_name || '';
+    const firstCompetitorAt = competitorItems[0] ? new Date(competitorItems[0].published_at || competitorItems[0].created_at).getTime() : null;
+    const firstSignalAt = first;
+    const leadWindowMinutes = Math.max(0, Math.round(((firstCompetitorAt || Date.now()) - firstSignalAt) / 60000));
+    const titleTokens = tokens(sorted[0]?.title);
+    let ownedMatch = 0;
+    let matchedPost = null;
+    for (const post of ownedPosts) { const value = overlap(titleTokens, tokens(post.title)); if (value > ownedMatch) { ownedMatch = value; matchedPost = post; } }
+    const ownedCoverage = ownedMatch >= .68 && matchedPost && Date.now() - new Date(matchedPost.published_at || 0).getTime() <= 14 * 86400000;
+    const acceleration = clamp(42 + (last90 - previous90) * 14 + Math.min(3, sources.length) * 5);
+    const freshness = clamp(100 - ageHours * 8);
+    const avgTrust = metas.reduce((sum, meta) => sum + Number(meta.trust_score || 70), 0) / Math.max(1, metas.length);
+    const avgDiscover = sorted.reduce((sum, item) => sum + Number(item.discover_score || 0), 0) / Math.max(1, sorted.length);
+    const authority = officialCount ? Math.max(92, avgTrust) : avgTrust;
+    const corroboration = sources.length >= 4 ? 94 : sources.length === 3 ? 82 : sources.length === 2 ? 62 : 30;
+    const whitespace = competitorCount === 0 ? 100 : competitorCount === 1 ? 52 : competitorCount === 2 ? 25 : 8;
+    const earlySignal = clamp(freshness * .30 + authority * .24 + corroboration * .16 + acceleration * .18 + avgDiscover * .12 - competitorCount * 5 - (ownedCoverage ? 45 : 0));
+    const breakout = clamp(authority * .25 + corroboration * .25 + acceleration * .30 + avgDiscover * .20 - Math.min(15, ageHours * 1.5));
+    const firstMover = clamp(earlySignal * .55 + breakout * .25 + whitespace * .20 + (officialCount ? 3 : 0) - (ownedCoverage ? 45 : 0));
+    const stage = ownedCoverage ? 'covered' : firstMover >= 78 ? 'act_now' : firstMover >= 62 ? 'emerging' : 'watch';
+    const reasons = [
+      officialCount ? `${officialCount} resmî kaynak` : null,
+      competitorCount === 0 ? 'Türkiye rakiplerinde henüz görünmüyor' : `${competitorCount} Türkiye rakibi yazdı`,
+      last90 > previous90 ? 'yayılma hızı artıyor' : null,
+      sources.length >= 2 ? `${sources.length} kaynakla doğrulandı` : 'tek kaynaklı erken sinyal',
+      leadWindowMinutes ? `${leadWindowMinutes} dakikalık öncülük penceresi` : null
+    ].filter(Boolean);
     const momentum = clamp(25 + sources.length * 12 + recentCount * 9 - ageHours * 2);
     const confidence = clamp(30 + sources.length * 15 + (sorted[0]?.image_url ? 8 : 0) + (sorted.length > 2 ? 10 : 0));
     return {
@@ -141,24 +175,68 @@ function buildClusters(items = []) {
       item_count: sorted.length,
       momentum_score: momentum,
       confidence_score: confidence,
+      early_signal_score: earlySignal,
+      first_mover_score: firstMover,
+      breakout_probability: breakout,
+      competitor_count: competitorCount,
+      official_source_count: officialCount,
+      owned_coverage: Boolean(ownedCoverage),
+      matched_post: ownedCoverage ? matchedPost : null,
+      lead_window_minutes: leadWindowMinutes,
+      signal_stage: stage,
+      first_source_name: firstSource,
+      acceleration_score: acceleration,
+      reasons,
       first_seen_at: new Date(first).toISOString(),
       last_seen_at: new Date(last).toISOString(),
       sources,
       items: sorted.slice(0, 8)
     };
-  }).sort((a, b) => b.momentum_score - a.momentum_score || b.source_count - a.source_count);
+  }).sort((a, b) => b.first_mover_score - a.first_mover_score || b.momentum_score - a.momentum_score || b.source_count - a.source_count);
 }
 
 async function clustersSection() {
-  const clusters = buildClusters(await recentCandidates());
+  const [candidates, sources, owned] = await Promise.all([
+    recentCandidates(),
+    queryLocal(`SELECT id,source_type,trust_score,priority_weight FROM sources`),
+    queryLocal(`SELECT title,url,published_at FROM teknoblog_content WHERE published_at>=NOW()-INTERVAL '14 days' ORDER BY published_at DESC LIMIT 500`)
+  ]);
+  const sourceMeta = new Map(sources.rows.map((source) => [String(source.id), source]));
+  const clusters = buildClusters(candidates, sourceMeta, owned.rows);
   for (const cluster of clusters.slice(0, 80)) {
-    await queryLocal(`INSERT INTO content_clusters(cluster_key,cluster_name,source_count,item_count,momentum_score,confidence_score,first_seen_at,last_seen_at,payload,updated_at)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW()) ON CONFLICT(cluster_key) DO UPDATE SET
+    await queryLocal(`INSERT INTO content_clusters(cluster_key,cluster_name,source_count,item_count,momentum_score,confidence_score,first_seen_at,last_seen_at,payload,
+      early_signal_score,first_mover_score,breakout_probability,competitor_count,official_source_count,owned_coverage,lead_window_minutes,signal_stage,first_source_name,updated_at)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,NOW()) ON CONFLICT(cluster_key) DO UPDATE SET
       cluster_name=EXCLUDED.cluster_name,source_count=EXCLUDED.source_count,item_count=EXCLUDED.item_count,
-      momentum_score=EXCLUDED.momentum_score,confidence_score=EXCLUDED.confidence_score,last_seen_at=EXCLUDED.last_seen_at,payload=EXCLUDED.payload,updated_at=NOW()`,
-    [cluster.cluster_key, cluster.cluster_name, cluster.source_count, cluster.item_count, cluster.momentum_score, cluster.confidence_score, cluster.first_seen_at, cluster.last_seen_at, JSON.stringify({ sources: cluster.sources, items: cluster.items })]);
+      momentum_score=EXCLUDED.momentum_score,confidence_score=EXCLUDED.confidence_score,last_seen_at=EXCLUDED.last_seen_at,payload=EXCLUDED.payload,
+      early_signal_score=EXCLUDED.early_signal_score,first_mover_score=EXCLUDED.first_mover_score,breakout_probability=EXCLUDED.breakout_probability,
+      competitor_count=EXCLUDED.competitor_count,official_source_count=EXCLUDED.official_source_count,owned_coverage=EXCLUDED.owned_coverage,
+      lead_window_minutes=EXCLUDED.lead_window_minutes,signal_stage=EXCLUDED.signal_stage,first_source_name=EXCLUDED.first_source_name,updated_at=NOW()`,
+    [cluster.cluster_key, cluster.cluster_name, cluster.source_count, cluster.item_count, cluster.momentum_score, cluster.confidence_score, cluster.first_seen_at, cluster.last_seen_at,
+      JSON.stringify({ sources: cluster.sources, items: cluster.items, reasons: cluster.reasons, acceleration_score: cluster.acceleration_score, matched_post: cluster.matched_post }),
+      cluster.early_signal_score, cluster.first_mover_score, cluster.breakout_probability, cluster.competitor_count, cluster.official_source_count,
+      cluster.owned_coverage, cluster.lead_window_minutes, cluster.signal_stage, cluster.first_source_name]);
+    await queryLocal(`INSERT INTO early_signal_snapshots(cluster_key,capture_bucket,early_signal_score,first_mover_score,breakout_probability,source_count,competitor_count,payload)
+      VALUES($1,date_trunc('hour',NOW()) + floor(extract(minute from NOW())/15)*interval '15 minutes',$2,$3,$4,$5,$6,$7)
+      ON CONFLICT(cluster_key,capture_bucket) DO UPDATE SET early_signal_score=EXCLUDED.early_signal_score,first_mover_score=EXCLUDED.first_mover_score,
+      breakout_probability=EXCLUDED.breakout_probability,source_count=EXCLUDED.source_count,competitor_count=EXCLUDED.competitor_count,payload=EXCLUDED.payload`,
+    [cluster.cluster_key, cluster.early_signal_score, cluster.first_mover_score, cluster.breakout_probability, cluster.source_count, cluster.competitor_count, JSON.stringify({ stage: cluster.signal_stage, title: cluster.cluster_name })]);
   }
   return clusters.slice(0, 60);
+}
+
+async function earlySignalsSection() {
+  const clusters = await clustersSection();
+  const items = clusters.filter((item) => !item.owned_coverage && item.first_mover_score >= 48)
+    .sort((a, b) => b.first_mover_score - a.first_mover_score || b.breakout_probability - a.breakout_probability);
+  return {
+    generated_at: nowIso(),
+    scan_interval_minutes: 15,
+    act_now: items.filter((item) => item.signal_stage === 'act_now').length,
+    emerging: items.filter((item) => item.signal_stage === 'emerging').length,
+    watch: items.filter((item) => item.signal_stage === 'watch').length,
+    items: items.slice(0, 50)
+  };
 }
 
 async function coverageSection() {
@@ -337,7 +415,7 @@ async function summarySection() {
       (SELECT COUNT(*) FROM teknoblog_content WHERE published_at>=date_trunc('day',NOW() AT TIME ZONE 'Europe/Istanbul') AT TIME ZONE 'Europe/Istanbul')::int AS published_today`),
     queueSection(), sourceHealthSection(), clustersSection(), performanceSection()
   ]);
-  return { ...counts.rows[0], queue_progress: { total: queue.length, completed: queue.filter((item) => item.status === 'published').length }, unhealthy_sources: health.filter((item) => Number(item.quality_score) < 45).slice(0, 10), rising_clusters: clusters.filter((item) => item.momentum_score >= 60).slice(0, 8), performance_configured: performance.configured, disk: diskStatus(), generated_at: nowIso() };
+  return { ...counts.rows[0], queue_progress: { total: queue.length, completed: queue.filter((item) => item.status === 'published').length }, unhealthy_sources: health.filter((item) => Number(item.quality_score) < 45).slice(0, 10), rising_clusters: clusters.filter((item) => item.momentum_score >= 60).slice(0, 8), first_mover_opportunities: clusters.filter((item) => !item.owned_coverage && item.first_mover_score >= 65).slice(0, 8), performance_configured: performance.configured, disk: diskStatus(), generated_at: nowIso() };
 }
 
 async function syncGsc() {
@@ -413,7 +491,8 @@ async function runAlerts() {
     AVG(CASE WHEN discover_impressions>=100 OR discover_clicks>=3 THEN 1 ELSE 0 END) AS actual FROM prediction_outcomes WHERE observed_at>=NOW()-INTERVAL '30 days'`)).rows[0] || {};
   const driftGap = Math.abs(Number(drift.predicted || 0) - Number(drift.actual || 0));
   const alerts = [
-    ...clusters.filter((item) => item.momentum_score >= 75 && item.source_count >= 2).slice(0, 8).map((item) => ({ type: 'momentum', key: `momentum:${item.cluster_key}:${new Date().toISOString().slice(0,13)}`, title: item.cluster_name, payload: item })),
+    ...clusters.filter((item) => !item.owned_coverage && item.first_mover_score >= 78).slice(0, 8).map((item) => ({ type: 'first_mover', key: `first-mover:${item.cluster_key}:${new Date().toISOString().slice(0,13)}`, title: item.cluster_name, payload: item })),
+    ...clusters.filter((item) => item.momentum_score >= 75 && item.source_count >= 2 && item.first_mover_score < 78).slice(0, 8).map((item) => ({ type: 'momentum', key: `momentum:${item.cluster_key}:${new Date().toISOString().slice(0,13)}`, title: item.cluster_name, payload: item })),
     ...stale.map((item) => ({ type: 'queue_stale', key: `queue:${item.id}:${new Date().toISOString().slice(0,10)}`, title: item.title, payload: item })),
     ...(Number(drift.observed || 0) >= 20 && driftGap >= .2 ? [{ type: 'model_drift', key: `drift:${new Date().toISOString().slice(0,10)}`, title: `Discover tahmin sapması %${Math.round(driftGap * 100)}`, payload: drift }] : [])
   ];
@@ -426,7 +505,7 @@ async function runAlerts() {
   }
   const webhook = process.env.SLACK_KAYNAK_WEBHOOK_URL || process.env.SLACK_WEBHOOK_URL || '';
   if (webhook && newAlerts.length) {
-    const lines = ['*Teknoblog Radar · Akıllı Uyarılar*', ...newAlerts.slice(0, 12).map((alert) => `• ${alert.type === 'momentum' ? 'Hızlanıyor' : 'Bekliyor'}: ${alert.title}`)];
+    const lines = ['*Teknoblog Radar · Erken Sinyal Uyarıları*', ...newAlerts.slice(0, 12).map((alert) => `• ${alert.type === 'first_mover' ? '🚨 İlk yayın fırsatı' : alert.type === 'momentum' ? '📈 Hızlanıyor' : '⏳ Bekliyor'}: ${alert.title}${alert.type === 'first_mover' ? ` · Öncülük ${alert.payload.first_mover_score} · Rakip ${alert.payload.competitor_count}` : ''}`)];
     const response = await fetch(webhook, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: lines.join('\n') }) });
     if (response.ok) {
       await queryLocal(`UPDATE smart_alerts SET status='sent',sent_at=NOW() WHERE id=ANY($1::bigint[])`, [newAlerts.map((alert) => alert.id)]);
@@ -441,6 +520,7 @@ async function maintenance() {
   result.candidates = (await queryLocal(`DELETE FROM topic_candidates WHERE created_at<NOW()-INTERVAL '45 days' RETURNING id`)).rowCount;
   result.pipeline_runs = (await queryLocal(`DELETE FROM pipeline_runs WHERE created_at<NOW()-INTERVAL '30 days' AND status<>'running' RETURNING id`)).rowCount;
   result.alerts = (await queryLocal(`DELETE FROM smart_alerts WHERE created_at<NOW()-INTERVAL '30 days' RETURNING id`)).rowCount;
+  result.early_signal_snapshots = (await queryLocal(`DELETE FROM early_signal_snapshots WHERE capture_bucket<NOW()-INTERVAL '14 days' RETURNING id`)).rowCount;
   result.source_quality = await recalculateSourceQuality();
   result.weekly_report = await weeklyReportSection();
   result.disk = diskStatus();
@@ -469,6 +549,7 @@ export default async function handler(req, res) {
     const section = String(req.query?.section || 'summary');
     if (req.method === 'GET') {
       if (section === 'summary') return json(res, 200, { data: await summarySection() });
+      if (section === 'early-signals') return json(res, 200, await earlySignalsSection());
       if (section === 'clusters') return json(res, 200, { items: await clustersSection() });
       if (section === 'coverage') return json(res, 200, { items: await coverageSection() });
       if (section === 'queue') return json(res, 200, { items: await queueSection() });

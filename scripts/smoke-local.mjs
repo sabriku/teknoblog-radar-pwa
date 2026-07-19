@@ -7,6 +7,7 @@ const checks = [
   ['/api/recommendations?sort=discover_score', 200],
   ['/api/search?q=Samsung&period=30d&limit=6', 200],
   ['/api/intelligence?section=summary', 200],
+  ['/api/intelligence?section=early-signals', 200],
   ['/api/intelligence?section=scoring-lab', 200],
   ['/api/intelligence?section=accuracy', 200],
   ['/api/intelligence?section=weekly-report', 200],

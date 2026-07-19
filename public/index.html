@@ -31,6 +31,7 @@
 
     <nav class="tb-spa-tabs" role="tablist" aria-label="Radar bölümleri">
       <button class="tb-spa-tab" type="button" role="tab" data-spa-tab="news">📰 Haberler</button>
+      <button class="tb-spa-tab" type="button" role="tab" data-spa-tab="early-signals">🚨 Öncü Radar</button>
       <button class="tb-spa-tab" type="button" role="tab" data-spa-tab="search">🔎 Arama</button>
       <button class="tb-spa-tab" type="button" role="tab" data-spa-tab="sources">🗂️ Kaynaklar</button>
       <button class="tb-spa-tab" type="button" role="tab" data-spa-tab="opportunities">🏷️ Fırsatlar</button>
@@ -79,6 +80,8 @@
 
     <section class="tb-panel" data-spa-panel="search" role="tabpanel"><main class="tb-panel-card" id="tb-search-root"><div class="tb-legacy-note">Arama motoru yükleniyor…</div></main></section>
 
+    <section class="tb-panel" data-spa-panel="early-signals" role="tabpanel"><main class="tb-panel-card" id="tb-early-signal-root"><div class="tb-legacy-note">Erken sinyaller hesaplanıyor…</div></main></section>
+
     <section class="tb-panel" data-spa-panel="sources" role="tabpanel">
       <div class="tb-source-grid">
         <section class="tb-source-card"><h2>Toplu RSS ekle</h2><p class="tb-legacy-note">Her satıra bir RSS/Atom URL girin. Sistem mevcut RSS ve site adreslerini eleyerek sadece yeni kaynakları ekler.</p><label for="bulk-rss">RSS URL listesi</label><textarea id="bulk-rss" placeholder="https://example.com/feed/&#10;https://example.com/rss.xml"></textarea><div class="tb-source-actions"><button id="bulk-submit" type="button" class="tb-primary-btn">Toplu ekle</button><button id="bulk-clear" class="tb-small-btn" type="button">Temizle</button></div><div id="bulk-status" class="tb-source-status"></div><div id="bulk-results"></div></section>
@@ -102,8 +105,9 @@
   <script>document.getElementById('tb-shell-date').textContent=new Intl.DateTimeFormat('tr-TR',{weekday:'long',day:'numeric',month:'long',year:'numeric',timeZone:'Europe/Istanbul'}).format(new Date());localStorage.setItem('tb_google_news_open','1');localStorage.setItem('tb_tabs_lite_open','1');</script>
   <script src="/auth-gate.js?v=20260423-1" defer></script>
   <script src="/radar-token-reset.js?v=20260523-1" defer></script>
-  <script src="/radar-spa.js?v=20260718-2" defer></script>
+  <script src="/radar-spa.js?v=20260719-1" defer></script>
   <script src="/search-panel.js?v=20260719-1" defer></script>
+  <script src="/early-signal-panel.js?v=20260719-1" defer></script>
   <script src="/news-controls-restore.js?v=20260622-1" defer></script>
   <script src="/app.js?v=20260718-3" defer></script>
   <script src="/discover-default.js?v=20260622-1" defer></script>
@@ -113,7 +117,7 @@
   <script src="/google-news-panel.js?v=20260523-2" defer></script>
   <script src="/instagram-radar-panel.js?v=20260524-1" defer></script>
   <script src="/editorial-tabs-lite.js?v=20260718-6" defer></script>
-  <script src="/intelligence-panel.js?v=20260718-7" defer></script>
+  <script src="/intelligence-panel.js?v=20260719-1" defer></script>
   <script src="/trend-radar.js?v=20260514-2" defer></script>
   <script src="/trend-phase2.js?v=20260514-1" defer></script>
   <script src="/trend-panel-controls.js?v=20260523-1" defer></script>

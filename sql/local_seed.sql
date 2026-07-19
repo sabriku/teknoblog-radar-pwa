@@ -26,7 +26,12 @@ WITH seed(id, name, feed_url, site_url, source_type, market_relevance, priority_
     ('openai-news', 'OpenAI News', 'https://openai.com/news/rss.xml', 'https://openai.com/news', 'official', 'global', 94, 98),
     ('google-blog', 'Google Blog', 'https://blog.google/rss/', 'https://blog.google', 'official', 'global', 92, 98),
     ('microsoft-blog', 'Microsoft Blog', 'https://blogs.microsoft.com/feed/', 'https://blogs.microsoft.com', 'official', 'global', 90, 98),
-    ('nvidia-blog', 'NVIDIA Blog', 'https://blogs.nvidia.com/feed/', 'https://blogs.nvidia.com', 'official', 'global', 88, 98)
+    ('nvidia-blog', 'NVIDIA Blog', 'https://blogs.nvidia.com/feed/', 'https://blogs.nvidia.com', 'official', 'global', 88, 98),
+    ('apple-newsroom', 'Apple Newsroom', 'https://www.apple.com/newsroom/rss-feed.rss', 'https://www.apple.com/newsroom/', 'official', 'global', 98, 100),
+    ('android-developers', 'Android Developers', 'https://android-developers.googleblog.com/feeds/posts/default', 'https://android-developers.googleblog.com', 'official', 'global', 94, 99),
+    ('google-security', 'Google Security Blog', 'https://security.googleblog.com/feeds/posts/default', 'https://security.googleblog.com', 'official', 'global', 94, 99),
+    ('github-blog', 'GitHub Blog', 'https://github.blog/feed/', 'https://github.blog', 'official', 'global', 88, 96),
+    ('cloudflare-blog', 'Cloudflare Blog', 'https://blog.cloudflare.com/rss/', 'https://blog.cloudflare.com', 'official', 'global', 88, 97)
 )
 INSERT INTO sources (id, name, feed_url, rss_url, site_url, source_type, market_relevance, priority_weight, trust_score, is_active)
 SELECT s.id, s.name, s.feed_url, s.feed_url, s.site_url, s.source_type, s.market_relevance, s.priority_weight, s.trust_score, TRUE

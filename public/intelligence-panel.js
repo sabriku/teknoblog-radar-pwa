@@ -1,7 +1,7 @@
 (() => {
-  const state = { tab: 'today', loading: false, data: {}, error: '' };
+  const state = { tab: 'early', loading: false, data: {}, error: '' };
   const sections = {
-    today: ['Bugün', 'summary'], clusters: ['Kümeler', 'clusters'], coverage: ['Kapsam', 'coverage'],
+    early: ['Erken Sinyaller', 'early-signals'], today: ['Bugün', 'summary'], clusters: ['Kümeler', 'clusters'], coverage: ['Kapsam', 'coverage'],
     queue: ['Yazılacaklar', 'queue'], sources: ['Kaynak Sağlığı', 'sources'], performance: ['Performans', 'performance'], accuracy: ['Model Doğruluğu', 'accuracy'],
     weekly: ['Haftalık Rapor', 'weekly-report'], lab: ['Puan Lab', 'scoring-lab'], system: ['Sistem', 'system']
   };
@@ -37,13 +37,14 @@
       let meta = `${news.source_name || ''} · ${fmt(news.published_at || news.created_at)}`;
       let badges = '';
       if (mode === 'clusters') badges = pill(`Momentum ${item.momentum_score}`, item.momentum_score >= 70 ? 'hot' : '') + pill(`${item.source_count} kaynak`) + pill(`Güven ${item.confidence_score}`);
+      if (mode === 'early') badges = pill(item.signal_stage === 'act_now' ? 'Şimdi yaz' : item.signal_stage === 'emerging' ? 'Yükseliyor' : 'İzle', item.signal_stage === 'act_now' ? 'bad' : item.signal_stage === 'emerging' ? 'hot' : '') + pill(`Öncülük ${item.first_mover_score}`) + pill(`Patlama %${item.breakout_probability}`) + pill(`${item.competitor_count} rakip`);
       if (mode === 'coverage') badges = pill(item.recommendation === 'new_article' ? 'Yeni haber' : item.recommendation === 'update_existing' ? 'Güncelle' : 'Yazıldı') + pill(`Eşleşme ${item.match_score}`);
       return `<article class="tb-i-card">${img(news)}<div class="tb-i-body"><div>${badges}</div><h3>${esc(item.cluster_name || news.title)}</h3><p>${esc(meta)}</p>${item.matched_post ? `<p>Teknoblog eşleşmesi: <a href="${esc(item.matched_post.url)}" target="_blank">${esc(item.matched_post.title)}</a></p>` : ''}<div class="tb-i-actions"><a href="${esc(news.url || '#')}" target="_blank">Kaynak</a><button data-queue='${esc(JSON.stringify({ candidate_id: news.id, title: news.title, url: news.url, source_name: news.source_name, image_url: news.image_url, status: 'new', priority: Math.max(news.discover_score || 50, item.momentum_score || 0) }))}'>Yazılacaklara ekle</button></div></div></article>`;
     }).join('')}</div>`;
   }
   function summary(data) {
     const d = data.data || {};
-    return `<div class="tb-i-metrics"><div><b>${d.fresh_candidates || 0}</b><span>24 saatlik aday</span></div><div><b>${d.active_sources || 0}</b><span>aktif kaynak</span></div><div><b>${d.queue_open || 0}</b><span>açık görev</span></div><div><b>${d.published_today || 0}</b><span>bugün yayımlandı</span></div><div><b>${d.images_24h || 0}</b><span>görselli içerik</span></div><div><b>%${d.disk?.used_percent ?? 0}</b><span>disk kullanımı</span></div></div><h3>Hızlanan konular</h3>${cards(d.rising_clusters || [], 'clusters')}<h3>İlgi isteyen kaynaklar</h3>${sourceTable(d.unhealthy_sources || [])}`;
+    return `<div class="tb-i-metrics"><div><b>${d.fresh_candidates || 0}</b><span>24 saatlik aday</span></div><div><b>${d.active_sources || 0}</b><span>aktif kaynak</span></div><div><b>${d.queue_open || 0}</b><span>açık görev</span></div><div><b>${d.published_today || 0}</b><span>bugün yayımlandı</span></div><div><b>${d.images_24h || 0}</b><span>görselli içerik</span></div><div><b>%${d.disk?.used_percent ?? 0}</b><span>disk kullanımı</span></div></div><h3>İlk yayın fırsatları</h3>${cards(d.first_mover_opportunities || [], 'early')}<h3>Hızlanan konular</h3>${cards(d.rising_clusters || [], 'clusters')}<h3>İlgi isteyen kaynaklar</h3>${sourceTable(d.unhealthy_sources || [])}`;
   }
   function sourceTable(items) {
     if (!items?.length) return empty('Sorunlu kaynak bulunmuyor.');
@@ -88,6 +89,7 @@
     if (state.error) return empty(`Hata: ${state.error}`);
     if (!data) return empty('Bölüm yüklenmedi.');
     if (state.tab === 'today') return summary(data);
+    if (state.tab === 'early') return cards(data.items, 'early');
     if (state.tab === 'clusters') return cards(data.items, 'clusters');
     if (state.tab === 'coverage') return cards(data.items, 'coverage');
     if (state.tab === 'queue') return queue(data.items);
@@ -134,6 +136,6 @@
     if (action) { action.disabled = true; try { await post({ action: action.dataset.action }, true); state.data = {}; await load(state.tab, true); } catch (e) { alert(e.message); } finally { action.disabled = false; } }
   });
   window.addEventListener('message', (event) => { if (event.origin === location.origin && event.data?.type === 'tb-gsc-connected') load('performance', true); });
-  function start() { render(); load('today'); }
+  function start() { render(); load('early'); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true }); else start();
 })();
