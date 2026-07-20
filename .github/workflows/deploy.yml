@@ -18,6 +18,17 @@ jobs:
       - name: Deploy on server
         run: sudo /usr/local/bin/deploy-teknoblog-radar.sh
 
+      - name: Configure Slack signal route
+        env:
+          SLACK_SINYAL_WEBHOOK_URL: ${{ secrets.SLACK_SINYAL_WEBHOOK_URL }}
+        run: |
+          if [ -z "$SLACK_SINYAL_WEBHOOK_URL" ]; then
+            echo "SLACK_SINYAL_WEBHOOK_URL repository secret is not configured" >&2
+            exit 1
+          fi
+          printf '%s\n' "$SLACK_SINYAL_WEBHOOK_URL" \
+            | sudo /usr/local/bin/radar-db-migrate.sh --set-slack-signal-webhook
+
       - name: Verify PostgreSQL-backed live endpoints
         working-directory: /var/www/teknoblog-radar
         env:
