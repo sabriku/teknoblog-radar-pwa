@@ -29,7 +29,7 @@
     system: 'Yerel PostgreSQL, görseller, uyarılar ve bakım işlemleri.'
   };
   const savedView = localStorage.getItem(VIEW_KEY);
-  const state = { tab: sections[savedView] ? savedView : 'today', loading: false, data: {}, error: '' };
+  const state = { tab: sections[savedView] ? savedView : 'today', loading: false, data: {}, error: '', todayPosts: null, todayPostsError: '', lastCopiedPublishedUrl: '' };
   const esc = (v = '') => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const fmt = (v) => v ? new Intl.DateTimeFormat('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' }).format(new Date(v)) : '—';
   const token = () => localStorage.getItem('tb_radar_cron_token') || localStorage.getItem('tb_cron_token') || '';
@@ -45,6 +45,20 @@
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
     return data;
+  }
+  async function loadTodayPosts(force = false) {
+    if (state.todayPosts && !force) return state.todayPosts;
+    state.todayPostsError = '';
+    try {
+      const response = await fetch(`/api/teknoblog-latest?_=${Date.now()}`, { cache: 'no-store' });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      state.todayPosts = Array.isArray(data.items) ? data.items : [];
+    } catch (error) {
+      state.todayPostsError = error?.message || String(error);
+      state.todayPosts = [];
+    }
+    return state.todayPosts;
   }
   async function google(path = '', options = {}) {
     const response = await fetch(`/api/google-auth${path}`, { cache: 'no-store', ...options });
@@ -107,11 +121,23 @@
     if (!items?.length) return empty('Sorunlu kaynak bulunmuyor.');
     return `<div class="tb-i-table">${items.map((s) => `<div><b>${esc(s.name)}</b>${pill(`Kalite ${s.quality_score}`)}${pill(s.last_status || 'bilinmiyor', s.last_status === 'updated' ? 'good' : s.last_status === 'blocked' || s.last_status === 'database_error' ? 'bad' : '')}${pill(`${s.stored_items || 0} içerik`)}<span>${s.last_error ? esc(s.last_error) : `Yeni ${s.inserted_count || 0} · Güncel ${s.updated_count || 0} · Tekrar ${s.duplicate_count || 0} · Son içerik ${fmt(s.last_item_at)}`}</span></div>`).join('')}</div>`;
   }
+  function todayPostsSidebar() {
+    const items = state.todayPosts || [];
+    const body = state.todayPostsError
+      ? `<div class="tb-i-today-empty">Bugünün yayınları alınamadı: ${esc(state.todayPostsError)}</div>`
+      : items.length
+        ? items.map((item) => `<article class="tb-i-today-post"><time>${fmt(item.published_at).split(' ').slice(-1)[0]}</time><a href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">${esc(item.title)}</a><button type="button" data-copy-published-url="${esc(item.url)}">🔗 Bağlantıyı kopyala</button></article>`).join('')
+        : '<div class="tb-i-today-empty">Bugün henüz yayımlanmış haber bulunmuyor.</div>';
+    return `<aside class="tb-i-today-sidebar"><header><div><b>📰 Bugün Teknoblog’da</b><span>${items.length} haber</span></div><button type="button" data-today-reload title="Listeyi yenile">↻</button></header><p>Bir bağlantıyı kopyaladıktan sonra ilgili görevi “Yayımlandı” olarak işaretle. URL alanı otomatik doldurulur.</p><div class="tb-i-today-list">${body}</div></aside>`;
+  }
   function queue(items) {
-    if (!items?.length) return empty('Yazılacaklar havuzu boş.');
-    const done = items.filter((i) => i.status === 'published').length;
+    const queueItems = items || [];
+    const done = queueItems.filter((i) => i.status === 'published').length;
     const statuses = [['approved', 'Onayla'], ['writing', 'Yazılıyor'], ['published', 'Yayımlandı'], ['waiting', 'Beklet'], ['skipped', 'Geç']];
-    return `<div class="tb-i-progress"><i style="width:${Math.round(done / Math.max(1, items.length) * 100)}%"></i></div><p><b>${done}/${items.length}</b> görev tamamlandı</p><div class="tb-i-table">${items.map((i) => `<div>${i.image_url ? `<img src="${esc(i.image_url)}" loading="lazy" onerror="this.hidden=true">` : ''}<b>${esc(i.title)}</b>${pill(({ new: 'Yeni', approved: 'Onaylandı', writing: 'Yazılıyor', published: 'Yayımlandı', waiting: 'Bekliyor', skipped: 'Geçildi' })[i.status] || i.status)}${pill(`Öncelik ${i.priority}`)}<span>${esc(i.source_name || '')} · ${fmt(i.created_at)}</span><nav><a href="${esc(i.url)}" target="_blank">Kaynak</a>${statuses.map(([status, label]) => `<button data-status="${status}" data-item='${esc(JSON.stringify(i))}'>${label}</button>`).join('')}</nav></div>`).join('')}</div>`;
+    const main = queueItems.length
+      ? `<div class="tb-i-progress"><i style="width:${Math.round(done / Math.max(1, queueItems.length) * 100)}%"></i></div><p><b>${done}/${queueItems.length}</b> görev tamamlandı</p><div class="tb-i-table">${queueItems.map((i) => `<div>${i.image_url ? `<img src="${esc(i.image_url)}" loading="lazy" onerror="this.hidden=true">` : ''}<b>${esc(i.title)}</b>${pill(({ new: 'Yeni', approved: 'Onaylandı', writing: 'Yazılıyor', published: 'Yayımlandı', waiting: 'Bekliyor', skipped: 'Geçildi' })[i.status] || i.status)}${pill(`Öncelik ${i.priority}`)}<span>${esc(i.source_name || '')} · ${fmt(i.created_at)}${i.published_url ? ` · <a href="${esc(i.published_url)}" target="_blank">Yayın bağlantısı</a>` : ''}</span><nav><a href="${esc(i.url)}" target="_blank">Kaynak</a>${statuses.map(([status, label]) => `<button data-status="${status}" data-item='${esc(JSON.stringify(i))}'>${label}</button>`).join('')}</nav></div>`).join('')}</div>`
+      : empty('Yazılacaklar havuzu boş.');
+    return `<div class="tb-i-queue-layout"><section>${main}</section>${todayPostsSidebar()}</div>`;
   }
   function performance(data) {
     const oauth = data.oauth || {};
@@ -169,8 +195,8 @@
       #tb-intelligence-root{padding:0;overflow:hidden}.tb-i-hero{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;padding:20px;background:linear-gradient(135deg,#111827,#1e293b 58%,#312e81);color:#fff}.tb-i-hero h2{font:800 30px/1 'Fira Sans Condensed',sans-serif;margin:0 0 8px}.tb-i-hero p{max-width:720px;margin:0;color:#cbd5e1;font-size:13px;line-height:1.55}.tb-i-reload{border:1px solid rgba(255,255,255,.45);background:rgba(255,255,255,.1);color:#fff;border-radius:11px;padding:9px 12px;font-weight:900;cursor:pointer}
       .tb-i-groups{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:12px 16px;background:#f8fafc;border-bottom:1px solid #e2e8f0}.tb-i-group{display:flex;align-items:center;justify-content:center;gap:7px;border:1px solid #dbe3ef;background:#fff;color:#334155;border-radius:13px;padding:10px;font-size:12px;font-weight:900;cursor:pointer}.tb-i-group.on{border-color:#f04a0a;background:#fff1eb;color:#c2410c;box-shadow:0 5px 14px rgba(240,74,10,.1)}
       .tb-i-subnav,.tb-i-actions,.tb-i-card .tb-i-actions{display:flex;gap:7px;flex-wrap:wrap}.tb-i-subnav{padding:13px 16px 0;overflow:auto}.tb-i-subnav button,.tb-i-actions button,.tb-i-actions a,.tb-i-card button,.tb-i-card a,.tb-i-table button,.tb-i-table a,.tb-i-callout button{border:1px solid #cbd5e1;background:#fff;color:#334155;border-radius:10px;padding:8px 10px;font-size:11px;font-weight:900;text-decoration:none;cursor:pointer}.tb-i-subnav button.on{border-color:#4338ca;background:#4338ca;color:#fff}.tb-i-view-note{margin:12px 16px 0;padding:10px 12px;border-left:4px solid #6366f1;border-radius:9px;background:#eef2ff;color:#475569;font-size:12px;line-height:1.5}.tb-i-content{padding:16px}
-      .tb-i-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:12px 0}.tb-i-metrics>div{border:1px solid #e2e8f0;border-radius:15px;padding:13px;background:#f8fafc}.tb-i-metrics b{font-size:25px;display:block;color:#111827}.tb-i-metrics span,.tb-i-card p,.tb-i-table span{font-size:12px;color:#64748b}.tb-i-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:12px}.tb-i-card{border:1px solid #e2e8f0;border-radius:17px;overflow:hidden;background:#fff;box-shadow:0 4px 14px rgba(15,23,42,.05)}.tb-i-img{width:100%;aspect-ratio:16/9;object-fit:cover;background:#f1f5f9}.tb-i-body{padding:13px}.tb-i-card h3{font-size:18px;line-height:1.25;margin:8px 0}.tb-i-reasons{padding-left:18px;margin:8px 0;color:#475569;font-size:12px;line-height:1.45}.tb-i-pill{display:inline-block;border-radius:999px;padding:4px 7px;margin:2px;background:#eef2ff;color:#3730a3;font-size:10px;font-weight:900}.tb-i-pill.hot{background:#ffedd5;color:#c2410c}.tb-i-pill.good{background:#dcfce7;color:#166534}.tb-i-pill.bad{background:#fee2e2;color:#991b1b}.tb-i-table{display:grid;gap:8px}.tb-i-table>div{display:grid;grid-template-columns:auto auto auto 1fr;gap:8px;align-items:center;border:1px solid #e2e8f0;border-radius:13px;padding:10px;background:#fff}.tb-i-table img{width:70px;height:46px;object-fit:cover;border-radius:8px}.tb-i-table nav{grid-column:1/-1;display:flex;gap:5px;flex-wrap:wrap}.tb-i-empty,.tb-i-callout{padding:16px;border:1px dashed #c7d2fe;border-radius:14px;color:#64748b;background:#f8fafc}.tb-i-form{display:grid;grid-template-columns:repeat(2,minmax(220px,1fr));gap:10px;margin-top:14px}.tb-i-form label{display:grid;gap:5px;font-size:12px;font-weight:800;color:#334155}.tb-i-form input{border:1px solid #cbd5e1;border-radius:10px;padding:10px;background:#fff;min-width:0}.tb-i-form button{align-self:end}.tb-i-progress{height:11px;background:#e2e8f0;border-radius:999px;overflow:hidden}.tb-i-progress i{display:block;height:100%;background:linear-gradient(90deg,#f04a0a,#22c55e)}.tb-i-details{display:grid;gap:6px;margin:10px 0}.tb-i-details details,.tb-i-feedback{border:1px solid #e2e8f0;border-radius:10px;padding:8px;background:#f8fafc;font-size:12px}.tb-i-details summary,.tb-i-feedback summary{font-weight:900;cursor:pointer;color:#334155}.tb-i-details ul{padding-left:18px;line-height:1.5}.tb-i-feedback{margin-top:9px}.tb-i-feedback button{margin:7px 4px 0 0}.tb-i-timeline{border-left:3px solid #c7d2fe;margin-left:8px;padding-left:18px;display:grid;gap:12px}.tb-i-timeline>div{position:relative;display:grid;gap:3px}.tb-i-timeline i{position:absolute;width:11px;height:11px;border-radius:50%;background:#4f46e5;left:-25px;top:4px}.tb-i-timeline span{font-size:12px;color:#64748b}.tb-i-watch-grid{display:grid;gap:14px}.tb-i-watch-grid>section{border:1px solid #e2e8f0;background:#fff;border-radius:16px;padding:14px}.tb-i-watch-grid header{display:flex;justify-content:space-between;gap:10px}.tb-i-watch-grid header p{font-size:11px;color:#64748b;margin:4px 0}
-      @media(max-width:800px){.tb-i-groups{grid-template-columns:repeat(2,minmax(0,1fr))}.tb-i-hero{padding:16px}.tb-i-content{padding:12px}.tb-i-table>div,.tb-i-form{grid-template-columns:1fr}.tb-i-table nav{grid-column:1}.tb-i-grid{grid-template-columns:1fr}}@media(max-width:460px){.tb-i-groups{grid-template-columns:1fr}.tb-i-group{justify-content:flex-start}}
+      .tb-i-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:12px 0}.tb-i-metrics>div{border:1px solid #e2e8f0;border-radius:15px;padding:13px;background:#f8fafc}.tb-i-metrics b{font-size:25px;display:block;color:#111827}.tb-i-metrics span,.tb-i-card p,.tb-i-table span{font-size:12px;color:#64748b}.tb-i-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:12px}.tb-i-card{border:1px solid #e2e8f0;border-radius:17px;overflow:hidden;background:#fff;box-shadow:0 4px 14px rgba(15,23,42,.05)}.tb-i-img{width:100%;aspect-ratio:16/9;object-fit:cover;background:#f1f5f9}.tb-i-body{padding:13px}.tb-i-card h3{font-size:18px;line-height:1.25;margin:8px 0}.tb-i-reasons{padding-left:18px;margin:8px 0;color:#475569;font-size:12px;line-height:1.45}.tb-i-pill{display:inline-block;border-radius:999px;padding:4px 7px;margin:2px;background:#eef2ff;color:#3730a3;font-size:10px;font-weight:900}.tb-i-pill.hot{background:#ffedd5;color:#c2410c}.tb-i-pill.good{background:#dcfce7;color:#166534}.tb-i-pill.bad{background:#fee2e2;color:#991b1b}.tb-i-table{display:grid;gap:8px}.tb-i-table>div{display:grid;grid-template-columns:auto auto auto 1fr;gap:8px;align-items:center;border:1px solid #e2e8f0;border-radius:13px;padding:10px;background:#fff}.tb-i-table img{width:70px;height:46px;object-fit:cover;border-radius:8px}.tb-i-table nav{grid-column:1/-1;display:flex;gap:5px;flex-wrap:wrap}.tb-i-empty,.tb-i-callout{padding:16px;border:1px dashed #c7d2fe;border-radius:14px;color:#64748b;background:#f8fafc}.tb-i-form{display:grid;grid-template-columns:repeat(2,minmax(220px,1fr));gap:10px;margin-top:14px}.tb-i-form label{display:grid;gap:5px;font-size:12px;font-weight:800;color:#334155}.tb-i-form input{border:1px solid #cbd5e1;border-radius:10px;padding:10px;background:#fff;min-width:0}.tb-i-form button{align-self:end}.tb-i-progress{height:11px;background:#e2e8f0;border-radius:999px;overflow:hidden}.tb-i-progress i{display:block;height:100%;background:linear-gradient(90deg,#f04a0a,#22c55e)}.tb-i-details{display:grid;gap:6px;margin:10px 0}.tb-i-details details,.tb-i-feedback{border:1px solid #e2e8f0;border-radius:10px;padding:8px;background:#f8fafc;font-size:12px}.tb-i-details summary,.tb-i-feedback summary{font-weight:900;cursor:pointer;color:#334155}.tb-i-details ul{padding-left:18px;line-height:1.5}.tb-i-feedback{margin-top:9px}.tb-i-feedback button{margin:7px 4px 0 0}.tb-i-timeline{border-left:3px solid #c7d2fe;margin-left:8px;padding-left:18px;display:grid;gap:12px}.tb-i-timeline>div{position:relative;display:grid;gap:3px}.tb-i-timeline i{position:absolute;width:11px;height:11px;border-radius:50%;background:#4f46e5;left:-25px;top:4px}.tb-i-timeline span{font-size:12px;color:#64748b}.tb-i-watch-grid{display:grid;gap:14px}.tb-i-watch-grid>section{border:1px solid #e2e8f0;background:#fff;border-radius:16px;padding:14px}.tb-i-watch-grid header{display:flex;justify-content:space-between;gap:10px}.tb-i-watch-grid header p{font-size:11px;color:#64748b;margin:4px 0}.tb-i-queue-layout{display:grid;grid-template-columns:minmax(0,1fr) 275px;gap:14px;align-items:start}.tb-i-today-sidebar{position:sticky;top:12px;border:1px solid #fed7aa;border-radius:16px;background:#fffaf5;overflow:hidden}.tb-i-today-sidebar>header{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px;border-bottom:1px solid #fed7aa;background:#fff7ed}.tb-i-today-sidebar>header div{display:grid;gap:2px}.tb-i-today-sidebar>header b{font-size:13px;color:#9a3412}.tb-i-today-sidebar>header span{font-size:10px;color:#78716c}.tb-i-today-sidebar>header button{border:1px solid #fdba74;border-radius:8px;background:#fff;color:#c2410c;padding:5px 8px;font-weight:900;cursor:pointer}.tb-i-today-sidebar>p{margin:0;padding:10px 12px;color:#78716c;font-size:10px;line-height:1.45}.tb-i-today-list{display:grid;gap:0;max-height:610px;overflow:auto}.tb-i-today-post{display:grid;gap:5px;padding:10px 12px;border-top:1px solid #ffedd5}.tb-i-today-post time{font-size:9px;font-weight:900;color:#ea580c}.tb-i-today-post>a{font-size:11px;line-height:1.35;font-weight:800;color:#334155;text-decoration:none}.tb-i-today-post>a:hover{text-decoration:underline}.tb-i-today-post button{justify-self:start;border:0;background:transparent;color:#c2410c;padding:2px 0;font-size:10px;font-weight:900;cursor:pointer}.tb-i-today-empty{margin:10px;padding:12px;border:1px dashed #fdba74;border-radius:10px;color:#78716c;font-size:11px}
+      @media(max-width:1050px){.tb-i-queue-layout{grid-template-columns:1fr}.tb-i-today-sidebar{position:static}.tb-i-today-list{max-height:380px}}@media(max-width:800px){.tb-i-groups{grid-template-columns:repeat(2,minmax(0,1fr))}.tb-i-hero{padding:16px}.tb-i-content{padding:12px}.tb-i-table>div,.tb-i-form{grid-template-columns:1fr}.tb-i-table nav{grid-column:1}.tb-i-grid{grid-template-columns:1fr}}@media(max-width:460px){.tb-i-groups{grid-template-columns:1fr}.tb-i-group{justify-content:flex-start}}
     </style><div class="tb-i-hero"><div><h2>🎯 Editoryal Karar Merkezi</h2><p>Trend/Karar, Editoryal, Intelligence ve Operasyon araçlarının güncel, tek çalışma alanı. Sinyali yakala, kararı ver, göreve dönüştür ve gerçek performanstan öğren.</p></div><button class="tb-i-reload" data-reload>↻ Bu görünümü yenile</button></div><div class="tb-i-groups">${groups.map((group) => `<button class="tb-i-group ${group.key === activeGroup.key ? 'on' : ''}" data-i-group="${group.key}"><span>${group.icon}</span>${group.label}</button>`).join('')}</div><div class="tb-i-subnav">${activeGroup.views.map((key) => `<button class="${key === state.tab ? 'on' : ''}" data-i-tab="${key}">${sections[key][0]}</button>`).join('')}</div><div class="tb-i-view-note">${esc(descriptions[state.tab] || '')}</div><div class="tb-i-content" id="tb-i-content">${content()}</div>`;
   }
   async function load(tab = state.tab, force = false) {
@@ -179,7 +205,10 @@
     if (state.data[tab] && !force) { render(); return; }
     state.loading = true; render();
     try {
-      state.data[tab] = await get(sections[tab][1]);
+      const sectionRequest = get(sections[tab][1]);
+      const todayRequest = tab === 'queue' ? loadTodayPosts(force) : Promise.resolve();
+      state.data[tab] = await sectionRequest;
+      await todayRequest;
       if (tab === 'performance') state.data[tab].oauth = await google();
     } catch (e) { state.error = e.message || String(e); }
     finally { state.loading = false; render(); }
@@ -189,6 +218,18 @@
     if (group) { const target = groups.find((item) => item.key === group.dataset.iGroup); if (target) return load(target.views[0]); }
     const tab = event.target.closest('[data-i-tab]'); if (tab) return load(tab.dataset.iTab);
     if (event.target.closest('[data-reload]')) return load(state.tab, true);
+    if (event.target.closest('[data-today-reload]')) { await loadTodayPosts(true); render(); return; }
+    const publishedCopy = event.target.closest('[data-copy-published-url]');
+    if (publishedCopy) {
+      try {
+        const url = publishedCopy.dataset.copyPublishedUrl || '';
+        await navigator.clipboard.writeText(url);
+        state.lastCopiedPublishedUrl = url;
+        publishedCopy.textContent = '✓ Kopyalandı ve hazır';
+        setTimeout(() => { publishedCopy.textContent = '🔗 Bağlantıyı kopyala'; }, 1800);
+      } catch (e) { alert(`Kopyalama hatası: ${e.message || e}`); }
+      return;
+    }
     const queued = event.target.closest('[data-queue],[data-add-queue]');
     if (queued) { try { await post({ action: 'queue_upsert', ...JSON.parse(queued.dataset.queue || queued.dataset.addQueue) }); queued.textContent = 'Eklendi'; state.data.queue = null; } catch (e) { alert(e.message); } return; }
     const slack = event.target.closest('[data-slack]');
@@ -227,7 +268,7 @@
       return;
     }
     const status = event.target.closest('[data-status]');
-    if (status) { try { const item = JSON.parse(status.dataset.item); const publishedUrl = status.dataset.status === 'published' ? window.prompt('Teknoblog yayın URL’si', item.published_url || '') : item.published_url; if (status.dataset.status === 'published' && !publishedUrl) return; await post({ action: 'queue_upsert', ...item, status: status.dataset.status, published_url: publishedUrl || null }); await load('queue', true); } catch (e) { alert(e.message); } return; }
+    if (status) { try { const item = JSON.parse(status.dataset.item); const suggestedUrl = item.published_url || state.lastCopiedPublishedUrl || ''; const publishedUrl = status.dataset.status === 'published' ? window.prompt('Teknoblog yayın URL’si', suggestedUrl) : item.published_url; if (status.dataset.status === 'published' && !publishedUrl) return; await post({ action: 'queue_upsert', ...item, status: status.dataset.status, published_url: publishedUrl || null }); if (status.dataset.status === 'published') state.lastCopiedPublishedUrl = ''; await load('queue', true); } catch (e) { alert(e.message); } return; }
     const connect = event.target.closest('[data-google-connect]');
     if (connect) { try { const data = await google('?action=start'); window.open(data.auth_url, 'tbGoogleOAuth', 'width=620,height=760'); } catch (e) { alert(e.message); } return; }
     const save = event.target.closest('[data-google-save]');
