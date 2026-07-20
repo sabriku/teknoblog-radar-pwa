@@ -804,6 +804,44 @@ export function buildSlackAlertText(alerts = []) {
   return ['*Teknoblog Radar · Öncü Haber Uyarıları*', ...blocks].join('\n\n');
 }
 
+const DEFAULT_SIGNAL_CHANNEL_ID = 'C0BJDQXRFA6';
+
+async function slackApi(method, token, body) {
+  const response = await fetch(`https://slack.com/api/${method}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json; charset=utf-8', authorization: `Bearer ${token}` },
+    body: JSON.stringify(body)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data.ok) {
+    const error = new Error(data.error || `Slack API HTTP ${response.status}`);
+    error.slackCode = data.error || '';
+    throw error;
+  }
+  return data;
+}
+
+async function sendSignalAlertMessage(text) {
+  const webhook = String(process.env.SLACK_SINYAL_WEBHOOK_URL || '').trim();
+  if (webhook) {
+    const response = await fetch(webhook, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }) });
+    if (!response.ok) throw new Error((await response.text().catch(() => '')) || `Slack webhook HTTP ${response.status}`);
+    return { sent: true, route: '#sinyal', mode: 'signal_webhook' };
+  }
+
+  const token = String(process.env.SLACK_BOT_TOKEN || '').trim();
+  const channel = String(process.env.SLACK_SINYAL_CHANNEL_ID || DEFAULT_SIGNAL_CHANNEL_ID).trim();
+  if (!token) return { sent: false, route: '#sinyal', mode: 'not_configured', error: 'SLACK_SINYAL_WEBHOOK_URL veya SLACK_BOT_TOKEN tanımlı değil' };
+  try {
+    await slackApi('chat.postMessage', token, { channel, text });
+  } catch (error) {
+    if (error.slackCode !== 'not_in_channel') throw error;
+    await slackApi('conversations.join', token, { channel });
+    await slackApi('chat.postMessage', token, { channel, text });
+  }
+  return { sent: true, route: '#sinyal', mode: 'bot' };
+}
+
 async function runAlerts() {
   const clusters = await clustersSection();
   const stale = (await queryLocal(`SELECT * FROM editorial_queue WHERE status NOT IN ('published','skipped') AND created_at<NOW()-INTERVAL '2 hours' ORDER BY priority DESC LIMIT 10`)).rows;
@@ -821,20 +859,23 @@ async function runAlerts() {
     ...(Number(drift.observed || 0) >= 20 && driftGap >= .2 ? [{ type: 'model_drift', key: `drift:${new Date().toISOString().slice(0,10)}`, title: `Discover tahmin sapması %${Math.round(driftGap * 100)}`, payload: drift }] : [])
   ];
   let created = 0;
-  const newAlerts = [];
   for (const alert of alerts) {
     const result = await queryLocal(`INSERT INTO smart_alerts(alert_key,alert_type,title,payload) VALUES($1,$2,$3,$4) ON CONFLICT(alert_key) DO NOTHING RETURNING id`, [alert.key, alert.type, alert.title, JSON.stringify(alert.payload)]);
     created += result.rowCount;
-    if (result.rowCount) newAlerts.push({ id: result.rows[0].id, ...alert });
   }
-  const webhook = process.env.SLACK_KAYNAK_WEBHOOK_URL || process.env.SLACK_WEBHOOK_URL || '';
-  if (webhook && newAlerts.length) {
-    const response = await fetch(webhook, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: buildSlackAlertText(newAlerts) }) });
-    if (response.ok) {
-      await queryLocal(`UPDATE smart_alerts SET status='sent',sent_at=NOW() WHERE id=ANY($1::bigint[])`, [newAlerts.map((alert) => alert.id)]);
+  const pending = (await queryLocal(`SELECT id,alert_type AS type,title,payload FROM smart_alerts
+    WHERE COALESCE(status,'pending')<>'sent' AND created_at>=NOW()-INTERVAL '6 hours'
+    ORDER BY created_at ASC LIMIT 12`)).rows;
+  let delivery = { sent: false, route: '#sinyal', mode: 'no_pending_alerts' };
+  if (pending.length) {
+    try {
+      delivery = await sendSignalAlertMessage(buildSlackAlertText(pending));
+      if (delivery.sent) await queryLocal(`UPDATE smart_alerts SET status='sent',sent_at=NOW() WHERE id=ANY($1::bigint[])`, [pending.map((alert) => alert.id)]);
+    } catch (error) {
+      delivery = { sent: false, route: '#sinyal', mode: 'delivery_error', error: error?.message || String(error) };
     }
   }
-  return { candidates: alerts.length, created, slack_sent: Boolean(webhook && newAlerts.length) };
+  return { candidates: alerts.length, created, pending: pending.length, slack_sent: delivery.sent, slack_route: delivery.route, slack_mode: delivery.mode, slack_error: delivery.error || null };
 }
 
 async function maintenance() {
