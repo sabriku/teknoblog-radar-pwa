@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import { createHash } from 'node:crypto';
 import { json, queryLocal, safeText, nowIso } from './_lib.js';
 import { getGoogleConfig, googleAccessToken } from './_google-auth.js';
+import { getAppSecret, saveAppSecret } from './_app-secrets.js';
 import { extractIntelligenceFeatures, loadIntelligenceModel, trainIntelligenceModel } from './_intelligence-model.js';
 
 const STOP = new Set('ve veya ile için bir bu şu daha yeni son ilk olan olarak göre sonra önce hakkında üzerinde geliyor geldi olacak oldu neden nasıl hangi ne zaman teknoloji tech says report reportedly could may its the and for from with that this have has will into over after before'.split(' '));
@@ -822,7 +823,8 @@ async function slackApi(method, token, body) {
 }
 
 async function sendSignalAlertMessage(text) {
-  const webhook = String(process.env.SLACK_SINYAL_WEBHOOK_URL || '').trim();
+  const stored = process.env.SLACK_SINYAL_WEBHOOK_URL ? {} : await getAppSecret('slack_signal');
+  const webhook = String(process.env.SLACK_SINYAL_WEBHOOK_URL || stored.webhook_url || '').trim();
   if (webhook) {
     const response = await fetch(webhook, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }) });
     if (!response.ok) throw new Error((await response.text().catch(() => '')) || `Slack webhook HTTP ${response.status}`);
@@ -840,6 +842,20 @@ async function sendSignalAlertMessage(text) {
     await slackApi('chat.postMessage', token, { channel, text });
   }
   return { sent: true, route: '#sinyal', mode: 'bot' };
+}
+
+async function configureSignalSlack(body) {
+  const webhookUrl = String(body.webhook_url || '').trim();
+  if (!/^https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/_-]+$/.test(webhookUrl)) {
+    throw new Error('Geçersiz Slack incoming webhook adresi.');
+  }
+  await saveAppSecret('slack_signal', {
+    webhook_url: webhookUrl,
+    channel_id: DEFAULT_SIGNAL_CHANNEL_ID,
+    channel_name: '#sinyal',
+    configured_at: nowIso()
+  });
+  return { configured: true, route: '#sinyal', mode: 'encrypted_database_secret' };
 }
 
 async function runAlerts() {
@@ -942,6 +958,7 @@ export default async function handler(req, res) {
     if (body.action === 'sync_teknoblog') return json(res, 200, { ok: true, stored: await syncTeknoblog() });
     if (body.action === 'sync_gsc') return json(res, 200, { ok: true, stored: await syncGsc() });
     if (body.action === 'train_model') return json(res, 200, { ok: true, model: await trainIntelligenceModel() });
+    if (body.action === 'configure_signal_slack') return json(res, 200, { ok: true, ...(await configureSignalSlack(body)) });
     if (body.action === 'run_alerts') return json(res, 200, { ok: true, ...(await runAlerts()) });
     if (body.action === 'maintenance') return json(res, 200, { ok: true, ...(await maintenance()) });
     if (body.action === 'check_images') return json(res, 200, { ok: true, items: await checkImages() });
