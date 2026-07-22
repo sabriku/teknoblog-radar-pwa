@@ -26,6 +26,7 @@ const API_ROUTES = {
   '/api/intelligence': './api/intelligence.js',
   '/api/opportunity-feed-radar': './api/opportunity-feed-radar.js',
   '/api/opportunity-radar': './api/opportunity-radar.js',
+  '/api/product-radar': './api/product-radar.js',
   '/api/push-to-slack': './api/push-to-slack.js',
   '/api/recommendations': './api/recommendations.js',
   '/api/run-pipeline': './api/run-pipeline.js',

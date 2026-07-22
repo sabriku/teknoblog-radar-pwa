@@ -54,6 +54,15 @@ try {
       console.log(JSON.stringify({ action: 'sync_opportunities', ok: false, error: error?.message || String(error) }));
     }
   }
+  if (minute % 15 < 5) {
+    try {
+      const products = await fetch(`${baseUrl}/api/product-radar?refresh=1&hours=168&limit=60&token=${encodeURIComponent(token)}`, { cache: 'no-store', signal: controller.signal });
+      const productData = await products.json().catch(() => ({}));
+      console.log(JSON.stringify({ action: 'sync_product_radar', ok: products.ok, count: productData.count || 0, sync: productData.sync || null }));
+    } catch (error) {
+      console.log(JSON.stringify({ action: 'sync_product_radar', ok: false, error: error?.message || String(error) }));
+    }
+  }
 } finally {
   clearTimeout(timer);
 }

@@ -308,6 +308,51 @@ CREATE TABLE IF NOT EXISTS app_secrets (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS product_launches (
+  id BIGSERIAL PRIMARY KEY,
+  fingerprint TEXT NOT NULL UNIQUE,
+  title TEXT NOT NULL,
+  summary TEXT,
+  url TEXT NOT NULL UNIQUE,
+  image_url TEXT,
+  brand TEXT,
+  launch_type TEXT NOT NULL DEFAULT 'product',
+  source_name TEXT NOT NULL,
+  official_source_url TEXT,
+  published_at TIMESTAMPTZ NOT NULL,
+  launch_score INTEGER NOT NULL DEFAULT 0,
+  reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
+  synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS product_social_assets (
+  id BIGSERIAL PRIMARY KEY,
+  launch_id BIGINT NOT NULL REFERENCES product_launches(id) ON DELETE CASCADE,
+  platform TEXT NOT NULL,
+  url TEXT NOT NULL UNIQUE,
+  title TEXT,
+  thumbnail_url TEXT,
+  author_name TEXT,
+  published_at TIMESTAMPTZ,
+  is_official BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS product_radar_runs (
+  id BIGSERIAL PRIMARY KEY,
+  status TEXT NOT NULL DEFAULT 'completed',
+  source_count INTEGER NOT NULL DEFAULT 0,
+  candidate_count INTEGER NOT NULL DEFAULT 0,
+  asset_count INTEGER NOT NULL DEFAULT 0,
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS product_launches_published_idx ON product_launches(published_at DESC);
+CREATE INDEX IF NOT EXISTS product_launches_brand_idx ON product_launches(brand, published_at DESC);
+CREATE INDEX IF NOT EXISTS product_social_assets_launch_idx ON product_social_assets(launch_id, platform);
+CREATE INDEX IF NOT EXISTS product_radar_runs_created_idx ON product_radar_runs(created_at DESC);
+
 CREATE TABLE IF NOT EXISTS performance_snapshots (
   id BIGSERIAL PRIMARY KEY,
   url TEXT NOT NULL,
