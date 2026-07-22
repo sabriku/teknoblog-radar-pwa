@@ -2,8 +2,36 @@ import { chooseFeedUrl, hashValue, json, parseFeedItems, queryLocal, safeText } 
 
 const CACHE_MINUTES = 20;
 const FETCH_TIMEOUT = 12000;
-const MAX_ARTICLES = 36;
-const ALGORITHM_VERSION = 'product-radar-v2';
+const MAX_ARTICLES = 80;
+const ALGORITHM_VERSION = 'product-radar-v3-wide';
+
+const BRAND_REGISTRY = [
+  ['Apple', /\bapple\b|apple\.com/], ['Samsung', /\bsamsung\b|galaxy/], ['Google', /\bgoogle\b|android|pixel/],
+  ['Microsoft', /\bmicrosoft\b|windows|copilot|surface|xbox/], ['OpenAI', /\bopenai\b|chatgpt|\bgpt\b/], ['NVIDIA', /\bnvidia\b|geforce/],
+  ['Garmin', /\bgarmin\b|\bcirqa\b/], ['Fitbit', /\bfitbit\b/], ['Polar', /\bpolar\b/], ['WHOOP', /\bwhoop\b/], ['Oura', /\boura\b/],
+  ['Amazfit', /\bamazfit\b/], ['Suunto', /\bsuunto\b/], ['COROS', /\bcoros\b/], ['Huawei', /\bhuawei\b/], ['Xiaomi', /\bxiaomi\b|\bredmi\b/],
+  ['Honor', /\bhonor\b/], ['OPPO', /\boppo\b/], ['OnePlus', /\boneplus\b/], ['vivo', /\bvivo\b/], ['realme', /\brealme\b/],
+  ['Nothing', /\bnothing\b/], ['Motorola', /\bmotorola\b|\bmoto\b/], ['Sony', /\bsony\b|playstation/], ['Nintendo', /\bnintendo\b/],
+  ['Valve', /\bvalve\b|steam deck/], ['ASUS', /\basus\b|\brog\b/], ['Acer', /\bacer\b/], ['Lenovo', /\blenovo\b|thinkpad/],
+  ['Dell', /\bdell\b|alienware/], ['HP', /\bhp\b|hewlett.packard|omen/], ['MSI', /\bmsi\b/], ['Razer', /\brazer\b/],
+  ['Logitech', /\blogitech\b/], ['Intel', /\bintel\b/], ['AMD', /\bamd\b|\bryzen\b|\bradeon\b/], ['Qualcomm', /\bqualcomm\b|snapdragon/],
+  ['MediaTek', /\bmediatek\b|dimensity/], ['Arm', /\barm\b/], ['Meta', /\bmeta\b|quest|instagram|whatsapp/], ['Amazon', /\bamazon\b|\balexa\b|\bkindle\b/],
+  ['Anthropic', /\banthropic\b|\bclaude\b/], ['Adobe', /\badobe\b/], ['DJI', /\bdji\b/], ['GoPro', /\bgopro\b/],
+  ['Canon', /\bcanon\b/], ['Nikon', /\bnikon\b/], ['Fujifilm', /\bfujifilm\b|\bfuji\b/], ['Tesla', /\btesla\b/],
+  ['Rivian', /\brivian\b/], ['BYD', /\bbyd\b/], ['Bose', /\bbose\b/], ['Sonos', /\bsonos\b/], ['JBL', /\bjbl\b/],
+  ['Philips Hue', /philips hue|\bsignify\b/], ['GitHub', /\bgithub\b/], ['Cloudflare', /\bcloudflare\b/]
+];
+
+const OFFICIAL_DISCOVERY_GROUPS = [
+  ['wearables-mobile', ['garmin.com/en-US/newsroom', 'news.samsung.com/global', 'consumer.huawei.com/en/press', 'mi.com/global/event', 'oneplus.com/global/launch', 'nothing.tech/pages/newsroom']],
+  ['computing', ['newsroom.intel.com', 'amd.com/en/newsroom', 'qualcomm.com/news/releases', 'news.lenovo.com', 'asus.com/news', 'news.acer.com']],
+  ['ai-platforms', ['openai.com/index', 'blog.google/technology', 'blogs.microsoft.com', 'about.fb.com/news', 'anthropic.com/news', 'news.adobe.com']],
+  ['gaming', ['blog.playstation.com', 'news.xbox.com', 'nintendo.com/us/whatsnew', 'store.steampowered.com/news', 'razer.com/newsroom']],
+  ['camera-audio', ['dji.com/media-center', 'gopro.com/en/us/news', 'global.canon/en/news', 'nikon.com/company/news', 'bose.com/pressroom', 'sonos.com/en-us/newsroom']],
+  ['devices-auto', ['aboutamazon.com/news/devices', 'tesla.com/blog', 'rivian.com/newsroom', 'bydglobal.com/en/news', 'media.ford.com', 'newsroom.porsche.com']],
+  ['mobile-makers', ['oppo.com/en/newsroom', 'vivo.com/en/about-vivo/news', 'realme.com/global/newsroom', 'motorola.com/blog', 'honor.com/global/news']],
+  ['hardware-home', ['nvidia.com/en-us/geforce/news', 'logitech.com/blog', 'newsroom.hp.com', 'dell.com/en-us/blog', 'signify.com/global/our-company/news/press-releases']]
+];
 
 const FALLBACK_OFFICIAL_SOURCES = [
   { id: 'apple-newsroom', name: 'Apple Newsroom', feed_url: 'https://www.apple.com/newsroom/rss-feed.rss', site_url: 'https://www.apple.com/newsroom/', source_type: 'official' },
@@ -25,7 +53,7 @@ const OFFICIAL_YOUTUBE_FEEDS = [
 ];
 
 const LAUNCH_STRONG = /\b(announce[sd]?|introduc(?:e[sd]?|ing)|unveil(?:s|ed)?|launch(?:es|ed|ing)?|debut(?:s|ed)?|release[sd]?|available now|meet the new|present(?:s|ed)?|duyur(?:du|uyor)|tanıt(?:tı|ıyor)|lansman|satışa sun(?:du|uluyor)|kullanıma sun(?:du|uluyor)|yeni ürün|yeni hizmet)\b/i;
-const LAUNCH_OBJECT = /\b(product|device|phone|smartphone|tablet|laptop|notebook|headset|watch|camera|chip|processor|gpu|platform|service|subscription|app|application|model|api|feature|update|console|robot|vehicle|ürün|cihaz|telefon|kulaklık|saat|işlemci|ekran kartı|platform|hizmet|uygulama|model|özellik|güncelleme)\b/i;
+const LAUNCH_OBJECT = /\b(product|device|phone|smartphone|tablet|laptop|notebook|headset|watch|smartwatch|tracker|smart band|fitness band|wearable|earbuds?|headphones?|camera|lens|chip|chipset|processor|gpu|soc|display|monitor|rangefinder|drone|router|platform|service|subscription|app|application|model|api|feature|update|console|controller|robot|vehicle|car|smart ring|glasses|flight deck|appliance|tv|streaming device|ürün|cihaz|telefon|kulaklık|saat|bileklik|takip cihazı|işlemci|ekran kartı|monitör|kamera|platform|hizmet|uygulama|model|özellik|güncelleme|otomobil)\b/i;
 const EXCLUDE = /\b(earnings|quarterly results|investor|dividend|policy update|event recap|interview|podcast|award|careers?|hiring|research paper|vulnerability|security bulletin|finansal sonuç|yatırımcı|ödül|röportaj|iş ilanı)\b/i;
 const SERVICE = /\b(service|subscription|platform|api|app|application|software|feature|update|cloud|model|assistant|hizmet|abonelik|platform|uygulama|yazılım|özellik|güncelleme|bulut|yapay zek[âa] modeli)\b/i;
 const NAMED_PRODUCT = /\b(chatgpt|gpt[- ]?\d|gemini|galaxy|iphone|ipad|macbook|imac|mac mini|apple watch|vision pro|pixel(?: \d+)?|android \d+|windows \d+|copilot|surface|xbox|playstation|geforce|rtx ?\d+|github copilot|cloudflare workers?)\b/i;
@@ -44,31 +72,43 @@ function normalizeUrl(value = '') {
 
 function brandFor(source = {}, text = '') {
   const haystack = `${source.name || ''} ${source.site_url || ''} ${text}`.toLowerCase();
-  const brands = [['Apple', /\bapple\b|apple\.com/], ['OpenAI', /\bopenai\b|chatgpt/], ['Google', /\bgoogle\b|android/], ['Microsoft', /\bmicrosoft\b|windows|copilot/], ['NVIDIA', /\bnvidia\b|geforce/], ['GitHub', /\bgithub\b/], ['Cloudflare', /\bcloudflare\b/], ['Samsung', /\bsamsung\b|galaxy/], ['Huawei', /\bhuawei\b/], ['Xiaomi', /\bxiaomi\b/], ['Meta', /\bmeta\b|instagram|whatsapp/], ['Sony', /\bsony\b|playstation/]];
-  return brands.find(([, pattern]) => pattern.test(haystack))?.[0] || String(source.name || '').replace(/\s+(Newsroom|News|Blog|Developers).*$/i, '').trim() || 'Diğer';
+  return BRAND_REGISTRY.find(([, pattern]) => pattern.test(haystack))?.[0] || String(source.name || '').replace(/\s+(Newsroom|News|Blog|Developers).*$/i, '').trim() || 'Diğer';
+}
+
+function cleanDiscoveryTitle(value = '') {
+  return safeText(value).replace(/\s+-\s+[^-]{2,80}$/u, '').trim();
+}
+
+function productKey(item) {
+  const normalized = cleanDiscoveryTitle(item.title).toLowerCase()
+    .replace(LAUNCH_STRONG, ' ').replace(/[^a-z0-9çğıöşüâ]+/gi, ' ').replace(/\s+/g, ' ').trim();
+  return `${item.brand}:${normalized}`;
 }
 
 function launchCandidate(item, source) {
-  const title = safeText(item.title || '');
+  const discovery = Boolean(source.is_discovery);
+  const rawTitle = safeText(item.title || '');
+  const title = discovery ? cleanDiscoveryTitle(rawTitle) : rawTitle;
   const text = safeText(`${title} ${item.summary || ''}`);
   if (!item.url || !item.title || EXCLUDE.test(text)) return null;
   const strong = LAUNCH_STRONG.test(text);
   const object = LAUNCH_OBJECT.test(text);
   const titleStrong = LAUNCH_STRONG.test(title);
   const namedProduct = NAMED_PRODUCT.test(title);
-  if (!strong || !object || (!titleStrong && (!namedProduct || GUIDE_TITLE.test(title)))) return null;
+  if (!strong || !object || (!discovery && !titleStrong && (!namedProduct || GUIDE_TITLE.test(title)))) return null;
   const published = new Date(item.published_at || 0);
   if (!Number.isFinite(published.getTime()) || Date.now() - published.getTime() > 14 * 86400000) return null;
   const ageHours = Math.max(0, (Date.now() - published.getTime()) / 3600000);
   const brand = brandFor(source, text);
-  const reasons = ['Resmî üretici kaynağı', titleStrong ? 'Başlık doğrudan lansman bildiriyor' : 'Tanımlı ürün/hizmet adı içeriyor'];
+  if (discovery && brand === 'Diğer') return null;
+  const reasons = [discovery ? 'Resmî üretici alan adı üzerinden keşfedildi' : 'Doğrudan resmî üretici kaynağı', titleStrong ? 'Başlık doğrudan lansman bildiriyor' : 'Tanımlı ürün/hizmet adı içeriyor'];
   if (ageHours <= 6) reasons.push('Son 6 saatte yayımlandı');
   else if (ageHours <= 24) reasons.push('Son 24 saatte yayımlandı');
   const freshness = Math.max(3, Math.round(28 - ageHours * 0.35));
-  const score = Math.min(96, Math.round(42 + freshness + (titleStrong ? 12 : 5) + (namedProduct ? 8 : 3) + (item.image_url ? 5 : 0)));
+  const score = Math.min(96, Math.round(39 + freshness + (titleStrong ? 12 : 5) + (namedProduct ? 8 : 3) + (discovery ? 7 : 10) + (item.image_url ? 5 : 0)));
   const url = normalizeUrl(item.url);
   if (!url) return null;
-  return { fingerprint: hashValue(url), title: safeText(item.title), summary: safeText(item.summary || '').slice(0, 1200), url, image_url: normalizeUrl(item.image_url), brand, launch_type: SERVICE.test(text) ? 'service' : 'product', source_name: source.name, official_source_url: source.site_url || item.url, published_at: published.toISOString(), launch_score: score, reasons };
+  return { fingerprint: hashValue(url), title, summary: safeText(item.summary || '').slice(0, 1200), url, image_url: normalizeUrl(item.image_url), brand, launch_type: SERVICE.test(text) ? 'service' : 'product', source_name: discovery ? `${brand} · Resmî duyuru` : source.name, official_source_url: source.site_url || item.url, published_at: published.toISOString(), launch_score: score, reasons, _direct: !discovery };
 }
 
 async function fetchText(url, accept = 'text/html,application/xhtml+xml,application/rss+xml,application/xml;q=0.9,*/*;q=0.8') {
@@ -122,10 +162,18 @@ async function youtubeVideos() {
   return results.flatMap((result) => result.status === 'fulfilled' ? result.value : []);
 }
 
+function discoveryFeed(group, domains) {
+  const sites = domains.map((domain) => `site:${domain}`).join(' OR ');
+  const q = `(${sites}) (announces OR unveils OR introduces OR launches OR "available now" OR "meet the new") when:7d`;
+  const params = new URLSearchParams({ q, hl: 'en-US', gl: 'US', ceid: 'US:en' });
+  return { id: `official-discovery-${group}`, name: `Resmî Üretici Keşfi · ${group}`, feed_url: `https://news.google.com/rss/search?${params}`, site_url: '', source_type: 'official-discovery', is_discovery: true };
+}
+
 async function sourceList() {
   const rows = (await queryLocal(`SELECT id,name,COALESCE(rss_url,feed_url) AS feed_url,site_url,source_type FROM sources WHERE is_active=TRUE AND source_type='official' ORDER BY priority_weight DESC LIMIT 30`)).rows;
   const merged = [...rows];
   for (const source of FALLBACK_OFFICIAL_SOURCES) if (!merged.some((item) => item.id === source.id || chooseFeedUrl(item) === source.feed_url)) merged.push(source);
+  for (const [group, domains] of OFFICIAL_DISCOVERY_GROUPS) merged.push(discoveryFeed(group, domains));
   return merged;
 }
 
@@ -137,13 +185,14 @@ async function syncRadar() {
     const xml = await fetchText(feedUrl, 'application/rss+xml,application/atom+xml,application/xml,text/xml;q=0.9,*/*;q=0.8');
     return parseFeedItems(xml).map((item) => launchCandidate(item, source)).filter(Boolean);
   }));
-  const candidates = feedResults.flatMap((result) => result.status === 'fulfilled' ? result.value : []).sort((a, b) => new Date(b.published_at) - new Date(a.published_at));
-  const unique = [...new Map(candidates.map((item) => [item.url, item])).values()].slice(0, MAX_ARTICLES);
+  const candidates = feedResults.flatMap((result) => result.status === 'fulfilled' ? result.value : []).sort((a, b) => Number(b._direct) - Number(a._direct) || new Date(b.published_at) - new Date(a.published_at));
+  const unique = [...new Map(candidates.map((item) => [productKey(item), item])).values()].sort((a, b) => new Date(b.published_at) - new Date(a.published_at)).slice(0, MAX_ARTICLES);
   const recentVideos = await youtubeVideos();
   const articleResults = await Promise.allSettled(unique.map(async (launch) => ({ url: launch.url, assets: socialLinks(await fetchText(launch.url)) })));
   const articleAssets = new Map(articleResults.flatMap((result) => result.status === 'fulfilled' ? [[result.value.url, result.value.assets]] : []));
   let stored = 0; let assets = 0;
   for (const launch of unique) {
+    delete launch._direct;
     const linked = [...(articleAssets.get(launch.url) || [])];
     const directYoutube = linked.some((item) => item.platform === 'youtube');
     if (!directYoutube) {
@@ -166,7 +215,7 @@ async function syncRadar() {
   await queryLocal(`DELETE FROM product_launches WHERE published_at<NOW()-INTERVAL '30 days'`);
   await queryLocal(`INSERT INTO product_radar_runs(status,source_count,candidate_count,asset_count,notes) VALUES('completed',$1,$2,$3,$4)`, [sources.length, unique.length, assets, `${ALGORITHM_VERSION};stored=${stored}`]);
   await queryLocal(`DELETE FROM product_radar_runs WHERE created_at<NOW()-INTERVAL '30 days'`);
-  return { sources: sources.length, candidates: unique.length, stored, assets };
+  return { sources: sources.length, candidates: unique.length, stored, assets, brands_monitored: BRAND_REGISTRY.length, discovery_groups: OFFICIAL_DISCOVERY_GROUPS.length };
 }
 
 async function itemsFor(req) {
@@ -195,6 +244,6 @@ export default async function handler(req, res) {
     let sync = null;
     if (stale || force) sync = await syncRadar();
     const result = await itemsFor(req);
-    return json(res, 200, { ok: true, source: 'Resmî üretici haber odaları ve doğrulanmış sosyal bağlantılar', refreshed_at: new Date().toISOString(), sync, count: result.items.length, hours: result.hours, brands: result.brands, items: result.items });
+    return json(res, 200, { ok: true, source: 'Resmî üretici haber odaları, resmî alan adı keşfi ve doğrulanmış sosyal bağlantılar', coverage: { brands_monitored: BRAND_REGISTRY.length, discovery_groups: OFFICIAL_DISCOVERY_GROUPS.length }, refreshed_at: new Date().toISOString(), sync, count: result.items.length, hours: result.hours, brands: result.brands, items: result.items });
   } catch (error) { return json(res, 500, { error: error?.message || String(error) }); }
 }
