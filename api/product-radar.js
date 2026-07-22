@@ -28,6 +28,7 @@ const LAUNCH_OBJECT = /\b(product|device|phone|smartphone|tablet|laptop|notebook
 const EXCLUDE = /\b(earnings|quarterly results|investor|dividend|policy update|event recap|interview|podcast|award|careers?|hiring|research paper|vulnerability|security bulletin|finansal sonuç|yatırımcı|ödül|röportaj|iş ilanı)\b/i;
 const SERVICE = /\b(service|subscription|platform|api|app|application|software|feature|update|cloud|model|assistant|hizmet|abonelik|platform|uygulama|yazılım|özellik|güncelleme|bulut|yapay zek[âa] modeli)\b/i;
 const NAMED_PRODUCT = /\b(chatgpt|gpt[- ]?\d|gemini|galaxy|iphone|ipad|macbook|imac|mac mini|apple watch|vision pro|pixel(?: \d+)?|android \d+|windows \d+|copilot|surface|xbox|playstation|geforce|rtx ?\d+|github copilot|cloudflare workers?)\b/i;
+const GUIDE_TITLE = /^(build|building|how to|using|create|creating|get started|a guide|developer|protect|protecting|integrate|integrating)\b/i;
 const STOP = new Set('the a an and or for with from this that new now its our your to of in on by as is are be ile ve veya bir yeni için olan olarak da de bu şu'.split(' '));
 
 function authorized(req) {
@@ -54,7 +55,7 @@ function launchCandidate(item, source) {
   const object = LAUNCH_OBJECT.test(text);
   const titleStrong = LAUNCH_STRONG.test(title);
   const namedProduct = NAMED_PRODUCT.test(title);
-  if (!strong || !object || (!titleStrong && !namedProduct)) return null;
+  if (!strong || !object || (!titleStrong && (!namedProduct || GUIDE_TITLE.test(title)))) return null;
   const published = new Date(item.published_at || 0);
   if (!Number.isFinite(published.getTime()) || Date.now() - published.getTime() > 14 * 86400000) return null;
   const ageHours = Math.max(0, (Date.now() - published.getTime()) / 3600000);
@@ -160,6 +161,7 @@ async function syncRadar() {
       assets += 1;
     }
   }
+  if (unique.length) await queryLocal(`DELETE FROM product_launches WHERE published_at>=NOW()-INTERVAL '14 days' AND NOT(url=ANY($1::text[]))`, [unique.map((item) => item.url)]);
   await queryLocal(`DELETE FROM product_launches WHERE published_at<NOW()-INTERVAL '30 days'`);
   await queryLocal(`INSERT INTO product_radar_runs(status,source_count,candidate_count,asset_count,notes) VALUES('completed',$1,$2,$3,$4)`, [sources.length, unique.length, assets, `stored=${stored}`]);
   await queryLocal(`DELETE FROM product_radar_runs WHERE created_at<NOW()-INTERVAL '30 days'`);
