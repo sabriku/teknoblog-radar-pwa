@@ -3,6 +3,7 @@ import { chooseFeedUrl, hashValue, json, parseFeedItems, queryLocal, safeText } 
 const CACHE_MINUTES = 20;
 const FETCH_TIMEOUT = 12000;
 const MAX_ARTICLES = 36;
+const ALGORITHM_VERSION = 'product-radar-v2';
 
 const FALLBACK_OFFICIAL_SOURCES = [
   { id: 'apple-newsroom', name: 'Apple Newsroom', feed_url: 'https://www.apple.com/newsroom/rss-feed.rss', site_url: 'https://www.apple.com/newsroom/', source_type: 'official' },
@@ -163,7 +164,7 @@ async function syncRadar() {
   }
   if (unique.length) await queryLocal(`DELETE FROM product_launches WHERE published_at>=NOW()-INTERVAL '14 days' AND NOT(url=ANY($1::text[]))`, [unique.map((item) => item.url)]);
   await queryLocal(`DELETE FROM product_launches WHERE published_at<NOW()-INTERVAL '30 days'`);
-  await queryLocal(`INSERT INTO product_radar_runs(status,source_count,candidate_count,asset_count,notes) VALUES('completed',$1,$2,$3,$4)`, [sources.length, unique.length, assets, `stored=${stored}`]);
+  await queryLocal(`INSERT INTO product_radar_runs(status,source_count,candidate_count,asset_count,notes) VALUES('completed',$1,$2,$3,$4)`, [sources.length, unique.length, assets, `${ALGORITHM_VERSION};stored=${stored}`]);
   await queryLocal(`DELETE FROM product_radar_runs WHERE created_at<NOW()-INTERVAL '30 days'`);
   return { sources: sources.length, candidates: unique.length, stored, assets };
 }
@@ -187,7 +188,7 @@ async function itemsFor(req) {
 export default async function handler(req, res) {
   try {
     if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
-    const last = (await queryLocal(`SELECT created_at AS synced_at FROM product_radar_runs WHERE status='completed' ORDER BY created_at DESC LIMIT 1`)).rows[0];
+    const last = (await queryLocal(`SELECT created_at AS synced_at FROM product_radar_runs WHERE status='completed' AND notes LIKE $1 ORDER BY created_at DESC LIMIT 1`, [`${ALGORITHM_VERSION};%`])).rows[0];
     const stale = !last?.synced_at || Date.now() - new Date(last.synced_at).getTime() > CACHE_MINUTES * 60000;
     const force = String(req.query?.refresh || '') === '1';
     if (force && !authorized(req)) return json(res, 401, { error: 'Yetkisiz istek' });
