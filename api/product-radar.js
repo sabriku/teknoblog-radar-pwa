@@ -133,10 +133,11 @@ async function syncRadar() {
   const candidates = feedResults.flatMap((result) => result.status === 'fulfilled' ? result.value : []).sort((a, b) => new Date(b.published_at) - new Date(a.published_at));
   const unique = [...new Map(candidates.map((item) => [item.url, item])).values()].slice(0, MAX_ARTICLES);
   const recentVideos = await youtubeVideos();
+  const articleResults = await Promise.allSettled(unique.map(async (launch) => ({ url: launch.url, assets: socialLinks(await fetchText(launch.url)) })));
+  const articleAssets = new Map(articleResults.flatMap((result) => result.status === 'fulfilled' ? [[result.value.url, result.value.assets]] : []));
   let stored = 0; let assets = 0;
   for (const launch of unique) {
-    let linked = [];
-    try { linked = socialLinks(await fetchText(launch.url)); } catch {}
+    const linked = [...(articleAssets.get(launch.url) || [])];
     const directYoutube = linked.some((item) => item.platform === 'youtube');
     if (!directYoutube) {
       const match = recentVideos.map((video) => ({ video, score: matchVideo(launch, video) })).sort((a, b) => b.score - a.score)[0];
