@@ -3,7 +3,7 @@ import { chooseFeedUrl, hashValue, json, parseFeedItems, queryLocal, safeText } 
 const CACHE_MINUTES = 20;
 const FETCH_TIMEOUT = 12000;
 const MAX_ARTICLES = 80;
-const ALGORITHM_VERSION = 'product-radar-v3-wide';
+const ALGORITHM_VERSION = 'product-radar-v3-wide-momentum';
 
 const BRAND_REGISTRY = [
   ['Apple', /\bapple\b|apple\.com/], ['Samsung', /\bsamsung\b|galaxy/], ['Google', /\bgoogle\b|android|pixel/],
@@ -59,6 +59,7 @@ const SERVICE = /\b(service|subscription|platform|api|app|application|software|f
 const NAMED_PRODUCT = /\b(chatgpt|gpt[- ]?\d|gemini|galaxy|iphone|ipad|macbook|imac|mac mini|apple watch|vision pro|pixel(?: \d+)?|android \d+|windows \d+|copilot|surface|xbox|playstation|geforce|rtx ?\d+|github copilot|cloudflare workers?)\b/i;
 const GUIDE_TITLE = /^(build|building|how to|using|create|creating|get started|a guide|developer|protect|protecting|integrate|integrating)\b/i;
 const STOP = new Set('the a an and or for with from this that new now its our your to of in on by as is are be ile ve veya bir yeni için olan olarak da de bu şu'.split(' '));
+const MOMENTUM_STOP = new Set('announce announces announced unveil unveils unveiled introduce introduces introduced launch launches launched available meet product device smart screen screenless health fitness tracker technology service platform update feature'.split(' '));
 
 function authorized(req) {
   const expected = process.env.CRON_TOKEN || '';
@@ -151,6 +152,16 @@ function matchVideo(launch, video) {
   return overlap >= 2 ? overlap * 20 + (LAUNCH_STRONG.test(video.title) ? 10 : 0) : 0;
 }
 
+async function newsMomentum(launch) {
+  const brandTokens = new Set(tokens(launch.brand));
+  const terms = tokens(launch.title).filter((token) => !brandTokens.has(token) && !MOMENTUM_STOP.has(token)).slice(0, 2);
+  if (!terms.length) return 0;
+  const q = [`"${launch.brand}"`, ...terms.map((term) => `"${term}"`), 'when:3d'].join(' ');
+  const url = `https://news.google.com/rss/search?${new URLSearchParams({ q, hl: 'en-US', gl: 'US', ceid: 'US:en' })}`;
+  const xml = await fetchText(url, 'application/rss+xml,application/xml;q=0.9,*/*;q=0.8');
+  return Math.min(100, parseFeedItems(xml).length);
+}
+
 async function youtubeVideos() {
   const results = await Promise.allSettled(OFFICIAL_YOUTUBE_FEEDS.map(async (channel) => {
     const xml = await fetchText(channel.url, 'application/atom+xml,application/xml;q=0.9,*/*;q=0.8');
@@ -187,6 +198,14 @@ async function syncRadar() {
   }));
   const candidates = feedResults.flatMap((result) => result.status === 'fulfilled' ? result.value : []).sort((a, b) => Number(b._direct) - Number(a._direct) || new Date(b.published_at) - new Date(a.published_at));
   const unique = [...new Map(candidates.map((item) => [productKey(item), item])).values()].sort((a, b) => new Date(b.published_at) - new Date(a.published_at)).slice(0, MAX_ARTICLES);
+  const momentumResults = await Promise.allSettled(unique.slice(0, 20).map(async (launch) => ({ launch, count: await newsMomentum(launch) })));
+  for (const result of momentumResults) {
+    if (result.status !== 'fulfilled' || result.value.count < 2) continue;
+    const { launch, count } = result.value;
+    launch.launch_score = Math.min(98, launch.launch_score + Math.min(12, Math.round(Math.log2(count + 1) * 2.2)));
+    launch.reasons.push(`Google News'te ${count} güncel haber referansı`);
+  }
+  unique.sort((a, b) => b.launch_score - a.launch_score || new Date(b.published_at) - new Date(a.published_at));
   const recentVideos = await youtubeVideos();
   const articleResults = await Promise.allSettled(unique.map(async (launch) => ({ url: launch.url, assets: socialLinks(await fetchText(launch.url)) })));
   const articleAssets = new Map(articleResults.flatMap((result) => result.status === 'fulfilled' ? [[result.value.url, result.value.assets]] : []));
