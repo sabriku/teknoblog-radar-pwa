@@ -27,6 +27,7 @@ const LAUNCH_STRONG = /\b(announce[sd]?|introduc(?:e[sd]?|ing)|unveil(?:s|ed)?|l
 const LAUNCH_OBJECT = /\b(product|device|phone|smartphone|tablet|laptop|notebook|headset|watch|camera|chip|processor|gpu|platform|service|subscription|app|application|model|api|feature|update|console|robot|vehicle|ürün|cihaz|telefon|kulaklık|saat|işlemci|ekran kartı|platform|hizmet|uygulama|model|özellik|güncelleme)\b/i;
 const EXCLUDE = /\b(earnings|quarterly results|investor|dividend|policy update|event recap|interview|podcast|award|careers?|hiring|research paper|vulnerability|security bulletin|finansal sonuç|yatırımcı|ödül|röportaj|iş ilanı)\b/i;
 const SERVICE = /\b(service|subscription|platform|api|app|application|software|feature|update|cloud|model|assistant|hizmet|abonelik|platform|uygulama|yazılım|özellik|güncelleme|bulut|yapay zek[âa] modeli)\b/i;
+const NAMED_PRODUCT = /\b(chatgpt|gpt[- ]?\d|gemini|galaxy|iphone|ipad|macbook|imac|mac mini|apple watch|vision pro|pixel(?: \d+)?|android \d+|windows \d+|copilot|surface|xbox|playstation|geforce|rtx ?\d+|github copilot|cloudflare workers?)\b/i;
 const STOP = new Set('the a an and or for with from this that new now its our your to of in on by as is are be ile ve veya bir yeni için olan olarak da de bu şu'.split(' '));
 
 function authorized(req) {
@@ -46,19 +47,23 @@ function brandFor(source = {}, text = '') {
 }
 
 function launchCandidate(item, source) {
-  const text = safeText(`${item.title || ''} ${item.summary || ''}`);
+  const title = safeText(item.title || '');
+  const text = safeText(`${title} ${item.summary || ''}`);
   if (!item.url || !item.title || EXCLUDE.test(text)) return null;
   const strong = LAUNCH_STRONG.test(text);
   const object = LAUNCH_OBJECT.test(text);
-  if (!strong || !object) return null;
+  const titleStrong = LAUNCH_STRONG.test(title);
+  const namedProduct = NAMED_PRODUCT.test(title);
+  if (!strong || !object || (!titleStrong && !namedProduct)) return null;
   const published = new Date(item.published_at || 0);
   if (!Number.isFinite(published.getTime()) || Date.now() - published.getTime() > 14 * 86400000) return null;
   const ageHours = Math.max(0, (Date.now() - published.getTime()) / 3600000);
   const brand = brandFor(source, text);
-  const reasons = ['Resmî üretici kaynağı', 'Doğrudan ürün/hizmet duyurusu'];
+  const reasons = ['Resmî üretici kaynağı', titleStrong ? 'Başlık doğrudan lansman bildiriyor' : 'Tanımlı ürün/hizmet adı içeriyor'];
   if (ageHours <= 6) reasons.push('Son 6 saatte yayımlandı');
   else if (ageHours <= 24) reasons.push('Son 24 saatte yayımlandı');
-  const score = Math.min(100, Math.round(55 + (ageHours <= 6 ? 25 : ageHours <= 24 ? 18 : ageHours <= 72 ? 10 : 3) + (object ? 10 : 0) + (item.image_url ? 5 : 0)));
+  const freshness = Math.max(3, Math.round(28 - ageHours * 0.35));
+  const score = Math.min(96, Math.round(42 + freshness + (titleStrong ? 12 : 5) + (namedProduct ? 8 : 3) + (item.image_url ? 5 : 0)));
   const url = normalizeUrl(item.url);
   if (!url) return null;
   return { fingerprint: hashValue(url), title: safeText(item.title), summary: safeText(item.summary || '').slice(0, 1200), url, image_url: normalizeUrl(item.image_url), brand, launch_type: SERVICE.test(text) ? 'service' : 'product', source_name: source.name, official_source_url: source.site_url || item.url, published_at: published.toISOString(), launch_score: score, reasons };
@@ -142,6 +147,10 @@ async function syncRadar() {
     if (!directYoutube) {
       const match = recentVideos.map((video) => ({ video, score: matchVideo(launch, video) })).sort((a, b) => b.score - a.score)[0];
       if (match?.score >= 40) linked.push({ platform: 'youtube', url: normalizeUrl(match.video.url), title: match.video.title, thumbnail_url: match.video.thumbnail_url, author_name: match.video.author_name, published_at: match.video.published_at || null, is_official: true });
+    }
+    if (linked.length) {
+      launch.launch_score = Math.min(100, launch.launch_score + Math.min(9, linked.length * 3));
+      launch.reasons = [...launch.reasons, `${linked.length} resmî sosyal paylaşım doğrulandı`];
     }
     const row = (await queryLocal(`INSERT INTO product_launches(fingerprint,title,summary,url,image_url,brand,launch_type,source_name,official_source_url,published_at,launch_score,reasons,synced_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,NOW()) ON CONFLICT(url) DO UPDATE SET title=EXCLUDED.title,summary=EXCLUDED.summary,image_url=COALESCE(NULLIF(EXCLUDED.image_url,''),product_launches.image_url),brand=EXCLUDED.brand,launch_type=EXCLUDED.launch_type,source_name=EXCLUDED.source_name,official_source_url=EXCLUDED.official_source_url,published_at=EXCLUDED.published_at,launch_score=EXCLUDED.launch_score,reasons=EXCLUDED.reasons,synced_at=NOW() RETURNING id`, [launch.fingerprint,launch.title,launch.summary,launch.url,launch.image_url,launch.brand,launch.launch_type,launch.source_name,launch.official_source_url,launch.published_at,launch.launch_score,JSON.stringify(launch.reasons)])).rows[0];
     stored += 1;
