@@ -167,20 +167,26 @@ async function loadOwned() {
 async function loadLiveOwned() {
   if (liveOwnedCache.expiresAt > Date.now() && liveOwnedCache.items.length) return liveOwnedCache.items;
   try {
+    const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Istanbul', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+    const part = (type) => parts.find((entry) => entry.type === type)?.value || '01';
+    const day = `${part('year')}-${part('month')}-${part('day')}`;
     const url = new URL('https://www.teknoblog.com/wp-json/wp/v2/posts');
+    url.searchParams.set('after', `${day}T00:00:00+03:00`);
+    url.searchParams.set('before', `${day}T23:59:59+03:00`);
     url.searchParams.set('per_page', '100');
     url.searchParams.set('page', '1');
-    url.searchParams.set('_fields', 'id,link,date,date_gmt,title,excerpt,_embedded');
-    url.searchParams.set('_embed', '1');
-    const response = await fetch(url, { headers: { 'user-agent': 'TeknoblogRadarInstagram/1.0' }, signal: AbortSignal.timeout(12000) });
+    url.searchParams.set('_fields', 'id,link,date,title,excerpt');
+    url.searchParams.set('orderby', 'date');
+    url.searchParams.set('order', 'desc');
+    const response = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0 TeknoblogRadarInstagram/1.0', accept: 'application/json, */*;q=0.8' }, cache: 'no-store', signal: AbortSignal.timeout(12000) });
     if (!response.ok) throw new Error(`Teknoblog API HTTP ${response.status}`);
     const posts = await response.json();
     const items = (posts || []).map((post) => ({
       title: clean(post?.title?.rendered || ''),
       url: post.link || '',
       summary: clean(post?.excerpt?.rendered || ''),
-      image_url: post?._embedded?.['wp:featuredmedia']?.[0]?.source_url || '',
-      published_at: post.date_gmt ? `${post.date_gmt}Z` : post.date || null,
+      image_url: '',
+      published_at: post.date ? `${post.date}+03:00` : null,
       source_name: 'Teknoblog', is_teknoblog: true, content_origin: 'published_live'
     })).filter((item) => item.title && item.url && ageHours(item) <= MAX_OWNED_HOURS);
     liveOwnedCache = { expiresAt: Date.now() + 5 * 60 * 1000, items };
@@ -204,7 +210,10 @@ export default async function handler(req, res) {
     const storedByUrl = new Map(ownedRaw.map((item) => [urlKey(item.url), item]));
     const liveKeys = new Set(liveOwnedRaw.map((item) => urlKey(item.url)));
     const mergedOwned = [
-      ...liveOwnedRaw.map((item) => ({ ...(storedByUrl.get(urlKey(item.url)) || {}), ...item })),
+      ...liveOwnedRaw.map((item) => {
+        const stored = storedByUrl.get(urlKey(item.url)) || {};
+        return { ...stored, ...item, image_url: item.image_url || stored.image_url || '' };
+      }),
       ...ownedRaw.filter((item) => !liveKeys.has(urlKey(item.url)))
     ];
     const owned = unique(mergedOwned.map(decorate).sort((a, b) => a.age_hours - b.age_hours), 160);
