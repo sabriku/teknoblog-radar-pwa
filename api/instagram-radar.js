@@ -8,6 +8,7 @@ const TECH = /apple|iphone|ipad|ios|macbook|android|samsung|galaxy|xiaomi|huawei
 const URGENT = /duyurdu|tanıttı|yayınladı|başladı|çıktı|geldi|kaldırdı|yasak|açık|sızıntı|iddia|zam|fiyat|indirim|güncelleme|beta|bugün|şimdi/i;
 const REELS = /tanıttı|duyurdu|ilk kez|video|kamera|tasarım|özellik|karşılaştırma|test|inceleme|nasıl|hız|performans|oyun|robot|otomobil|katlanabilir|giyilebilir|demo/i;
 const SAVE_SHARE = /hangi|liste|özellik|güncelleme|fiyat|karşılaştırma|fark|nasıl|rehber|güvenlik|model|alacak|destek|bilmeniz|dikkat/i;
+let liveOwnedCache = { expiresAt: 0, items: [] };
 
 function clamp(value, max = 97) { return Math.max(0, Math.min(max, Math.round(Number(value) || 0))); }
 function ageHours(item = {}) {
@@ -25,6 +26,7 @@ function titleTokens(value = '') {
   return [...new Set(String(value).toLocaleLowerCase('tr-TR').normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9çğıöşü\s]/gi, ' ').split(/\s+/).filter((word) => (word.length >= 3 || /\d/.test(word)) && !STOP.has(word)))];
 }
+function urlKey(value = '') { return String(value || '').replace(/[?#].*$/, '').replace(/\/+$/, '').toLowerCase(); }
 
 function keywords(item = {}) {
   const preferred = titleTokens(item.title).filter((word) => !/^(duyurdu|tanıttı|geldi|çıktı|olacak|başladı|artık)$/.test(word));
@@ -140,10 +142,12 @@ function unique(items = [], limit = 10) {
     const models = words.filter((word) => /\d/.test(word));
     const duplicateTopic = seenTitles.some((previous) => {
       const previousModels = previous.filter((word) => /\d/.test(word));
-      if (models.length && previousModels.length && !models.some((word) => previousModels.includes(word))) return false;
+      const sharedModel = models.some((word) => previousModels.includes(word));
+      const sharedSpecificModel = models.some((word) => /[a-z]/i.test(word) && /\d/.test(word) && previousModels.includes(word));
+      if (models.length && previousModels.length && !sharedModel) return false;
       const previousSet = new Set(previous);
       const common = words.filter((word) => previousSet.has(word)).length;
-      return common / Math.max(1, Math.min(words.length, previous.length)) >= .72;
+      return (sharedSpecificModel && common >= 2) || (sharedModel && common >= 3) || common / Math.max(1, Math.min(words.length, previous.length)) >= .72;
     });
     if (duplicateTopic) return false;
     seen.add(key); seenTitles.push(words); return true;
@@ -160,6 +164,30 @@ async function loadOwned() {
   return result.rows.map((item) => ({ ...item, source_name: 'Teknoblog', is_teknoblog: true, content_origin: 'published' }));
 }
 
+async function loadLiveOwned() {
+  if (liveOwnedCache.expiresAt > Date.now() && liveOwnedCache.items.length) return liveOwnedCache.items;
+  try {
+    const url = new URL('https://www.teknoblog.com/wp-json/wp/v2/posts');
+    url.searchParams.set('per_page', '100');
+    url.searchParams.set('page', '1');
+    url.searchParams.set('_fields', 'id,link,date,date_gmt,title,excerpt,_embedded');
+    url.searchParams.set('_embed', '1');
+    const response = await fetch(url, { headers: { 'user-agent': 'TeknoblogRadarInstagram/1.0' }, signal: AbortSignal.timeout(12000) });
+    if (!response.ok) throw new Error(`Teknoblog API HTTP ${response.status}`);
+    const posts = await response.json();
+    const items = (posts || []).map((post) => ({
+      title: clean(post?.title?.rendered || ''),
+      url: post.link || '',
+      summary: clean(post?.excerpt?.rendered || ''),
+      image_url: post?._embedded?.['wp:featuredmedia']?.[0]?.source_url || '',
+      published_at: post.date_gmt ? `${post.date_gmt}Z` : post.date || null,
+      source_name: 'Teknoblog', is_teknoblog: true, content_origin: 'published_live'
+    })).filter((item) => item.title && item.url && ageHours(item) <= MAX_OWNED_HOURS);
+    liveOwnedCache = { expiresAt: Date.now() + 5 * 60 * 1000, items };
+    return items;
+  } catch { return liveOwnedCache.items || []; }
+}
+
 async function loadCandidates() {
   const result = await queryLocal(`SELECT title,url,source_name,image_url,published_at,created_at,summary,excerpt,
     discover_score,traffic_score,social_score,editorial_score,total_score
@@ -172,8 +200,14 @@ async function loadCandidates() {
 export default async function handler(req, res) {
   try {
     const limit = Math.min(18, Math.max(5, Number(req.query?.limit || 10)));
-    const [ownedRaw, candidateRaw] = await Promise.all([loadOwned(), loadCandidates()]);
-    const owned = unique(ownedRaw.map(decorate), 160);
+    const [ownedRaw, liveOwnedRaw, candidateRaw] = await Promise.all([loadOwned(), loadLiveOwned(), loadCandidates()]);
+    const storedByUrl = new Map(ownedRaw.map((item) => [urlKey(item.url), item]));
+    const liveKeys = new Set(liveOwnedRaw.map((item) => urlKey(item.url)));
+    const mergedOwned = [
+      ...liveOwnedRaw.map((item) => ({ ...(storedByUrl.get(urlKey(item.url)) || {}), ...item })),
+      ...ownedRaw.filter((item) => !liveKeys.has(urlKey(item.url)))
+    ];
+    const owned = unique(mergedOwned.map(decorate).sort((a, b) => a.age_hours - b.age_hours), 160);
     const candidates = unique(candidateRaw.map(decorate), 1200);
     const combined = unique([...owned, ...candidates], 1300);
 
