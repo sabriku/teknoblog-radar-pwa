@@ -713,8 +713,26 @@ async function queueAction(body) {
   const features = extractIntelligenceFeatures({ title: body.title, source_name: body.source_name, image_url: body.image_url }).features;
   await queryLocal(`INSERT INTO editorial_feedback(url,title,source_name,decision,reason_code,cluster_key,notes,features) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
     [url, body.title || 'Başlıksız', body.source_name || '', body.status || 'new', body.reason_code || null, body.cluster_key || null, body.notes || '', JSON.stringify(features)]);
-  if (body.status === 'published') await reconcilePredictionOutcomes();
+  if (body.status === 'published') Promise.resolve().then(() => reconcilePredictionOutcomes()).catch(() => {});
   return result.rows[0];
+}
+
+async function queueBulkStatusAction(body) {
+  const allowed = new Set(['approved', 'writing', 'published', 'waiting', 'skipped']);
+  const status = String(body.status || '').trim();
+  if (!allowed.has(status)) throw new Error('Geçersiz toplu durum');
+  const urls = [...new Set((Array.isArray(body.urls) ? body.urls : []).map((value) => String(value || '').trim()).filter(Boolean))].slice(0, 300);
+  if (!urls.length) throw new Error('En az bir görev seçilmeli');
+  const result = await queryLocal(`UPDATE editorial_queue SET status=$1,updated_at=NOW(),
+    completed_at=CASE WHEN $1='published' THEN COALESCE(completed_at,NOW()) ELSE NULL END
+    WHERE url=ANY($2::text[]) RETURNING *`, [status, urls]);
+  if (result.rows.length) {
+    await queryLocal(`INSERT INTO editorial_feedback(url,title,source_name,decision,reason_code,notes,features)
+      SELECT q.url,q.title,COALESCE(q.source_name,''),$1,$2,'Hızlı/toplu Yazılacaklar işlemi','{}'::jsonb
+      FROM editorial_queue q WHERE q.url=ANY($3::text[])`, [status, `queue_bulk_${status}`, urls]);
+  }
+  if (status === 'published') Promise.resolve().then(() => reconcilePredictionOutcomes()).catch(() => {});
+  return { status, updated: result.rows.length, items: result.rows };
 }
 
 async function feedbackAction(body) {
@@ -952,6 +970,7 @@ export default async function handler(req, res) {
     if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
     const body = bodyOf(req);
     if (body.action === 'queue_upsert') return json(res, 200, { item: await queueAction(body) });
+    if (body.action === 'queue_bulk_status') return json(res, 200, await queueBulkStatusAction(body));
     if (body.action === 'feedback_record') return json(res, 200, { item: await feedbackAction(body) });
     if (!authorized(req)) return json(res, 401, { error: 'Yetkisiz istek' });
     if (body.action === 'watchlist_upsert') return json(res, 200, { item: await watchlistAction(body) });

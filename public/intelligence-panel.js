@@ -29,7 +29,7 @@
     system: 'Yerel PostgreSQL, görseller, uyarılar ve bakım işlemleri.'
   };
   const savedView = localStorage.getItem(VIEW_KEY);
-  const state = { tab: sections[savedView] ? savedView : 'today', loading: false, data: {}, error: '', todayPosts: null, todayPostsError: '' };
+  const state = { tab: sections[savedView] ? savedView : 'today', loading: false, data: {}, error: '', todayPosts: null, todayPostsError: '', queueSelected: new Set(), queueBusy: false, queueMessage: '' };
   const esc = (v = '') => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const fmt = (v) => v ? new Intl.DateTimeFormat('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' }).format(new Date(v)) : '—';
   const token = () => localStorage.getItem('tb_radar_cron_token') || localStorage.getItem('tb_cron_token') || '';
@@ -134,8 +134,11 @@
     const queueItems = items || [];
     const done = queueItems.filter((i) => i.status === 'published').length;
     const statuses = [['approved', 'Onayla'], ['writing', 'Yazılıyor'], ['published', '✓ Yazıldı'], ['waiting', 'Beklet'], ['skipped', 'Geç']];
+    const selectable = queueItems.filter((item) => !['published', 'skipped'].includes(item.status)).map((item) => item.url);
+    const selected = selectable.filter((url) => state.queueSelected.has(url));
+    const toolbar = `<div class="tb-i-queue-toolbar"><div><button data-queue-select-open ${state.queueBusy ? 'disabled' : ''}>☑ Açıkların tümünü seç</button><button data-queue-clear ${selected.length ? '' : 'disabled'}>Seçimi kaldır</button><b>${selected.length} seçili</b></div><div>${statuses.map(([status, label]) => `<button data-bulk-status="${status}" ${selected.length && !state.queueBusy ? '' : 'disabled'}>${label === 'Onayla' ? '✓ Toplu onayla' : label}</button>`).join('')}</div></div>${state.queueMessage ? `<div class="tb-i-queue-message">${esc(state.queueMessage)}</div>` : ''}`;
     const main = queueItems.length
-      ? `<div class="tb-i-progress"><i style="width:${Math.round(done / Math.max(1, queueItems.length) * 100)}%"></i></div><p><b>${done}/${queueItems.length}</b> görev tamamlandı</p><div class="tb-i-table tb-i-queue-table">${queueItems.map((i) => `<div class="tb-i-queue-item status-${esc(i.status || 'new')}">${i.image_url ? `<img src="${esc(i.image_url)}" loading="lazy" onerror="this.hidden=true">` : ''}<b>${esc(i.title)}</b>${pill(({ new: 'Yazılacaklara eklendi', approved: 'Onaylandı', writing: 'Yazılıyor', published: '✓ Yazıldı', waiting: 'Bekliyor', skipped: 'Geçildi' })[i.status] || i.status, i.status === 'published' ? 'good' : i.status === 'new' || i.status === 'approved' ? 'hot' : '')}${pill(`Öncelik ${i.priority}`)}<span>${esc(i.source_name || '')} · ${fmt(i.created_at)}${i.published_url ? ` · <a href="${esc(i.published_url)}" target="_blank">Yayın bağlantısı</a>` : ''}</span><nav><a href="${esc(i.url)}" target="_blank">Kaynak</a>${statuses.map(([status, label]) => `<button class="${i.status === status ? 'is-active' : ''}" data-status="${status}" data-item='${esc(JSON.stringify(i))}'>${label}</button>`).join('')}</nav></div>`).join('')}</div>`
+      ? `${toolbar}<div class="tb-i-progress"><i style="width:${Math.round(done / Math.max(1, queueItems.length) * 100)}%"></i></div><p><b>${done}/${queueItems.length}</b> görev tamamlandı</p><div class="tb-i-table tb-i-queue-table">${queueItems.map((i) => `<div class="tb-i-queue-item status-${esc(i.status || 'new')}"><label class="tb-i-queue-check"><input type="checkbox" data-queue-select="${esc(i.url)}" ${state.queueSelected.has(i.url) ? 'checked' : ''} ${['published', 'skipped'].includes(i.status) || state.queueBusy ? 'disabled' : ''}><span>Seç</span></label>${i.image_url ? `<img src="${esc(i.image_url)}" loading="lazy" onerror="this.hidden=true">` : ''}<b>${esc(i.title)}</b>${pill(({ new: 'Yazılacaklara eklendi', approved: 'Onaylandı', writing: 'Yazılıyor', published: '✓ Yazıldı', waiting: 'Bekliyor', skipped: 'Geçildi' })[i.status] || i.status, i.status === 'published' ? 'good' : i.status === 'new' || i.status === 'approved' ? 'hot' : '')}${pill(`Öncelik ${i.priority}`)}<span>${esc(i.source_name || '')} · ${fmt(i.created_at)}${i.published_url ? ` · <a href="${esc(i.published_url)}" target="_blank">Yayın bağlantısı</a>` : ''}</span><nav><a href="${esc(i.url)}" target="_blank">Kaynak</a>${statuses.map(([status, label]) => `<button class="${i.status === status ? 'is-active' : ''}" data-status="${status}" data-item='${esc(JSON.stringify(i))}' ${state.queueBusy ? 'disabled' : ''}>${label}</button>`).join('')}</nav></div>`).join('')}</div>`
       : empty('Yazılacaklar havuzu boş.');
     return `<div class="tb-i-queue-layout"><section>${main}</section>${todayPostsSidebar()}</div>`;
   }
@@ -196,6 +199,7 @@
       .tb-i-groups{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:12px 16px;background:#f8fafc;border-bottom:1px solid #e2e8f0}.tb-i-group{display:flex;align-items:center;justify-content:center;gap:7px;border:1px solid #dbe3ef;background:#fff;color:#334155;border-radius:13px;padding:10px;font-size:12px;font-weight:900;cursor:pointer}.tb-i-group.on{border-color:#f04a0a;background:#fff1eb;color:#c2410c;box-shadow:0 5px 14px rgba(240,74,10,.1)}
       .tb-i-subnav,.tb-i-actions,.tb-i-card .tb-i-actions{display:flex;gap:7px;flex-wrap:wrap}.tb-i-subnav{padding:13px 16px 0;overflow:auto}.tb-i-subnav button,.tb-i-actions button,.tb-i-actions a,.tb-i-card button,.tb-i-card a,.tb-i-table button,.tb-i-table a,.tb-i-callout button{border:1px solid #cbd5e1;background:#fff;color:#334155;border-radius:10px;padding:8px 10px;font-size:11px;font-weight:900;text-decoration:none;cursor:pointer}.tb-i-subnav button.on{border-color:#4338ca;background:#4338ca;color:#fff}.tb-i-view-note{margin:12px 16px 0;padding:10px 12px;border-left:4px solid #6366f1;border-radius:9px;background:#eef2ff;color:#475569;font-size:12px;line-height:1.5}.tb-i-content{padding:16px}
       .tb-i-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:12px 0}.tb-i-metrics>div{border:1px solid #e2e8f0;border-radius:15px;padding:13px;background:#f8fafc}.tb-i-metrics b{font-size:25px;display:block;color:#111827}.tb-i-metrics span,.tb-i-card p,.tb-i-table span{font-size:12px;color:#64748b}.tb-i-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:12px}.tb-i-card{border:1px solid #e2e8f0;border-radius:17px;overflow:hidden;background:#fff;box-shadow:0 4px 14px rgba(15,23,42,.05)}.tb-i-img{width:100%;aspect-ratio:16/9;object-fit:cover;background:#f1f5f9}.tb-i-body{padding:13px}.tb-i-card h3{font-size:18px;line-height:1.25;margin:8px 0}.tb-i-reasons{padding-left:18px;margin:8px 0;color:#475569;font-size:12px;line-height:1.45}.tb-i-pill{display:inline-block;border-radius:999px;padding:4px 7px;margin:2px;background:#eef2ff;color:#3730a3;font-size:10px;font-weight:900}.tb-i-pill.hot{background:#ffedd5;color:#c2410c}.tb-i-pill.good{background:#dcfce7;color:#166534}.tb-i-pill.bad{background:#fee2e2;color:#991b1b}.tb-i-table{display:grid;gap:8px}.tb-i-table>div{display:grid;grid-template-columns:auto auto auto 1fr;gap:8px;align-items:center;border:1px solid #e2e8f0;border-radius:13px;padding:10px;background:#fff}.tb-i-table img{width:70px;height:46px;object-fit:cover;border-radius:8px}.tb-i-table nav{grid-column:1/-1;display:flex;gap:5px;flex-wrap:wrap}.tb-i-empty,.tb-i-callout{padding:16px;border:1px dashed #c7d2fe;border-radius:14px;color:#64748b;background:#f8fafc}.tb-i-form{display:grid;grid-template-columns:repeat(2,minmax(220px,1fr));gap:10px;margin-top:14px}.tb-i-form label{display:grid;gap:5px;font-size:12px;font-weight:800;color:#334155}.tb-i-form input{border:1px solid #cbd5e1;border-radius:10px;padding:10px;background:#fff;min-width:0}.tb-i-form button{align-self:end}.tb-i-progress{height:11px;background:#e2e8f0;border-radius:999px;overflow:hidden}.tb-i-progress i{display:block;height:100%;background:linear-gradient(90deg,#f04a0a,#22c55e)}.tb-i-details{display:grid;gap:6px;margin:10px 0}.tb-i-details details,.tb-i-feedback{border:1px solid #e2e8f0;border-radius:10px;padding:8px;background:#f8fafc;font-size:12px}.tb-i-details summary,.tb-i-feedback summary{font-weight:900;cursor:pointer;color:#334155}.tb-i-details ul{padding-left:18px;line-height:1.5}.tb-i-feedback{margin-top:9px}.tb-i-feedback button{margin:7px 4px 0 0}.tb-i-timeline{border-left:3px solid #c7d2fe;margin-left:8px;padding-left:18px;display:grid;gap:12px}.tb-i-timeline>div{position:relative;display:grid;gap:3px}.tb-i-timeline i{position:absolute;width:11px;height:11px;border-radius:50%;background:#4f46e5;left:-25px;top:4px}.tb-i-timeline span{font-size:12px;color:#64748b}.tb-i-watch-grid{display:grid;gap:14px}.tb-i-watch-grid>section{border:1px solid #e2e8f0;background:#fff;border-radius:16px;padding:14px}.tb-i-watch-grid header{display:flex;justify-content:space-between;gap:10px}.tb-i-watch-grid header p{font-size:11px;color:#64748b;margin:4px 0}.tb-i-queue-layout{display:grid;grid-template-columns:minmax(0,1fr) 275px;gap:14px;align-items:start}.tb-i-queue-item{transition:background .2s,border-color .2s,box-shadow .2s}.tb-i-queue-item.status-new,.tb-i-queue-item.status-approved{border-color:#fb923c;background:#fff7ed;box-shadow:inset 4px 0 #f97316}.tb-i-queue-item.status-writing{border-color:#93c5fd;background:#eff6ff;box-shadow:inset 4px 0 #3b82f6}.tb-i-queue-item.status-waiting{border-color:#fde68a;background:#fffbeb;box-shadow:inset 4px 0 #f59e0b}.tb-i-queue-item.status-published{border-color:#86efac;background:#f0fdf4;box-shadow:inset 4px 0 #22c55e}.tb-i-queue-item.status-published>b{color:#166534}.tb-i-queue-item.status-skipped{background:#f8fafc;opacity:.7}.tb-i-queue-item nav button.is-active{border-color:#334155;background:#334155;color:#fff}.tb-i-queue-item.status-published nav button.is-active{border-color:#16a34a;background:#16a34a}.tb-queue-added{border-color:#fb923c!important;background:#fff7ed!important;box-shadow:0 0 0 3px rgba(249,115,22,.14)!important}.tb-i-today-sidebar{position:sticky;top:12px;border:1px solid #fed7aa;border-radius:16px;background:#fffaf5;overflow:hidden}.tb-i-today-sidebar>header{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px;border-bottom:1px solid #fed7aa;background:#fff7ed}.tb-i-today-sidebar>header div{display:grid;gap:2px}.tb-i-today-sidebar>header b{font-size:13px;color:#9a3412}.tb-i-today-sidebar>header span{font-size:10px;color:#78716c}.tb-i-today-sidebar>header button{border:1px solid #fdba74;border-radius:8px;background:#fff;color:#c2410c;padding:5px 8px;font-weight:900;cursor:pointer}.tb-i-today-sidebar>p{margin:0;padding:10px 12px;color:#78716c;font-size:10px;line-height:1.45}.tb-i-today-list{display:grid;gap:0;max-height:610px;overflow:auto}.tb-i-today-post{display:grid;gap:5px;padding:10px 12px;border-top:1px solid #ffedd5}.tb-i-today-post time{font-size:9px;font-weight:900;color:#ea580c}.tb-i-today-post>a{font-size:11px;line-height:1.35;font-weight:800;color:#334155;text-decoration:none}.tb-i-today-post>a:hover{text-decoration:underline}.tb-i-today-post button{justify-self:start;border:0;background:transparent;color:#c2410c;padding:2px 0;font-size:10px;font-weight:900;cursor:pointer}.tb-i-today-empty{margin:10px;padding:12px;border:1px dashed #fdba74;border-radius:10px;color:#78716c;font-size:11px}
+      .tb-i-queue-toolbar{position:sticky;top:8px;z-index:4;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:12px;padding:10px;border:1px solid #c7d2fe;border-radius:13px;background:rgba(255,255,255,.96);box-shadow:0 5px 16px rgba(15,23,42,.08);backdrop-filter:blur(8px)}.tb-i-queue-toolbar>div{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.tb-i-queue-toolbar button{border:1px solid #cbd5e1;border-radius:9px;background:#fff;color:#334155;padding:7px 9px;font-size:10px;font-weight:900;cursor:pointer}.tb-i-queue-toolbar [data-bulk-status="approved"]{border-color:#f97316;color:#c2410c}.tb-i-queue-toolbar button:disabled{opacity:.45;cursor:not-allowed}.tb-i-queue-message{margin:-4px 0 10px;padding:8px 10px;border-radius:9px;background:#ecfdf5;color:#166534;font-size:11px;font-weight:900}.tb-i-queue-check{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:900;color:#475569}.tb-i-queue-check input{width:17px;height:17px;accent-color:#f04a0a}
       @media(max-width:1050px){.tb-i-queue-layout{grid-template-columns:1fr}.tb-i-today-sidebar{position:static}.tb-i-today-list{max-height:380px}}@media(max-width:800px){.tb-i-groups{grid-template-columns:repeat(2,minmax(0,1fr))}.tb-i-hero{padding:16px}.tb-i-content{padding:12px}.tb-i-table>div,.tb-i-form{grid-template-columns:1fr}.tb-i-table nav{grid-column:1}.tb-i-grid{grid-template-columns:1fr}}@media(max-width:460px){.tb-i-groups{grid-template-columns:1fr}.tb-i-group{justify-content:flex-start}}
     </style><div class="tb-i-hero"><div><h2>🎯 Editoryal Karar Merkezi</h2><p>Trend/Karar, Editoryal, Intelligence ve Operasyon araçlarının güncel, tek çalışma alanı. Sinyali yakala, kararı ver, göreve dönüştür ve gerçek performanstan öğren.</p></div><button class="tb-i-reload" data-reload>↻ Bu görünümü yenile</button></div><div class="tb-i-groups">${groups.map((group) => `<button class="tb-i-group ${group.key === activeGroup.key ? 'on' : ''}" data-i-group="${group.key}"><span>${group.icon}</span>${group.label}</button>`).join('')}</div><div class="tb-i-subnav">${activeGroup.views.map((key) => `<button class="${key === state.tab ? 'on' : ''}" data-i-tab="${key}">${sections[key][0]}</button>`).join('')}</div><div class="tb-i-view-note">${esc(descriptions[state.tab] || '')}</div><div class="tb-i-content" id="tb-i-content">${content()}</div>`;
   }
@@ -213,12 +217,41 @@
     } catch (e) { state.error = e.message || String(e); }
     finally { state.loading = false; render(); }
   }
+  async function updateQueueStatuses(urls, status) {
+    const list = state.data.queue?.items || [];
+    const chosen = new Set(urls);
+    const before = list.map((item) => ({ ...item }));
+    const now = new Date().toISOString();
+    state.queueBusy = true;
+    state.queueMessage = `${urls.length} görev güncelleniyor…`;
+    state.data.queue.items = list.map((item) => chosen.has(item.url) ? { ...item, status, updated_at: now, completed_at: status === 'published' ? now : null } : item);
+    state.queueSelected = new Set([...state.queueSelected].filter((url) => !chosen.has(url)));
+    render();
+    try {
+      const result = await post({ action: 'queue_bulk_status', urls, status });
+      state.queueMessage = `${result.updated || urls.length} görev tek işlemde güncellendi.`;
+    } catch (error) {
+      state.data.queue.items = before;
+      state.queueSelected = new Set(urls);
+      state.queueMessage = '';
+      throw error;
+    } finally {
+      state.queueBusy = false;
+      render();
+    }
+  }
   document.addEventListener('click', async (event) => {
+    const openQueue = event.target.closest('[data-open-write-queue]');
+    if (openQueue) { localStorage.setItem(VIEW_KEY, 'queue'); location.hash = '#decision-center'; await load('queue', true); return; }
     const group = event.target.closest('[data-i-group]');
     if (group) { const target = groups.find((item) => item.key === group.dataset.iGroup); if (target) return load(target.views[0]); }
     const tab = event.target.closest('[data-i-tab]'); if (tab) return load(tab.dataset.iTab);
     if (event.target.closest('[data-reload]')) return load(state.tab, true);
     if (event.target.closest('[data-today-reload]')) { await loadTodayPosts(true); render(); return; }
+    if (event.target.closest('[data-queue-select-open]')) { const items = state.data.queue?.items || []; state.queueSelected = new Set(items.filter((item) => !['published', 'skipped'].includes(item.status)).map((item) => item.url)); render(); return; }
+    if (event.target.closest('[data-queue-clear]')) { state.queueSelected.clear(); render(); return; }
+    const bulkStatus = event.target.closest('[data-bulk-status]');
+    if (bulkStatus) { try { await updateQueueStatuses([...state.queueSelected], bulkStatus.dataset.bulkStatus); } catch (e) { alert(e.message); } return; }
     const publishedCopy = event.target.closest('[data-copy-published-url]');
     if (publishedCopy) {
       try {
@@ -267,7 +300,7 @@
       return;
     }
     const status = event.target.closest('[data-status]');
-    if (status) { try { const item = JSON.parse(status.dataset.item); status.disabled = true; await post({ action: 'queue_upsert', ...item, status: status.dataset.status, published_url: item.published_url || null }); await load('queue', true); } catch (e) { status.disabled = false; alert(e.message); } return; }
+    if (status) { try { const item = JSON.parse(status.dataset.item); await updateQueueStatuses([item.url], status.dataset.status); } catch (e) { alert(e.message); } return; }
     const connect = event.target.closest('[data-google-connect]');
     if (connect) { try { const data = await google('?action=start'); window.open(data.auth_url, 'tbGoogleOAuth', 'width=620,height=760'); } catch (e) { alert(e.message); } return; }
     const save = event.target.closest('[data-google-save]');
@@ -281,6 +314,13 @@
     }
     const action = event.target.closest('[data-action]');
     if (action) { action.disabled = true; try { await post({ action: action.dataset.action }, true); state.data = {}; await load(state.tab, true); } catch (e) { alert(e.message); } finally { action.disabled = false; } }
+  });
+  document.addEventListener('change', (event) => {
+    const checkbox = event.target.closest('[data-queue-select]');
+    if (!checkbox) return;
+    if (checkbox.checked) state.queueSelected.add(checkbox.dataset.queueSelect);
+    else state.queueSelected.delete(checkbox.dataset.queueSelect);
+    render();
   });
   window.addEventListener('message', (event) => { if (event.origin === location.origin && event.data?.type === 'tb-gsc-connected') load('performance', true); });
   window.addEventListener('tb-spa-tab-change', (event) => { if (event.detail?.tab === 'decision-center' && !state.data[state.tab]) load(state.tab); });
