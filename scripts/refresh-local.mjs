@@ -22,12 +22,13 @@ try {
   console.log(JSON.stringify(data));
   const minute = new Date().getUTCMinutes();
   const followupActions = ['run_alerts'];
-  if (minute % 15 < 5) followupActions.push('sync_teknoblog');
+  if (minute % 15 < 5) followupActions.push('sync_teknoblog', 'reconcile_queue_publications');
   if (minute < 5) followupActions.push('sync_gsc');
   for (const action of followupActions) {
     try {
       const followup = await fetch(`${baseUrl}/api/intelligence?token=${encodeURIComponent(token)}`, {
-        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action }), signal: controller.signal
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action, ...(action === 'sync_teknoblog' ? { max_pages: 2 } : {}) }), signal: controller.signal
       });
       const followupData = await followup.json().catch(() => ({}));
       console.log(JSON.stringify({ action, ok: followup.ok, ...followupData }));

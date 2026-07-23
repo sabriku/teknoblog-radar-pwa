@@ -32,6 +32,51 @@ function overlap(a = [], b = []) {
   return common / Math.max(1, Math.min(a.length, b.length));
 }
 
+function canonicalUrl(value = '') {
+  try {
+    const url = new URL(String(value || '').trim());
+    url.hash = '';
+    url.search = '';
+    return `${url.hostname.replace(/^www\./, '').toLowerCase()}${url.pathname.replace(/\/+$/, '') || '/'}`;
+  } catch { return ''; }
+}
+
+function publicationTokens(value = '') {
+  return [...new Set(String(value).toLocaleLowerCase('tr-TR')
+    .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9çğıöşü\s]/gi, ' ').split(/\s+/)
+    .filter((word) => (word.length >= 3 || /^\d{1,4}$/.test(word)) && !STOP.has(word)))];
+}
+
+export function publicationMatch(leftTitle = '', rightTitle = '', leftUrl = '', rightUrl = '') {
+  const direct = canonicalUrl(leftUrl) && canonicalUrl(leftUrl) === canonicalUrl(rightUrl);
+  if (direct) return { accepted: true, score: 1, common: 99, reason: 'url' };
+  const left = publicationTokens(leftTitle);
+  const right = publicationTokens(rightTitle);
+  if (!left.length || !right.length) return { accepted: false, score: 0, common: 0, reason: 'empty' };
+  const rightSet = new Set(right);
+  const commonTokens = left.filter((word) => rightSet.has(word));
+  const common = commonTokens.length;
+  const containment = common / Math.max(1, Math.min(left.length, right.length));
+  const jaccard = common / Math.max(1, new Set([...left, ...right]).size);
+  let score = containment * .72 + jaccard * .28;
+  const modelLike = (word) => /\d/.test(word);
+  const leftModels = left.filter(modelLike);
+  const rightModels = right.filter(modelLike);
+  if (leftModels.length && rightModels.length && !leftModels.some((word) => rightModels.includes(word))) {
+    return { accepted: false, score: score * .2, common, reason: 'model_mismatch' };
+  }
+  const sharedModel = leftModels.some((word) => rightModels.includes(word));
+  if ((leftModels.length || rightModels.length) && !sharedModel) score *= .78;
+  const exactTitle = left.join(' ') === right.join(' ');
+  const shortStrong = Math.min(left.length, right.length) <= 4 && common >= 2 && score >= .86;
+  const translatedModelMatch = sharedModel && common >= 3 && containment >= .45;
+  const genericEntities = new Set(['samsung', 'galaxy', 'apple', 'google', 'microsoft', 'xiaomi', 'huawei', 'garmin', 'openai', 'android', 'iphone', 'ipad', 'watch', 'update']);
+  const distinctiveEntityMatch = common >= 2 && containment >= .3 && commonTokens.some((word) => word.length >= 5 && !genericEntities.has(word));
+  const accepted = exactTitle || translatedModelMatch || distinctiveEntityMatch || (common >= 3 && score >= .72) || shortStrong;
+  return { accepted, score: exactTitle ? 1 : score, common, reason: accepted ? 'title' : 'weak' };
+}
+
 function clamp(value) { return Math.max(0, Math.min(100, Math.round(Number(value) || 0))); }
 function hash(value) { return createHash('sha1').update(String(value)).digest('hex'); }
 
@@ -93,7 +138,7 @@ function editorialPackageFor(cluster) {
   };
 }
 
-async function syncTeknoblog() {
+async function syncTeknoblog(maxPages = 20) {
   let page = 1;
   let totalPages = 1;
   let stored = 0;
@@ -105,7 +150,7 @@ async function syncTeknoblog() {
     url.searchParams.set('_embed', '1');
     const response = await fetch(url, { headers: { 'user-agent': 'TeknoblogRadarBot/2.0' }, signal: AbortSignal.timeout(15000) });
     if (!response.ok) throw new Error(`Teknoblog API HTTP ${response.status}`);
-    totalPages = Math.min(20, Number(response.headers.get('x-wp-totalpages') || 1));
+    totalPages = Math.min(Math.max(1, Number(maxPages) || 20), Number(response.headers.get('x-wp-totalpages') || 1));
     const posts = await response.json();
     for (const post of posts || []) {
       const image = post?._embedded?.['wp:featuredmedia']?.[0]?.source_url || '';
@@ -156,6 +201,63 @@ async function reconcilePredictionOutcomes() {
     news_clicks=p.google_news_clicks,news_impressions=p.google_news_impressions,observed_at=p.observed_at
     FROM published_performance p WHERE regexp_replace(o.published_url,'/+$','')=regexp_replace(p.url,'/+$','')`);
   return { matched };
+}
+
+async function reconcileQueuePublications() {
+  const started = await queryLocal(`INSERT INTO pipeline_runs(status,notes) VALUES('running','queue_publication_check:running') RETURNING id,started_at`);
+  const runId = started.rows[0]?.id;
+  try {
+    const [queue, posts] = await Promise.all([
+      queryLocal(`SELECT id,candidate_id,title,url,source_name,status,published_url,created_at FROM editorial_queue
+        WHERE status NOT IN ('published','skipped') AND created_at>=NOW()-INTERVAL '45 days'
+        ORDER BY priority DESC,created_at DESC LIMIT 500`),
+      queryLocal(`SELECT title,url,published_at FROM teknoblog_content
+        WHERE published_at>=NOW()-INTERVAL '45 days' ORDER BY published_at DESC LIMIT 3000`)
+    ]);
+    const matches = [];
+    for (const item of queue.rows) {
+      const createdAt = new Date(item.created_at).getTime();
+      let best = null;
+      let bestMatch = null;
+      for (const post of posts.rows) {
+        const publishedAt = new Date(post.published_at).getTime();
+        if (!Number.isFinite(publishedAt) || publishedAt < createdAt - 7 * 86400000) continue;
+        const match = publicationMatch(item.title, post.title, item.published_url || item.url, post.url);
+        if (!match.accepted || (bestMatch && match.score <= bestMatch.score)) continue;
+        best = post;
+        bestMatch = match;
+      }
+      if (!best || !bestMatch) continue;
+      const score = Math.round(bestMatch.score * 100);
+      const updated = await queryLocal(`UPDATE editorial_queue SET status='published',published_url=$2,
+        completed_at=COALESCE(completed_at,NOW()),updated_at=NOW(),
+        notes=TRIM(CONCAT_WS(E'\n',NULLIF(notes,''),$3))
+        WHERE id=$1 AND status NOT IN ('published','skipped') RETURNING *`,
+      [item.id, best.url, `Radar otomatik yayın teyidi: %${score} başlık eşleşmesi · ${new Date().toISOString()}`]);
+      if (!updated.rowCount) continue;
+      matches.push({ queue_id: item.id, title: item.title, published_title: best.title, published_url: best.url, match_score: score });
+      await queryLocal(`INSERT INTO editorial_feedback(url,title,source_name,decision,reason_code,notes,features)
+        VALUES($1,$2,$3,'published','auto_teknoblog_match',$4,'{}'::jsonb)`,
+      [item.url, item.title, item.source_name || '', `Teknoblog yayını otomatik eşleştirildi: ${best.url} (%${score})`]);
+    }
+    const details = { checked: queue.rows.length, matched: matches.length, matches };
+    await queryLocal(`UPDATE pipeline_runs SET status='completed',finished_at=NOW(),processed_count=$2,notes=$3 WHERE id=$1`,
+      [runId, queue.rows.length, `queue_publication_check:${JSON.stringify({ checked: details.checked, matched: details.matched })}`]);
+    if (matches.length) Promise.resolve().then(() => reconcilePredictionOutcomes()).catch(() => {});
+    return details;
+  } catch (error) {
+    if (runId) await queryLocal(`UPDATE pipeline_runs SET status='failed',finished_at=NOW(),notes=$2 WHERE id=$1`, [runId, `queue_publication_check:${JSON.stringify({ error: error?.message || String(error) })}`]).catch(() => {});
+    throw error;
+  }
+}
+
+async function queueAutomationStatus() {
+  const row = (await queryLocal(`SELECT status,started_at,finished_at,processed_count,notes FROM pipeline_runs
+    WHERE notes LIKE 'queue_publication_check:%' ORDER BY started_at DESC LIMIT 1`)).rows[0] || null;
+  if (!row) return { interval_minutes: 15, last_checked_at: null, checked: 0, matched: 0 };
+  let details = {};
+  try { details = JSON.parse(String(row.notes || '').replace(/^queue_publication_check:/, '')); } catch {}
+  return { interval_minutes: 15, status: row.status, last_checked_at: row.finished_at || row.started_at, checked: details.checked || row.processed_count || 0, matched: details.matched || 0 };
 }
 
 async function recentCandidates(limit = 600) {
@@ -958,7 +1060,10 @@ export default async function handler(req, res) {
       if (section === 'watchlists') return json(res, 200, await watchlistsSection());
       if (section === 'pioneer-metrics') return json(res, 200, await pioneerMetricsSection());
       if (section === 'coverage') return json(res, 200, { items: await coverageSection() });
-      if (section === 'queue') return json(res, 200, { items: await queueSection() });
+      if (section === 'queue') {
+        const [items, automation] = await Promise.all([queueSection(), queueAutomationStatus()]);
+        return json(res, 200, { items, automation });
+      }
       if (section === 'sources') return json(res, 200, { items: await sourceHealthSection() });
       if (section === 'performance') return json(res, 200, await performanceSection());
       if (section === 'accuracy') return json(res, 200, await accuracySection());
@@ -974,7 +1079,11 @@ export default async function handler(req, res) {
     if (body.action === 'feedback_record') return json(res, 200, { item: await feedbackAction(body) });
     if (!authorized(req)) return json(res, 401, { error: 'Yetkisiz istek' });
     if (body.action === 'watchlist_upsert') return json(res, 200, { item: await watchlistAction(body) });
-    if (body.action === 'sync_teknoblog') return json(res, 200, { ok: true, stored: await syncTeknoblog() });
+    if (body.action === 'sync_teknoblog') {
+      const maxPages = Math.max(1, Math.min(20, Number(body.max_pages) || 20));
+      return json(res, 200, { ok: true, stored: await syncTeknoblog(maxPages), pages: maxPages });
+    }
+    if (body.action === 'reconcile_queue_publications') return json(res, 200, { ok: true, ...(await reconcileQueuePublications()) });
     if (body.action === 'sync_gsc') return json(res, 200, { ok: true, stored: await syncGsc() });
     if (body.action === 'train_model') return json(res, 200, { ok: true, model: await trainIntelligenceModel() });
     if (body.action === 'configure_signal_slack') return json(res, 200, { ok: true, ...(await configureSignalSlack(body)) });
