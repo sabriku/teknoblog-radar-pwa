@@ -1,166 +1,117 @@
 (() => {
-  const STORAGE_KEY = 'tb_instagram_radar_open';
+  const OPEN_KEY = 'tb_instagram_radar_open';
+  const TAB_KEY = 'tb_instagram_radar_tab';
   const REFRESH_MS = 60 * 60 * 1000;
+  const tabs = [
+    ['story', '⚡ Mutlaka Story'],
+    ['reels', '▶ Video Reels'],
+    ['feed', '▦ Akış & Karusel'],
+    ['published', '📰 Yayımlanmış Haberler']
+  ];
   const state = {
-    open: localStorage.getItem(STORAGE_KEY) === '1',
-    loading: false,
-    items: [],
-    error: '',
-    refreshedAt: null
+    open: localStorage.getItem(OPEN_KEY) !== '0',
+    tab: tabs.some(([key]) => key === localStorage.getItem(TAB_KEY)) ? localStorage.getItem(TAB_KEY) : 'story',
+    loading: false, data: {}, error: '', refreshedAt: null
   };
   let started = false;
   let timer = null;
 
-  function esc(value) {
-    return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-  }
-
-  function textOf(item = {}) {
-    return [item.title, item.summary, item.excerpt, item.description, item.source_name].filter(Boolean).join(' ').toLowerCase();
-  }
-
-  function ageHours(item = {}) {
-    const time = new Date(item.published_at || item.created_at || item.updated_at || 0).getTime();
-    if (!time || Number.isNaN(time)) return 999999;
-    return Math.max(0, (Date.now() - time) / 3600000);
-  }
-
-  function score(item = {}, key = '') {
-    const n = Number(item[key]);
-    return Number.isFinite(n) ? n : 0;
-  }
-
-  function clamp(value) {
-    const n = Number(value);
-    if (!Number.isFinite(n)) return 0;
-    return Math.max(0, Math.min(100, Math.round(n)));
-  }
-
-  function instagramScore(item = {}) {
-    const text = textOf(item);
-    let value = 0;
-    value += score(item, 'social_score') * 0.28;
-    value += score(item, 'discover_score') * 0.22;
-    value += score(item, 'traffic_score') * 0.10;
-    if (/openai|chatgpt|gemini|iphone|ios|samsung|galaxy|android|whatsapp|instagram|youtube|google|güncelleme|özellik|fiyat|indirim|kampanya|iddia|sızıntı|değişiklik|tanıttı|duyurdu|geliyor/i.test(text)) value += 24;
-    if (/neden|nasıl|hangi|liste|alacak|fark|karşılaştırma|detay|model|rehber/i.test(text)) value += 14;
-    if (item.image_url || item.image || item.thumbnail) value += 10;
-    if (String(item.title || '').length >= 35 && String(item.title || '').length <= 110) value += 10;
-    if (ageHours(item) <= 6) value += 10;
-    else if (ageHours(item) <= 12) value += 7;
-    else if (ageHours(item) <= 24) value += 4;
-    return clamp(value);
-  }
-
-  function carouselAngle(item = {}) {
-    const text = textOf(item);
-    if (/fiyat|indirim|kampanya|ücret|zam/i.test(text)) return 'Fiyat ve satın alma etkisi odaklı karusel';
-    if (/güncelleme|özellik|beta|alacak|geliyor/i.test(text)) return 'Ne değişti, kimleri etkiliyor karuseli';
-    if (/yapay zeka|openai|chatgpt|gemini/i.test(text)) return 'Yapay zekâ gündemi ve etkileri karuseli';
-    if (/iphone|samsung|galaxy|android|ios/i.test(text)) return 'Telefon kullanıcılarını ilgilendiren özet karusel';
-    return 'Hızlı teknoloji gündemi karuseli';
-  }
-
-  function hookText(item = {}) {
-    const text = textOf(item);
-    if (/fiyat|indirim|kampanya|zam/i.test(text)) return 'Bu fiyat veya kampanya detayı karusel formatında ilgi çekebilir.';
-    if (/güncelleme|özellik|beta/i.test(text)) return 'Bu yenilik günlük kullanımda fark yaratabilecek nitelikte.';
-    return String(item.title || 'Bu gelişme Instagram karusel formatında hızlı anlatıma uygun görünüyor.');
-  }
-
-  function slidePlan() {
-    return [
-      'Kapak: En çarpıcı sonucu tek cümleyle ver',
-      'Olay: Haberde tam olarak ne oldu?',
-      'Etki: Kullanıcıyı veya sektörü nasıl ilgilendiriyor?',
-      'Detay: En önemli teknik veya ticari ayrıntı',
-      'Son kart: Teknoblog’da detaylar ve takip çağrısı'
-    ];
-  }
-
-  function decorate(item = {}) {
-    const s = instagramScore(item);
-    return { ...item, instagram_score: s, carousel_potential_score: s, carousel_angle: carouselAngle(item), hook_text: hookText(item), slide_plan: slidePlan(), max_age_hours: 24 };
-  }
-
-  function fmtDate(value) {
-    const date = new Date(value || 0);
-    if (Number.isNaN(date.getTime())) return '';
-    return new Intl.DateTimeFormat('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Istanbul' }).format(date);
-  }
-
-  function fallbackImage(item = {}) {
-    const text = encodeURIComponent((item.source_name || 'Instagram Radar').slice(0, 28));
-    return `https://placehold.co/640x360/f8fafc/334155?text=${text}`;
-  }
-
-  function findMountTarget() {
-    return document.querySelector('#tb-layout main') || document.querySelector('main') || document.querySelector('#tb-radar-root') || document.body;
-  }
+  const esc = (value = '') => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+  const fmt = (value) => value ? new Intl.DateTimeFormat('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Istanbul' }).format(new Date(value)) : '—';
+  const fallbackImage = (item = {}) => `https://placehold.co/800x450/fdf2f8/9d174d?text=${encodeURIComponent((item.source_name || 'Instagram Radar').slice(0, 28))}`;
+  const items = () => Array.isArray(state.data[state.tab]) ? state.data[state.tab] : [];
+  const scoreFor = (item) => state.tab === 'story' ? item.story_score : state.tab === 'reels' ? item.reels_score : item.feed_score;
 
   function ensureStyle() {
     if (document.getElementById('tb-instagram-radar-style')) return;
     const style = document.createElement('style');
     style.id = 'tb-instagram-radar-style';
-    style.textContent = `#tb-instagram-radar-wrap{margin:18px 0 34px;border:1px solid #fbcfe8;border-radius:20px;background:#fff;padding:16px;box-shadow:0 8px 24px rgba(190,24,93,.08)}#tb-instagram-radar-wrap[data-open='0'] .tb-instagram-body{display:none}#tb-instagram-radar-wrap .tb-instagram-head{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}#tb-instagram-radar-wrap .tb-instagram-toggle{display:flex;align-items:center;gap:10px;cursor:pointer;background:#fdf2f8;border:1px solid #fbcfe8;border-radius:999px;padding:10px 14px;font-weight:800;color:#be185d}#tb-instagram-radar-wrap .tb-instagram-toggle b{font:700 20px/1 'Fira Sans Condensed',sans-serif}#tb-instagram-radar-wrap .tb-instagram-refresh{border:1px solid #be185d;background:#fff;color:#be185d;padding:9px 12px;border-radius:12px;font-weight:800;cursor:pointer}#tb-instagram-radar-wrap .tb-instagram-refresh:disabled{opacity:.7;cursor:wait}#tb-instagram-radar-wrap .tb-instagram-status{font-size:12px;color:#64748b;margin-top:10px}#tb-instagram-radar-wrap .tb-instagram-status[data-error='1']{color:#b91c1c}#tb-instagram-radar-wrap .tb-instagram-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin-top:16px}#tb-instagram-radar-wrap article{border:1px solid #fce7f3;border-radius:16px;background:#fff;box-shadow:0 4px 12px rgba(15,23,42,.04);overflow:hidden}#tb-instagram-radar-wrap .tb-instagram-image{width:100%;aspect-ratio:16/9;background:#f8fafc;object-fit:cover;display:block;border-bottom:1px solid #fce7f3}#tb-instagram-radar-wrap .tb-instagram-inner{padding:12px}#tb-instagram-radar-wrap h3{font:700 18px/1.32 'Fira Sans Condensed',sans-serif;color:#111827;margin:8px 0}#tb-instagram-radar-wrap .tb-instagram-badge{display:inline-flex;border-radius:999px;padding:6px 9px;background:#fdf2f8;color:#be185d;border:1px solid #f9a8d4;font-size:11px;font-weight:900}#tb-instagram-radar-wrap .tb-instagram-meta{display:flex;flex-wrap:wrap;gap:6px;font-size:11px;color:#64748b;margin:8px 0}#tb-instagram-radar-wrap .tb-instagram-angle{font-size:12px;line-height:1.45;color:#be185d;font-weight:800;margin-top:8px}#tb-instagram-radar-wrap .tb-instagram-hook{font-size:12px;line-height:1.5;color:#475569;margin-top:8px;background:#fdf2f8;border:1px solid #fce7f3;border-radius:12px;padding:9px}#tb-instagram-radar-wrap ol{margin:10px 0 0 18px;padding:0;color:#475569;font-size:12px;line-height:1.5}#tb-instagram-radar-wrap .tb-instagram-link{display:inline-flex;margin-top:10px;font-size:12px;font-weight:900;color:#be185d;text-decoration:none}#tb-instagram-radar-wrap .tb-instagram-empty{border:1px dashed #fbcfe8;border-radius:14px;color:#64748b;font-size:13px;margin-top:14px;padding:14px;text-align:center}`;
+    style.textContent = `
+      #tb-instagram-radar-wrap{margin:0;border:1px solid #fbcfe8;border-radius:22px;background:#fff;overflow:hidden;box-shadow:0 10px 30px rgba(157,23,77,.08)}
+      #tb-instagram-radar-wrap[data-open="0"] .tb-ig-body{display:none}.tb-ig-hero{padding:22px;background:linear-gradient(135deg,#831843,#be185d 55%,#7c3aed);color:#fff}.tb-ig-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}.tb-ig-title{display:flex;gap:12px;align-items:flex-start}.tb-ig-title>span{font-size:32px}.tb-ig-title h2{font:800 29px/1 'Fira Sans Condensed',sans-serif;margin:0 0 7px}.tb-ig-title p{margin:0;max-width:720px;color:#fce7f3;font-size:12px;line-height:1.55}.tb-ig-actions{display:flex;gap:7px;flex-wrap:wrap}.tb-ig-actions button{border:1px solid rgba(255,255,255,.5);border-radius:10px;background:rgba(255,255,255,.12);color:#fff;padding:8px 10px;font-size:11px;font-weight:900;cursor:pointer}.tb-ig-actions button:disabled{opacity:.55}
+      .tb-ig-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin-top:17px}.tb-ig-tab{border:1px solid rgba(255,255,255,.35);border-radius:12px;background:rgba(255,255,255,.1);color:#fce7f3;padding:10px;font-size:11px;font-weight:900;cursor:pointer}.tb-ig-tab.on{background:#fff;color:#9d174d;border-color:#fff;box-shadow:0 6px 18px rgba(76,5,25,.22)}
+      .tb-ig-summary{display:flex;gap:7px;align-items:center;flex-wrap:wrap;padding:11px 16px;border-bottom:1px solid #fce7f3;background:#fff7fb;color:#64748b;font-size:11px}.tb-ig-summary b{color:#9d174d}.tb-ig-summary span{padding:4px 7px;border-radius:999px;background:#fce7f3;color:#9d174d;font-size:10px;font-weight:900}.tb-ig-summary[data-error="1"]{background:#fef2f2;color:#991b1b}
+      .tb-ig-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(305px,1fr));gap:14px;padding:16px}.tb-ig-card{display:flex;flex-direction:column;overflow:hidden;border:1px solid #fbcfe8;border-radius:18px;background:#fff;box-shadow:0 5px 16px rgba(15,23,42,.05)}.tb-ig-image{width:100%;aspect-ratio:16/9;object-fit:cover;background:#f8fafc}.tb-ig-inner{display:flex;flex:1;flex-direction:column;padding:14px}.tb-ig-top{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.tb-ig-pill{padding:5px 8px;border-radius:999px;background:#fdf2f8;color:#be185d;font-size:10px;font-weight:900}.tb-ig-pill.owned{background:#ecfdf5;color:#047857}.tb-ig-card h3{font:750 19px/1.28 'Fira Sans Condensed',sans-serif;color:#111827;margin:9px 0 6px}.tb-ig-meta{font-size:11px;color:#64748b}.tb-ig-why{margin:10px 0 0;padding:8px 9px;border-left:3px solid #ec4899;border-radius:7px;background:#fdf2f8;color:#831843;font-size:11px;line-height:1.45}.tb-ig-plan{margin:10px 0 0;padding-left:19px;color:#475569;font-size:11px;line-height:1.5}.tb-ig-story-copy{display:grid;gap:5px;margin-top:10px;padding:10px;border:1px solid #fbcfe8;border-radius:11px;background:#fff7fb}.tb-ig-story-copy b{font-size:12px;color:#831843}.tb-ig-story-copy span{font-size:11px;color:#475569;line-height:1.45}
+      .tb-ig-caption{margin-top:10px;border:1px solid #e2e8f0;border-radius:11px;background:#f8fafc;overflow:hidden}.tb-ig-caption summary{padding:9px 10px;cursor:pointer;color:#334155;font-size:11px;font-weight:900}.tb-ig-caption pre{margin:0;padding:0 10px 10px;white-space:pre-wrap;font:11px/1.5 system-ui;color:#475569}.tb-ig-keywords{display:flex;gap:4px;flex-wrap:wrap;margin-top:9px}.tb-ig-keywords span{padding:3px 6px;border-radius:7px;background:#f1f5f9;color:#475569;font-size:9px;font-weight:800}.tb-ig-card-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:auto;padding-top:12px}.tb-ig-card-actions a,.tb-ig-card-actions button{border:1px solid #cbd5e1;border-radius:9px;background:#fff;color:#334155;padding:7px 9px;font-size:10px;font-weight:900;text-decoration:none;cursor:pointer}.tb-ig-card-actions button.primary{border-color:#ec4899;background:#fdf2f8;color:#be185d}.tb-ig-empty{margin:16px;padding:22px;border:1px dashed #f9a8d4;border-radius:15px;background:#fdf2f8;color:#64748b;text-align:center;font-size:12px}
+      @media(max-width:760px){.tb-ig-tabs{grid-template-columns:1fr 1fr}.tb-ig-grid{grid-template-columns:1fr;padding:11px}.tb-ig-hero{padding:17px}.tb-ig-title h2{font-size:25px}}
+      @media(max-width:430px){.tb-ig-tabs{display:flex;overflow:auto}.tb-ig-tab{min-width:145px}.tb-ig-actions{width:100%}.tb-ig-actions button{flex:1}.tb-ig-title>span{font-size:26px}}
+    `;
     document.head.appendChild(style);
   }
 
+  function findMount() { return document.getElementById('tb-instagram-radar-wrap') || document.querySelector('[data-spa-panel="instagram"] main') || document.querySelector('main') || document.body; }
+  function why(item) { return state.tab === 'story' ? item.why_story : state.tab === 'reels' ? item.why_reels : item.why_feed; }
+  function plan(item) { return state.tab === 'story' ? [] : state.tab === 'reels' ? item.reel_plan : item.carousel_plan; }
+  function caption(item) { return state.tab === 'reels' ? item.reels_caption : item.feed_caption; }
+
+  function card(item) {
+    const isStory = state.tab === 'story';
+    const score = Number(scoreFor(item) || 0);
+    const list = Array.isArray(plan(item)) ? plan(item) : [];
+    const copyText = isStory
+      ? `${item.story_plan?.overlay_text || item.title}\n${item.story_plan?.supporting_text || ''}\n${item.story_plan?.sticker_text || 'Haberi oku'}`
+      : caption(item);
+    return `<article class="tb-ig-card"><img class="tb-ig-image" src="${esc(item.image_url || fallbackImage(item))}" alt="${esc(item.title)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='${esc(fallbackImage(item))}'"><div class="tb-ig-inner"><div class="tb-ig-top"><span class="tb-ig-pill">${state.tab === 'story' ? 'Story' : state.tab === 'reels' ? 'Reels' : state.tab === 'published' ? 'Yayımlanmış · Akış' : 'Akış'} ${score}</span>${item.is_teknoblog ? '<span class="tb-ig-pill owned">Teknoblog’da yayımlandı</span>' : '<span class="tb-ig-pill">Radar konusu</span>'}${isStory ? `<span class="tb-ig-pill">${esc(item.story_plan?.urgency || 'Bugün paylaş')}</span>` : ''}</div><h3>${esc(item.title)}</h3><div class="tb-ig-meta">${esc(item.source_name || 'Kaynak')} · ${esc(fmt(item.published_at || item.created_at))} · ${Number(item.age_hours || 0).toFixed(1)} saat</div><p class="tb-ig-why">${esc(why(item) || '')}</p>${isStory ? `<div class="tb-ig-story-copy"><b>${esc(item.story_plan?.overlay_text || item.title)}</b><span>${esc(item.story_plan?.supporting_text || '')}</span><span>Bağlantı etiketi: ${esc(item.story_plan?.sticker_text || 'Haberi oku')}</span></div>` : ''}${list.length ? `<ol class="tb-ig-plan">${list.map((step) => `<li>${esc(step)}</li>`).join('')}</ol>` : ''}${!isStory && copyText ? `<details class="tb-ig-caption"><summary>Hazır Instagram açıklaması</summary><pre>${esc(copyText)}</pre></details>` : ''}<div class="tb-ig-keywords">${(item.search_keywords || []).map((word) => `<span>${esc(word)}</span>`).join('')}</div><div class="tb-ig-card-actions"><a href="${esc(item.url || '#')}" target="_blank" rel="noopener noreferrer">Haberi aç</a><button class="primary" data-ig-copy="${esc(copyText)}">${isStory ? 'Story metnini kopyala' : 'Açıklamayı kopyala'}</button>${!item.is_teknoblog ? `<button data-ig-queue='${esc(JSON.stringify({ title: item.title, url: item.url, source_name: item.source_name, image_url: item.image_url, priority: score }))}'>＋ Yazılacaklara</button>` : ''}</div></div></article>`;
+  }
+
   function statusText() {
-    if (state.loading) return 'Instagram karusel için son 24 saatin haberleri analiz ediliyor...';
+    if (state.loading) return 'Son haberler ve Instagram format sinyalleri analiz ediliyor…';
     if (state.error) return state.error;
-    const strong = state.items.filter((item) => Number(item.instagram_score || 0) >= 70).length;
-    return `Son kontrol: ${fmtDate(state.refreshedAt) || 'Henüz yüklenmedi'} · Güçlü karusel adayı: ${strong} · Toplam: ${state.items.length}`;
+    const count = state.data.counts?.[state.tab] || items().length;
+    return `Son kontrol ${fmt(state.refreshedAt)} · Bu görünümde ${count} öneri · Son haberler ve son 24 saatlik Radar adayları`;
   }
 
   function render() {
     ensureStyle();
-    const target = findMountTarget();
-    if (!target) return false;
-    let wrap = document.getElementById('tb-instagram-radar-wrap');
-    if (!wrap) { wrap = document.createElement('section'); wrap.id = 'tb-instagram-radar-wrap'; target.appendChild(wrap); }
-    wrap.setAttribute('data-open', state.open ? '1' : '0');
-    const cards = state.items.map((item) => {
-      const img = item.image_url || fallbackImage(item);
-      const slides = Array.isArray(item.slide_plan) ? item.slide_plan : [];
-      return `<article><img class="tb-instagram-image" src="${esc(img)}" alt="${esc(item.title)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='${esc(fallbackImage(item))}'"><div class="tb-instagram-inner"><span class="tb-instagram-badge">Instagram ${Number(item.instagram_score || 0)} · Keşfet adayı</span><h3>${esc(item.title)}</h3><div class="tb-instagram-meta"><span>${esc(item.source_name || 'Kaynak yok')}</span><span>${esc(fmtDate(item.published_at))}</span></div><div class="tb-instagram-angle">${esc(item.carousel_angle || 'Karusel haber formatı')}</div><div class="tb-instagram-hook">${esc(item.hook_text || '')}</div>${slides.length ? `<ol>${slides.map((slide) => `<li>${esc(slide)}</li>`).join('')}</ol>` : ''}<a class="tb-instagram-link" href="${esc(item.url || '#')}" target="_blank" rel="noopener noreferrer">Haberi aç</a></div></article>`;
-    }).join('');
-    wrap.innerHTML = `<div class="tb-instagram-head"><button type="button" class="tb-instagram-toggle" aria-expanded="${state.open ? 'true' : 'false'}"><span>▾</span><b>Instagram Radarı</b></button><button type="button" class="tb-instagram-refresh" ${state.loading ? 'disabled' : ''}>Instagram Adaylarını Yenile</button></div><div class="tb-instagram-body"><div class="tb-instagram-status" data-error="${state.error ? '1' : '0'}">${esc(statusText())}</div>${cards ? `<div class="tb-instagram-grid">${cards}</div>` : '<div class="tb-instagram-empty">Son 24 saat içinde Instagram karusel için yeterli aday bulunamadı.</div>'}</div>`;
-    wrap.querySelector('.tb-instagram-toggle')?.addEventListener('click', () => { state.open = !state.open; localStorage.setItem(STORAGE_KEY, state.open ? '1' : '0'); render(); });
-    wrap.querySelector('.tb-instagram-refresh')?.addEventListener('click', () => fetchItems(true));
+    const mount = findMount();
+    if (!mount) return false;
+    const wrap = mount.id === 'tb-instagram-radar-wrap' ? mount : (() => { const section = document.createElement('section'); section.id = 'tb-instagram-radar-wrap'; mount.appendChild(section); return section; })();
+    wrap.dataset.open = state.open ? '1' : '0';
+    const cards = items().map(card).join('');
+    wrap.innerHTML = `<div class="tb-ig-hero"><div class="tb-ig-head"><div class="tb-ig-title"><span>📸</span><div><h2>Instagram İçerik Merkezi</h2><p>Teknoblog’un son yayınları ve Radar sinyalleri; Story, Reels, Akış ve karusel formatlarına ayrı ayrı değerlendirilir. Puanlar tazelik, görsel anlatım, arama bağlamı, kaydetme/paylaşma niyeti ve gerçek Discover–News sinyallerini birlikte kullanır.</p></div></div><div class="tb-ig-actions"><button data-ig-toggle>${state.open ? 'Daralt' : 'Göster'}</button><button data-ig-refresh ${state.loading ? 'disabled' : ''}>↻ Şimdi yenile</button></div></div><div class="tb-ig-tabs">${tabs.map(([key, label]) => `<button class="tb-ig-tab ${state.tab === key ? 'on' : ''}" data-ig-tab="${key}">${label}<br><small>${state.data.counts?.[key] || 0} öneri</small></button>`).join('')}</div></div><div class="tb-ig-body"><div class="tb-ig-summary" data-error="${state.error ? '1' : '0'}"><b>${esc(statusText())}</b><span>Keşfet</span><span>Instagram arama</span><span>Kaydetme</span><span>Paylaşım</span></div>${cards ? `<div class="tb-ig-grid">${cards}</div>` : '<div class="tb-ig-empty">Bu format için yeterince güçlü ve güncel aday bulunamadı.</div>'}</div>`;
     return true;
   }
 
   async function fetchItems(force = false) {
     if (state.loading && !force) return;
-    state.loading = true;
-    state.error = '';
-    render();
+    state.loading = true; state.error = ''; render();
     try {
-      const url = new URL('/api/recommendations', window.location.origin);
-      url.searchParams.set('sort', 'social_score');
-      url.searchParams.set('_', Date.now().toString());
-      const response = await fetch(url.toString(), { cache: 'no-store', headers: { accept: 'application/json' } });
+      const response = await fetch(`/api/instagram-radar?limit=12&_=${Date.now()}`, { cache: 'no-store', headers: { accept: 'application/json' } });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok || data?.error) throw new Error(data?.error || `HTTP ${response.status}`);
-      state.items = (Array.isArray(data.items) ? data.items : []).filter((item) => ageHours(item) <= 24).map(decorate).filter((item) => item.instagram_score >= 35).sort((a, b) => b.instagram_score - a.instagram_score || new Date(b.published_at || 0) - new Date(a.published_at || 0)).slice(0, 18);
-      state.refreshedAt = new Date().toISOString();
-    } catch (error) {
-      console.error('Instagram radar error:', error);
-      state.error = `Instagram Radarı verisi alınamadı: ${error?.message || 'Bilinmeyen hata'}`;
-    } finally {
-      state.loading = false;
-      render();
-    }
+      if (!response.ok || data.error) throw new Error(data.error || `HTTP ${response.status}`);
+      state.data = data;
+      state.refreshedAt = data.refreshed_at || new Date().toISOString();
+    } catch (error) { state.error = `Instagram verisi alınamadı: ${error?.message || String(error)}`; }
+    finally { state.loading = false; render(); }
   }
+
+  document.addEventListener('click', async (event) => {
+    if (event.target.closest('[data-ig-toggle]')) { state.open = !state.open; localStorage.setItem(OPEN_KEY, state.open ? '1' : '0'); render(); return; }
+    if (event.target.closest('[data-ig-refresh]')) { await fetchItems(true); return; }
+    const tab = event.target.closest('[data-ig-tab]');
+    if (tab) { state.tab = tab.dataset.igTab; state.open = true; localStorage.setItem(TAB_KEY, state.tab); localStorage.setItem(OPEN_KEY, '1'); render(); return; }
+    const copy = event.target.closest('[data-ig-copy]');
+    if (copy) { const original = copy.textContent; try { await navigator.clipboard.writeText(copy.dataset.igCopy || ''); copy.textContent = '✓ Kopyalandı'; setTimeout(() => { copy.textContent = original; }, 1600); } catch (error) { alert(`Kopyalama hatası: ${error.message || error}`); } return; }
+    const queue = event.target.closest('[data-ig-queue]');
+    if (queue) {
+      queue.disabled = true;
+      try {
+        const payload = JSON.parse(queue.dataset.igQueue || '{}');
+        const response = await fetch('/api/intelligence', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'queue_upsert', ...payload }) });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+        queue.textContent = '✓ Yazılacaklarda'; queue.closest('article')?.classList.add('tb-queue-added');
+      } catch (error) { queue.disabled = false; alert(error.message || error); }
+    }
+  });
 
   function start() {
-    if (started) return;
-    started = true;
+    if (started) return; started = true;
     let tries = 0;
-    const wait = setInterval(async () => { tries += 1; if (render() || tries > 60) { clearInterval(wait); await fetchItems(); if (!timer) timer = setInterval(fetchItems, REFRESH_MS); } }, 250);
+    const wait = setInterval(async () => {
+      tries += 1;
+      if (render() || tries > 60) { clearInterval(wait); await fetchItems(); if (!timer) timer = setInterval(fetchItems, REFRESH_MS); }
+    }, 250);
   }
-
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
-  else start();
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true }); else start();
 })();

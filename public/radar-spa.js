@@ -100,7 +100,7 @@
       'product-radar': 'Resmî ürün ve hizmet duyuruları ile doğrulanmış sosyal videoları birlikte izleme.',
       'google-trends': 'Türkiye Google Trends ve teknoloji sinyalleri.',
       'google-news': 'Google News Türkiye teknoloji gündemi.',
-      instagram: 'Instagram karusel ve sosyal medya potansiyeli yüksek içerikler.',
+      instagram: 'Mutlaka paylaşılacak Story’ler, Video Reels fikirleri, Akış/karusel önerileri ve hazır açıklama taslakları.',
       'decision-center': 'Güncel sinyallerden yayın kararına, yazılacaklardan gerçek performansa kadar tek çalışma alanı.'
     };
     return map[tab] || 'Teknoblog Radar paneli.';
