@@ -175,17 +175,31 @@ async function loadLiveOwned() {
     url.searchParams.set('before', `${day}T23:59:59+03:00`);
     url.searchParams.set('per_page', '100');
     url.searchParams.set('page', '1');
-    url.searchParams.set('_fields', 'id,link,date,title,excerpt');
+    url.searchParams.set('_fields', 'id,link,date,title,excerpt,featured_media');
     url.searchParams.set('orderby', 'date');
     url.searchParams.set('order', 'desc');
     const response = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0 TeknoblogRadarInstagram/1.0', accept: 'application/json, */*;q=0.8' }, cache: 'no-store', signal: AbortSignal.timeout(12000) });
     if (!response.ok) throw new Error(`Teknoblog API HTTP ${response.status}`);
     const posts = await response.json();
+    const mediaIds = [...new Set((posts || []).map((post) => Number(post.featured_media) || 0).filter(Boolean))].slice(0, 100);
+    const mediaMap = new Map();
+    if (mediaIds.length) {
+      try {
+        const mediaUrl = new URL('https://www.teknoblog.com/wp-json/wp/v2/media');
+        mediaUrl.searchParams.set('include', mediaIds.join(','));
+        mediaUrl.searchParams.set('per_page', '100');
+        mediaUrl.searchParams.set('_fields', 'id,source_url');
+        const mediaResponse = await fetch(mediaUrl, { headers: { 'user-agent': 'Mozilla/5.0 TeknoblogRadarInstagram/1.0', accept: 'application/json, */*;q=0.8' }, cache: 'no-store', signal: AbortSignal.timeout(12000) });
+        if (mediaResponse.ok) {
+          for (const media of await mediaResponse.json()) mediaMap.set(Number(media.id), media.source_url || '');
+        }
+      } catch {}
+    }
     const items = (posts || []).map((post) => ({
       title: clean(post?.title?.rendered || ''),
       url: post.link || '',
       summary: clean(post?.excerpt?.rendered || ''),
-      image_url: '',
+      image_url: mediaMap.get(Number(post.featured_media)) || '',
       published_at: post.date ? `${post.date}+03:00` : null,
       source_name: 'Teknoblog', is_teknoblog: true, content_origin: 'published_live'
     })).filter((item) => item.title && item.url && ageHours(item) <= MAX_OWNED_HOURS);
