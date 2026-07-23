@@ -40,7 +40,44 @@ function keywords(item = {}) {
 function performanceSignal(item = {}) {
   const discover = logSignal(number(item, 'discover_clicks'), 24) * .55 + logSignal(number(item, 'discover_impressions'), 8) * .45;
   const news = logSignal(number(item, 'google_news_clicks'), 22) * .60 + logSignal(number(item, 'google_news_impressions'), 7) * .40;
-  return clamp(discover * .62 + news * .38, 100);
+  const web = logSignal(number(item, 'web_clicks'), 18) * .65 + logSignal(number(item, 'web_impressions'), 6) * .35;
+  return clamp(discover * .50 + news * .30 + web * .20, 100);
+}
+
+function istanbulDay(value = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Istanbul', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(value));
+  const part = (type) => parts.find((entry) => entry.type === type)?.value || '01';
+  return `${part('year')}-${part('month')}-${part('day')}`;
+}
+function digestSummary(item = {}) {
+  const source = summaryFor(item);
+  if (!source) return 'Günün teknoloji gündeminde öne çıkan bu gelişmenin ayrıntıları Teknoblog’da.';
+  const sentence = source.match(/^.{45,220}?(?:[.!?](?=\s|$)|$)/)?.[0] || source.slice(0, 180);
+  return sentence.length > 180 ? `${sentence.slice(0, 177).trim()}…` : sentence.trim();
+}
+function digestSignals(item = {}) {
+  const clicks = number(item, 'discover_clicks') + number(item, 'google_news_clicks') + number(item, 'web_clicks');
+  const impressions = number(item, 'discover_impressions') + number(item, 'google_news_impressions') + number(item, 'web_impressions');
+  return { clicks, impressions, available: clicks > 0 || impressions > 0 };
+}
+function digestScore(item = {}) {
+  const text = textOf(item);
+  const signal = digestSignals(item);
+  const readScore = logSignal(signal.clicks, 20) * .65 + logSignal(signal.impressions, 7) * .35;
+  return clamp(freshness(item, 24) * .22 + readScore * .38 + (URGENT.test(text) ? 15 : 6)
+    + (TECH.test(text) ? 9 : 0) + (SAVE_SHARE.test(text) ? 7 : 2) + (hasImage(item) ? 6 : 0) + 8, 96);
+}
+
+function channelTemplate(items = [], channel = 'whatsapp') {
+  const numbers = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'];
+  const heading = channel === 'whatsapp' ? '🗞️ *Teknoblog | Günün Öne Çıkan 5 Haberi*' : '📌 Bugün Teknoblog’da öne çıkan 5 haber';
+  const entries = items.map((item, index) => channel === 'whatsapp'
+    ? `${numbers[index]} *${clean(item.title)}*\n${item.digest_summary}\n🔗 ${item.url}`
+    : `${numbers[index]} ${clean(item.title)}\n${item.digest_summary}\nHaberi oku: ${item.url}`);
+  const footer = channel === 'whatsapp'
+    ? 'Teknoloji gündemini kaçırmamak için Teknoblog’u takipte kalın.'
+    : 'Sizin için günün en önemli gelişmesi hangisi? Yanıtınızı paylaşın.';
+  return [heading, ...entries, footer].join('\n\n');
 }
 
 function storyScore(item = {}) {
@@ -157,7 +194,8 @@ function unique(items = [], limit = 10) {
 async function loadOwned() {
   const result = await queryLocal(`SELECT t.title,t.url,t.excerpt AS summary,t.image_url,t.published_at,t.updated_at,
     COALESCE(p.discover_clicks,0)::int AS discover_clicks,COALESCE(p.discover_impressions,0)::int AS discover_impressions,
-    COALESCE(p.google_news_clicks,0)::int AS google_news_clicks,COALESCE(p.google_news_impressions,0)::int AS google_news_impressions
+    COALESCE(p.google_news_clicks,0)::int AS google_news_clicks,COALESCE(p.google_news_impressions,0)::int AS google_news_impressions,
+    COALESCE(p.web_clicks,0)::int AS web_clicks,COALESCE(p.web_impressions,0)::int AS web_impressions
     FROM teknoblog_content t LEFT JOIN published_performance p
       ON regexp_replace(t.url,'/+$','')=regexp_replace(p.url,'/+$','')
     WHERE t.published_at>=NOW()-INTERVAL '48 hours' ORDER BY t.published_at DESC LIMIT 160`);
@@ -241,11 +279,27 @@ export default async function handler(req, res) {
     const feed = unique(combined.filter((item) => item.age_hours <= 24 && item.feed_score >= 46 && !reelUrls.has(item.url))
       .sort((a, b) => b.feed_score - a.feed_score || a.age_hours - b.age_hours), limit);
     const published = unique(owned.sort((a, b) => b.feed_score - a.feed_score || a.age_hours - b.age_hours), limit);
+    const today = istanbulDay();
+    const dailyItems = unique(owned.filter((item) => istanbulDay(item.published_at) === today).map((item) => {
+      const signal = digestSignals(item);
+      return { ...item, digest_score: digestScore(item), digest_summary: digestSummary(item), read_signal_available: signal.available, total_clicks: signal.clicks, total_impressions: signal.impressions };
+    }).sort((a, b) => b.digest_score - a.digest_score || b.total_clicks - a.total_clicks || a.age_hours - b.age_hours), 5);
+    const actualSignalCount = dailyItems.filter((item) => item.read_signal_available).length;
+    const dailyDigest = {
+      items: dailyItems,
+      whatsapp_template: channelTemplate(dailyItems, 'whatsapp'),
+      instagram_template: channelTemplate(dailyItems, 'instagram'),
+      ranking_basis: actualSignalCount
+        ? 'Mevcut Search Console, Discover ve Google News etkileşimi; güncellik ve editoryal önemle birlikte değerlendirildi.'
+        : 'Bugünün performans verileri henüz oluşmadığı için güncellik, editoryal önem, teknoloji odağı ve paylaşılabilirlik kullanıldı.',
+      actual_signal_count: actualSignalCount,
+      generated_at: nowIso()
+    };
 
     return json(res, 200, {
-      story, reels, feed, published,
+      story, reels, feed, published, daily_digest: dailyDigest,
       items: feed,
-      counts: { story: story.length, reels: reels.length, feed: feed.length, published: published.length },
+      counts: { story: story.length, reels: reels.length, feed: feed.length, published: published.length, digest: dailyItems.length },
       windows: { story_hours: 24, radar_hours: MAX_CANDIDATE_HOURS, published_hours: MAX_OWNED_HOURS },
       refreshed_at: nowIso(),
       scoring: {
