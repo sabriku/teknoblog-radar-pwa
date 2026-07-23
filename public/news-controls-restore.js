@@ -31,13 +31,16 @@
   function ensureToolbar() {
     const existing = document.getElementById('tb-news-toolbar');
     const status = document.getElementById('tb-status');
+    let created = false;
     if (!existing && status?.parentElement) {
       status.insertAdjacentHTML('beforebegin', toolbarHtml());
+      created = true;
     }
 
     const select = document.getElementById('tb-sort');
-    if (select && select.value !== DEFAULT_SORT) {
-      select.value = DEFAULT_SORT;
+    if (created && select) {
+      const saved = localStorage.getItem('tb_news_sort');
+      select.value = [...select.options].some((option) => option.value === saved) ? saved : DEFAULT_SORT;
       if (isNewsVisible()) select.dispatchEvent(new Event('change', { bubbles: true }));
     }
   }

@@ -440,7 +440,8 @@ export default async function handler(req, res) {
     }
 
     enriched.sort((a, b) => compareItems(a, b, sortKey));
-    enriched = diversifyItems(enriched, sortKey);
+    const diversityApplied = String(req.query?.diversify || '') === '1';
+    if (diversityApplied) enriched = diversifyItems(enriched, sortKey);
     if (intelligenceModel) {
       try { await savePredictions(enriched, intelligenceModel.model_version); } catch {}
     }
@@ -454,6 +455,7 @@ export default async function handler(req, res) {
         candidate_count: candidateItems.length,
         raw_fallback_count: rawFallback.length,
         returned_count: Math.min(enriched.length, 500),
+        diversity_applied: diversityApplied,
         scoring_model: intelligenceModel ? 'intelligence_v1' : 'calibrated_v2',
         intelligence_model_version: intelligenceModel?.model_version || null,
         intelligence_sample_count: intelligenceModel?.sample_count || 0,

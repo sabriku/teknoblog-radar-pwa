@@ -1,5 +1,7 @@
 (() => {
   const VIEW_KEY = 'tb_news_card_view';
+  const SORT_KEY = 'tb_news_sort';
+  const VALID_SORTS = new Set(['discover_score', 'traffic_score', 'published_at', 'total_score', 'conversion_score', 'social_score', 'editorial_score']);
   const VALID_VIEWS = new Set(['cards-2', 'cards-3', 'cards-4', 'stack', 'compact', 'list']);
   const VIEW_LABELS = {
     'cards-2': ['▦', '2 sütun'],
@@ -10,18 +12,20 @@
     list: ['☰', 'Liste']
   };
   const savedView = localStorage.getItem(VIEW_KEY);
+  const savedSort = localStorage.getItem(SORT_KEY);
 
   const state = {
     items: [],
     sources: [],
-    sort: 'published_at',
+    sort: VALID_SORTS.has(savedSort) ? savedSort : 'discover_score',
     source: 'all',
     view: VALID_VIEWS.has(savedView) ? savedView : 'cards-3',
     page: 1,
     pageSize: 20,
     selected: new Set(),
     loading: false,
-    lastError: ''
+    lastError: '',
+    requestSequence: 0
   };
 
   const esc = (value) => String(value ?? '')
@@ -278,11 +282,15 @@
   }
 
   async function loadRecommendations() {
+    const requestId = ++state.requestSequence;
+    const requestedSort = state.sort;
     try {
       state.lastError = '';
-      const data = await fetchJson(`/api/recommendations?sort=${encodeURIComponent(state.sort)}&t=${Date.now()}`, { timeoutMs: 25000 });
+      const data = await fetchJson(`/api/recommendations?sort=${encodeURIComponent(requestedSort)}&t=${Date.now()}`, { timeoutMs: 25000 });
+      if (requestId !== state.requestSequence || requestedSort !== state.sort) return;
       state.items = Array.isArray(data.items) ? data.items : [];
     } catch (error) {
+      if (requestId !== state.requestSequence || requestedSort !== state.sort) return;
       state.items = [];
       state.lastError = error?.message || String(error);
     }
@@ -324,7 +332,9 @@
   function bind() {
     document.addEventListener('change', (event) => {
       if (event.target?.id === 'tb-sort') {
-        state.sort = event.target.value;
+        const nextSort = VALID_SORTS.has(event.target.value) ? event.target.value : 'discover_score';
+        state.sort = nextSort;
+        localStorage.setItem(SORT_KEY, nextSort);
         state.page = 1;
         state.source = 'all';
         loadRecommendations();
