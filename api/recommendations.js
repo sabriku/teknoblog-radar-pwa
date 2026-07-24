@@ -43,6 +43,35 @@ const SOCIAL_PATTERNS = [
   /yasak|tepki|iddia|sızıntı|gündem|viral|kapatma|özellik|değişiklik|kriz/i
 ];
 
+const BRAND_PATTERNS = [
+  ['Samsung', /\bsamsung\b|\bgalaxy\b|\bone\s*ui\b/i],
+  ['Apple', /\bapple\b|\biphone\b|\bipad\b|\bmacbook\b|\bmacos\b|\bvision\s*pro\b/i],
+  ['Google', /\bgoogle\b|\bandroid\b|\bpixel\b|\bgemini\b|\bchrome\b|\byoutube\b/i],
+  ['OpenAI', /\bopenai\b|\bchatgpt\b|\bsora\b/i],
+  ['Microsoft', /\bmicrosoft\b|\bwindows\b|\bcopilot\b|\bxbox\b/i],
+  ['Xiaomi', /\bxiaomi\b|\bredmi\b|\bpoco\b|\bhyperos\b/i],
+  ['Huawei', /\bhuawei\b|\bharmonyos\b|\bmately\b/i],
+  ['Honor', /\bhonor\b|\bmagic\s*[0-9a-z]+\b/i],
+  ['OPPO / OnePlus', /\boppo\b|\boneplus\b|\bcoloros\b|\boxygenos\b/i],
+  ['vivo', /\bvivo\b|\biqoo\b/i],
+  ['Meta', /\bmeta\b|\bwhatsapp\b|\binstagram\b|\bfacebook\b|\bthreads\b/i],
+  ['NVIDIA', /\bnvidia\b|\bgeforce\b|\brtx\b/i],
+  ['AMD', /\bamd\b|\bryzen\b|\bradeon\b/i],
+  ['Intel', /\bintel\b|\bcore\s*ultra\b/i],
+  ['Qualcomm', /\bqualcomm\b|\bsnapdragon\b/i],
+  ['Garmin', /\bgarmin\b/i],
+  ['Sony', /\bsony\b|\bplaystation\b|\bxperia\b/i],
+  ['Nintendo', /\bnintendo\b|\bswitch\b/i],
+  ['Amazon', /\bamazon\b|\balexa\b|\bkindle\b/i],
+  ['Tesla', /\btesla\b/i],
+  ['SpaceX', /\bspacex\b|\bstarlink\b/i],
+  ['Nothing', /\bnothing\b|\bcmf\b/i],
+  ['DJI', /\bdji\b/i],
+  ['Adobe', /\badobe\b|\bphotoshop\b/i],
+  ['Lenovo / Motorola', /\blenovo\b|\bmotorola\b|\bmoto\b/i],
+  ['ASUS', /\basus\b|\brog\b|\bzenfone\b/i]
+];
+
 function scoreValue(item, key) {
   const value = Number(item?.[key]);
   return Number.isFinite(value) ? value : 0;
@@ -70,6 +99,14 @@ function textOf(item = {}) {
     item.canonical_url,
     item.link
   ].filter(Boolean).join(' ').toLowerCase();
+}
+
+function brandName(item = {}) {
+  const title = String(item.title || '').toLocaleLowerCase('tr-TR');
+  const context = [item.summary, item.excerpt, item.description].filter(Boolean).join(' ').toLocaleLowerCase('tr-TR');
+  for (const [name, pattern] of BRAND_PATTERNS) if (pattern.test(title)) return name;
+  for (const [name, pattern] of BRAND_PATTERNS) if (pattern.test(context)) return name;
+  return 'Diğer teknoloji';
 }
 
 function hasTechSignal(item = {}) {
@@ -272,6 +309,7 @@ function withRadarScores(item = {}, learnedTerms = new Map(), modelRow = null) {
   if (isHardNoise(item)) reasons.push({ signal: 'noise', impact: -40, label: 'Gürültü filtresi riski' });
   return {
     ...item,
+    brand_name: brandName(item),
     ...originalScores,
     radar_discover_score: discover,
     radar_traffic_score: traffic,
@@ -355,6 +393,7 @@ function diversifyItems(items = [], sortKey = 'published_at') {
   const selected = [];
   const sourceCounts = new Map();
   const topicCounts = new Map();
+  const brandCounts = new Map();
   const target = Math.min(120, remaining.length);
   while (selected.length < target && remaining.length) {
     let bestIndex = 0;
@@ -363,17 +402,23 @@ function diversifyItems(items = [], sortKey = 'published_at') {
       const item = remaining[index];
       const source = String(item.source_name || 'unknown').toLocaleLowerCase('tr-TR');
       const topic = primaryTopicKey(item);
+      const brand = item.brand_name || brandName(item);
       const sourcePenalty = Math.max(0, (sourceCounts.get(source) || 0) - 1) * 5;
       const topicPenalty = Math.max(0, (topicCounts.get(topic) || 0) - 2) * 4;
-      const value = adjustedScore(item, sortKey) - sourcePenalty - topicPenalty - index * .015;
+      const brandCount = brandCounts.get(brand) || 0;
+      const brandPenalty = brand === 'Diğer teknoloji' ? Math.max(0, brandCount - 3) * 3
+        : brandCount === 0 ? 0 : brandCount === 1 ? 2 : 11 + (brandCount - 2) * 8;
+      const value = adjustedScore(item, sortKey) - sourcePenalty - topicPenalty - brandPenalty - index * .015;
       if (value > bestValue) { bestValue = value; bestIndex = index; }
     }
     const [picked] = remaining.splice(bestIndex, 1);
     const source = String(picked.source_name || 'unknown').toLocaleLowerCase('tr-TR');
     const topic = primaryTopicKey(picked);
+    const brand = picked.brand_name || brandName(picked);
     picked.diversity_rank = selected.length + 1;
     sourceCounts.set(source, (sourceCounts.get(source) || 0) + 1);
     topicCounts.set(topic, (topicCounts.get(topic) || 0) + 1);
+    brandCounts.set(brand, (brandCounts.get(brand) || 0) + 1);
     selected.push(picked);
   }
   return [...selected, ...remaining];
@@ -440,7 +485,8 @@ export default async function handler(req, res) {
     }
 
     enriched.sort((a, b) => compareItems(a, b, sortKey));
-    const diversityApplied = String(req.query?.diversify || '') === '1';
+    const diversitySetting = String(req.query?.diversify || '');
+    const diversityApplied = diversitySetting === '0' ? false : discoverMode || diversitySetting === '1';
     if (diversityApplied) enriched = diversifyItems(enriched, sortKey);
     if (intelligenceModel) {
       try { await savePredictions(enriched, intelligenceModel.model_version); } catch {}
@@ -456,6 +502,7 @@ export default async function handler(req, res) {
         raw_fallback_count: rawFallback.length,
         returned_count: Math.min(enriched.length, 500),
         diversity_applied: diversityApplied,
+        diversity_mode: diversityApplied ? 'source_topic_brand_balanced' : 'strict_score',
         scoring_model: intelligenceModel ? 'intelligence_v1' : 'calibrated_v2',
         intelligence_model_version: intelligenceModel?.model_version || null,
         intelligence_sample_count: intelligenceModel?.sample_count || 0,

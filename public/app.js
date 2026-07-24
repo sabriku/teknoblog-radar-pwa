@@ -1,6 +1,7 @@
 (() => {
   const VIEW_KEY = 'tb_news_card_view';
   const SORT_KEY = 'tb_news_sort';
+  const BRAND_DIVERSITY_KEY = 'tb_news_brand_diversity';
   const VALID_SORTS = new Set(['discover_score', 'traffic_score', 'published_at', 'total_score', 'conversion_score', 'social_score', 'editorial_score']);
   const VALID_VIEWS = new Set(['cards-2', 'cards-3', 'cards-4', 'stack', 'compact', 'list']);
   const VIEW_LABELS = {
@@ -25,7 +26,8 @@
     selected: new Set(),
     loading: false,
     lastError: '',
-    requestSequence: 0
+    requestSequence: 0,
+    brandDiversity: localStorage.getItem(BRAND_DIVERSITY_KEY) !== '0'
   };
 
   const esc = (value) => String(value ?? '')
@@ -58,6 +60,7 @@
   function url(item) { return pick(item?.url, item?.canonical_url, item?.link, item?.article_url, item?.target_url, item?.source_url, item?.site_url); }
   function image(item) { return pick(item?.image_url, item?.image, item?.thumbnail, item?.thumb_url, item?.media_url); }
   function sourceName(item) { return pick(item?.source_name, 'Kaynak yok'); }
+  function brandName(item) { return pick(item?.brand_name, 'Diğer teknoloji'); }
 
   function formatDate(value) {
     const date = new Date(value || 0);
@@ -90,6 +93,11 @@
     return visibleItems().sort((a, b) => {
       if (state.sort === 'published_at') return timestamp(b) - timestamp(a);
       if (state.sort === 'discover_score') {
+        if (state.brandDiversity) {
+          const rankA = Number(a?.diversity_rank);
+          const rankB = Number(b?.diversity_rank);
+          if (Number.isFinite(rankA) && Number.isFinite(rankB) && rankA !== rankB) return rankA - rankB;
+        }
         const diff = score(b, 'discover_score') - score(a, 'discover_score');
         return diff || timestamp(b) - timestamp(a);
       }
@@ -171,7 +179,7 @@
     if (!wrap) return;
     const names = ['all', ...new Set(state.items.map(sourceName).filter(Boolean))].sort((a, b) => a === 'all' ? -1 : b === 'all' ? 1 : a.localeCompare(b, 'tr'));
     if (!names.includes(state.source)) state.source = 'all';
-    wrap.innerHTML = `<label for="tb-source-select" style="font-size:13px;font-weight:800;color:#111827;white-space:nowrap">Kaynak</label><select id="tb-source-select" style="min-width:260px;max-width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:12px;background:#fff;font-weight:800;color:#374151">${names.map((name) => `<option value="${esc(name)}"${state.source === name ? ' selected' : ''}>${esc(name === 'all' ? 'Tüm kaynaklar' : name)}</option>`).join('')}</select>`;
+    wrap.innerHTML = `<label for="tb-source-select" style="font-size:13px;font-weight:800;color:#111827;white-space:nowrap">Kaynak</label><select id="tb-source-select" style="min-width:260px;max-width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:12px;background:#fff;font-weight:800;color:#374151">${names.map((name) => `<option value="${esc(name)}"${state.source === name ? ' selected' : ''}>${esc(name === 'all' ? 'Tüm kaynaklar' : name)}</option>`).join('')}</select>${state.sort === 'discover_score' ? `<button type="button" class="tb-view-btn" data-brand-diversity aria-pressed="${state.brandDiversity ? 'true' : 'false'}" title="Tek bir markanın Discover listesini kaplamasını önler"><span class="tb-view-icon">◈</span><span>Dengeli marka dağılımı</span></button>` : ''}`;
   }
 
   function renderViewBar() {
@@ -218,7 +226,7 @@
       ${imageBlock}
       <div style="padding:${padding};display:flex;flex-direction:column;gap:10px">
         ${selectInline}
-        <div style="display:flex;gap:6px;flex-wrap:wrap">${scoreBadge('Genel', score(item, 'total_score'), '#c2410c', '★')}${scoreBadge('Discover', score(item, 'discover_score'), '#2563eb', 'G')}${scoreBadge('Trafik', score(item, 'traffic_score'), '#15803d', '↗')}${scoreBadge('Güven', score(item, 'score_confidence'), '#6d28d9', '✓')}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${scoreBadge('Genel', score(item, 'total_score'), '#c2410c', '★')}${scoreBadge('Discover', score(item, 'discover_score'), '#2563eb', 'G')}${scoreBadge('Trafik', score(item, 'traffic_score'), '#15803d', '↗')}${scoreBadge('Güven', score(item, 'score_confidence'), '#6d28d9', '✓')}<span style="display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;background:#f1f5f9;color:#475569;font-size:11px;font-weight:800">◈ ${esc(brandName(item))}</span></div>
         ${item.discover_probability != null ? `<div style="display:flex;gap:6px;flex-wrap:wrap;background:#f8fafc;border:1px solid #e2e8f0;border-radius:11px;padding:8px;font-size:11px;font-weight:900;color:#334155"><span>✨ Discover olasılığı %${Number(item.discover_probability)}</span><span>📰 News %${Number(item.news_probability||0)}</span>${item.editorial_probability != null ? `<span>✍️ Editoryal tercih %${Number(item.editorial_probability)}</span>` : ''}<span>🎯 Model güveni %${Number(item.intelligence_confidence||0)}</span><span>Beklenen tıklama ${Number(item.expected_clicks_low||0)}–${Number(item.expected_clicks_high||0)}</span></div>` : ''}
         <h3 style="margin:0;font:700 ${titleSize}/1.25 'Fira Sans Condensed',sans-serif;color:#111827">${esc(title(item))}</h3>
         <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:12px;color:#64748b;font-weight:800"><span>🕒 ${esc(date)}</span><span>🏷 ${esc(sourceName(item))}</span></div>
@@ -243,7 +251,7 @@
     status.textContent = state.lastError
       ? `Hata: ${state.lastError}`
       : state.sort === 'discover_score'
-        ? `${all.length} içerik listeleniyor, Discover için son 24 saat filtresi aktif`
+        ? `${all.length} içerik listeleniyor, Discover için son 24 saat filtresi aktif${state.brandDiversity ? ` · İlk 20’de ${new Set(sortedItems().slice(0, 20).map(brandName)).size} marka/konu grubu` : ' · Ham puan sırası'}`
         : `${all.length} içerik listeleniyor`;
     grid.className = `tb-news-grid ${state.view}`;
     grid.style.display = 'grid';
@@ -286,7 +294,7 @@
     const requestedSort = state.sort;
     try {
       state.lastError = '';
-      const data = await fetchJson(`/api/recommendations?sort=${encodeURIComponent(requestedSort)}&t=${Date.now()}`, { timeoutMs: 25000 });
+      const data = await fetchJson(`/api/recommendations?sort=${encodeURIComponent(requestedSort)}&diversify=${state.brandDiversity ? '1' : '0'}&t=${Date.now()}`, { timeoutMs: 25000 });
       if (requestId !== state.requestSequence || requestedSort !== state.sort) return;
       state.items = Array.isArray(data.items) ? data.items : [];
     } catch (error) {
@@ -351,6 +359,13 @@
       }
     });
     document.addEventListener('click', async (event) => {
+      if (event.target.closest('[data-brand-diversity]')) {
+        state.brandDiversity = !state.brandDiversity;
+        localStorage.setItem(BRAND_DIVERSITY_KEY, state.brandDiversity ? '1' : '0');
+        state.page = 1;
+        await loadRecommendations();
+        return;
+      }
       const viewButton = event.target.closest('[data-view]');
       if (viewButton) {
         const nextView = VALID_VIEWS.has(viewButton.getAttribute('data-view')) ? viewButton.getAttribute('data-view') : 'cards-3';
