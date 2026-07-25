@@ -29,6 +29,19 @@ function sigmoid(value) { return 1 / (1 + Math.exp(-Math.max(-12, Math.min(12, v
 function logit(value) { const p = Math.max(.02, Math.min(.98, Number(value) || .02)); return Math.log(p / (1 - p)); }
 function clamp(value, min = 0, max = 100) { return Math.max(min, Math.min(max, value)); }
 
+const BRAND_TERMS = new Set(['apple', 'iphone', 'ipad', 'macbook', 'google', 'android', 'pixel', 'samsung', 'galaxy', 'xiaomi', 'huawei', 'honor', 'oppo', 'vivo', 'oneplus', 'microsoft', 'windows', 'nvidia', 'amd', 'intel']);
+
+// Historical success should teach the Radar which story patterns work, without
+// allowing one launch-heavy brand or one prolific source to own the ranking.
+export function intelligenceFeatureWeight(feature = '') {
+  if (feature.startsWith('entity:')) return .28;
+  if (feature.startsWith('source:')) return .4;
+  if (feature.startsWith('topic:')) return .72;
+  if (feature.startsWith('term:') && BRAND_TERMS.has(feature.slice(5))) return .22;
+  if (feature.startsWith('term:')) return .75;
+  return 1;
+}
+
 export function extractIntelligenceFeatures(item = {}) {
   const title = clean(item.title || '');
   const body = clean([item.title, item.summary, item.excerpt, item.description].filter(Boolean).join(' '));
@@ -90,8 +103,9 @@ function channelPrediction(channel, features, heuristic) {
     const stat = channel.features?.[feature];
     if (!stat) continue;
     const strength = Math.min(1, Number(stat.total || 0) / 12);
-    const effect = clamp(Number(stat.lift || 0), -1.3, 1.3) * strength;
-    evidence.push({ feature, effect, total: stat.total, rate: stat.rate });
+    const regularization = intelligenceFeatureWeight(feature);
+    const effect = clamp(Number(stat.lift || 0), -1.3, 1.3) * strength * regularization;
+    evidence.push({ feature, effect, total: stat.total, rate: stat.rate, regularization });
   }
   evidence.sort((a, b) => Math.abs(b.effect) - Math.abs(a.effect));
   for (const row of evidence.slice(0, 7)) value += row.effect * .55;
@@ -203,7 +217,8 @@ export async function trainIntelligenceModel() {
     feature_count_discover: Object.keys(discover.features).length,
     feature_count_news: Object.keys(news.features).length,
     feature_count_editorial: Object.keys(editorial?.features || {}).length,
-    evaluation
+    evaluation,
+    learning_policy: { name: 'brand_regularized_v2', brand_weight: .28, source_weight: .4, story_pattern_weight: 1 }
   };
   const scoreOf = (row) => Number(row?.metrics?.evaluation?.discover?.balanced_accuracy || 0) * .62 + Number(row?.metrics?.evaluation?.news?.balanced_accuracy || 0) * .38;
   const candidateScore = scoreOf({ metrics }); const activeScore = scoreOf(previousActive);
