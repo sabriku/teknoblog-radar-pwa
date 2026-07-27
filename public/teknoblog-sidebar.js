@@ -21,6 +21,7 @@
   }
 
   function todayKey() { return dayKey(new Date()); }
+  function formatNumber(value) { return new Intl.NumberFormat('tr-TR').format(Math.max(0, Number(value) || 0)); }
 
   function escapeHtml(value) {
     return String(value ?? '')
@@ -108,6 +109,10 @@
       }
       list.innerHTML = items.map((item, index) => {
         const dateText = formatDate(item.published_at || item.created_at || item.updated_at);
+        const analytics = item.analytics || {};
+        const performance = analytics.available
+          ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px"><span style="padding:3px 6px;border-radius:999px;background:#ecfdf5;color:#047857;font-size:10px;font-weight:900">👤 Tekil ${formatNumber(analytics.unique_visitors)}</span><span style="padding:3px 6px;border-radius:999px;background:#eff6ff;color:#1d4ed8;font-size:10px;font-weight:900">👁 Görüntülenme ${formatNumber(analytics.page_views)}</span></div>`
+          : '<div style="margin-top:7px;font-size:10px;color:#94a3b8;font-weight:800">GA4 verisi bekleniyor</div>';
         return `
           <a href="${escapeHtml(item.url || item.link || '#')}" target="_blank" rel="noopener noreferrer" style="display:block;padding:10px 12px;border:1px solid #e5e7eb;border-radius:12px;text-decoration:none;color:#111827;background:#fff">
             <div style="display:flex;gap:8px;align-items:flex-start">
@@ -115,6 +120,7 @@
               <div style="min-width:0">
                 <div style="font-weight:800;line-height:1.35;overflow-wrap:anywhere">${escapeHtml(item.title)}</div>
                 <div style="margin-top:6px;font-size:12px;color:#64748b">${escapeHtml(dateText || 'Tarih yok')}</div>
+                ${performance}
               </div>
             </div>
           </a>
@@ -158,6 +164,8 @@
     observer.observe(document.body, { childList: true, subtree: true });
     window.addEventListener('hashchange', () => setTimeout(insertPanel, 50));
     window.addEventListener('load', insertPanel);
+    window.setInterval(() => { if (document.visibilityState === 'visible') loadLatest(); }, 5 * 60 * 1000);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') loadLatest(); });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });

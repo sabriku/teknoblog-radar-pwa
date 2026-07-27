@@ -1,4 +1,4 @@
-import { json, safeText } from './_lib.js';
+import { json, queryLocal, safeText } from './_lib.js';
 
 function getIstanbulDayBounds() {
   const now = new Date();
@@ -69,7 +69,30 @@ export default async function handler(req, res) {
       .filter((item) => item.title && item.url)
       .sort((a, b) => new Date(b.published_at || 0).getTime() - new Date(a.published_at || 0).getTime());
 
-    return json(res, 200, { items, day_key: dayKey, total: items.length });
+    try {
+      const normalizedUrls = items.map((item) => item.url.replace(/[?#].*$/, '').replace(/\/+$/, ''));
+      if (normalizedUrls.length) {
+        const performance = await queryLocal(`SELECT url,ga4_views,ga4_active_users,ga4_sessions,ga4_engaged_sessions,ga4_engagement_seconds,ga4_engagement_rate,observed_at,
+          COALESCE(payload ? 'ga4',false) AS ga4_available
+          FROM published_performance WHERE regexp_replace(split_part(split_part(url,'?',1),'#',1),'/+$','')=ANY($1::text[])`, [normalizedUrls]);
+        const byUrl = new Map(performance.rows.map((row) => [String(row.url || '').replace(/[?#].*$/, '').replace(/\/+$/, ''), row]));
+        for (const item of items) {
+          const metrics = byUrl.get(item.url.replace(/[?#].*$/, '').replace(/\/+$/, ''));
+          item.analytics = metrics ? {
+            available: Boolean(metrics.ga4_available),
+            unique_visitors: Math.round(Number(metrics.ga4_active_users) || 0),
+            page_views: Math.round(Number(metrics.ga4_views) || 0),
+            sessions: Math.round(Number(metrics.ga4_sessions) || 0),
+            engagement_rate: Number(metrics.ga4_engagement_rate) || 0,
+            updated_at: metrics.observed_at || null
+          } : { available: false };
+        }
+      }
+    } catch {
+      for (const item of items) item.analytics = { available: false };
+    }
+
+    return json(res, 200, { items, day_key: dayKey, total: items.length, analytics_source: 'GA4 · yerel PostgreSQL önbelleği' });
   } catch (error) {
     return json(res, 500, { error: error?.message || String(error) });
   }
