@@ -14,6 +14,8 @@ const HIGH_IMPACT = /kritik|acil|yasak|mahkeme|ceza|geri çağır|güvenlik aç�
 const LAUNCH_IMPACT = /tanıttı|duyurdu|lansman|piyasaya çıktı|satışa çıktı|ön sipariş|yeni model|yeni ürün|yeni hizmet|ilk kez/i;
 const BROAD_REACH = /iphone|ios|android|samsung|galaxy|whatsapp|instagram|youtube|google|chatgpt|openai|gemini|windows|playstation|xbox|nintendo|telefon|yapay zeka/i;
 const PRACTICAL_IMPACT = /fiyat|indirim|zam|ücretsiz|güncelleme|hangi modeller|destek sona|nasıl|rehber|liste|karşılaştırma|pil|batarya|gizlilik/i;
+const IMMEDIATE_INFO = /kritik|acil|çöktü|erişim|güvenlik|veri ihlali|dolandırıcılık|yasak|geri çağır|güncelleme|fiyat|zam|indirim|satışa çıktı|ön sipariş/i;
+const VISUAL_CURIOSITY = /ilk kez|tasarım|kamera|katlanabilir|robot|otomobil|uzay|rekor|şaşırt|gösterdi|tanıttı|ortaya çıktı|sızıntı|karşılaştırma/i;
 const TOPIC_FAMILIES = [
   ['apple', /apple|iphone|ipad|ios|macbook|macos/i], ['samsung', /samsung|galaxy|one ui/i],
   ['google-android', /google|android|pixel|gemini|chrome/i], ['ai', /openai|chatgpt|claude|copilot|yapay zeka/i],
@@ -115,6 +117,45 @@ export function digestScoreBreakdown(item = {}) {
   return { ...parts, total: clamp(Object.values(parts).reduce((sum, value) => sum + value, 0), 96) };
 }
 export function digestScore(item = {}) { return digestScoreBreakdown(item).total; }
+
+function utilityValue(item = {}) {
+  const text = textOf(item);
+  return clamp((IMMEDIATE_INFO.test(text) ? 64 : 24) + (PRACTICAL_IMPACT.test(text) ? 24 : 0) + (BROAD_REACH.test(text) ? 12 : 0), 100);
+}
+
+function curiosityValue(item = {}) {
+  const text = textOf(item);
+  return clamp((VISUAL_CURIOSITY.test(text) ? 66 : 26) + (LAUNCH_IMPACT.test(text) ? 18 : 0) + (REELS.test(text) ? 10 : 0) + (hasImage(item) ? 6 : 0), 100);
+}
+
+export function whatsappChannelScoreBreakdown(item = {}) {
+  const parts = {
+    editorial_importance: Math.round(editorialImportance(item) * .34),
+    actual_performance: Math.round(performanceSignal(item) * .24),
+    freshness: Math.round(freshness(item, 24) * .18),
+    utility: Math.round(utilityValue(item) * .14),
+    broad_reach: BROAD_REACH.test(textOf(item)) ? 10 : 0
+  };
+  return { ...parts, total: clamp(Object.values(parts).reduce((sum, value) => sum + value, 0), 96) };
+}
+
+export function whatsappChannelScore(item = {}) { return whatsappChannelScoreBreakdown(item).total; }
+
+export function instagramChannelScoreBreakdown(item = {}) {
+  const socialDiscover = (number(item, 'social_score') + number(item, 'discover_score')) / 2;
+  const parts = {
+    editorial_importance: Math.round(editorialImportance(item) * .23),
+    share_save_value: Math.round(shareIntent(item) * .20),
+    visual: hasImage(item) ? 15 : 0,
+    actual_performance: Math.round(performanceSignal(item) * .14),
+    social_discover_fit: Math.round(socialDiscover * .13),
+    curiosity: Math.round(curiosityValue(item) * .08),
+    freshness: Math.round(freshness(item, 24) * .07)
+  };
+  return { ...parts, total: clamp(Object.values(parts).reduce((sum, value) => sum + value, 0), 96) };
+}
+
+export function instagramChannelScore(item = {}) { return instagramChannelScoreBreakdown(item).total; }
 
 function channelTemplate(items = [], channel = 'whatsapp') {
   const numbers = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'];
@@ -269,6 +310,54 @@ export function selectDiverse(items = [], scoreKey = 'story_score', limit = 10, 
   return selected.sort((a, b) => number(b, scoreKey) - number(a, scoreKey) || editorialImportance(b) - editorialImportance(a) || ageHours(a) - ageHours(b));
 }
 
+function selectPlatformItems(items = [], scoreKey, limit, otherUrls = new Set(), maxOverlap = Number.POSITIVE_INFINITY) {
+  const ranked = [...items].sort((a, b) => number(b, scoreKey) - number(a, scoreKey) || editorialImportance(b) - editorialImportance(a) || ageHours(a) - ageHours(b));
+  const selected = [];
+  const familyCounts = new Map();
+  let overlap = 0;
+  for (const maxPerFamily of [1, 2, Number.POSITIVE_INFINITY]) {
+    for (const item of ranked) {
+      if (selected.includes(item) || selected.length >= limit) continue;
+      const shared = otherUrls.has(urlKey(item.url));
+      if (shared && overlap >= maxOverlap) continue;
+      const family = item.topic_family || topicFamily(item);
+      if ((familyCounts.get(family) || 0) >= maxPerFamily) continue;
+      selected.push(item);
+      familyCounts.set(family, (familyCounts.get(family) || 0) + 1);
+      if (shared) overlap += 1;
+    }
+    if (selected.length >= limit) break;
+  }
+  return selected.sort((a, b) => number(b, scoreKey) - number(a, scoreKey) || editorialImportance(b) - editorialImportance(a) || ageHours(a) - ageHours(b));
+}
+
+export function selectChannelPair(items = [], limit = 5) {
+  const scored = items.map((item) => {
+    const whatsappBreakdown = whatsappChannelScoreBreakdown(item);
+    const instagramBreakdown = instagramChannelScoreBreakdown(item);
+    return {
+      ...item,
+      whatsapp_channel_score: whatsappBreakdown.total,
+      whatsapp_channel_breakdown: whatsappBreakdown,
+      instagram_channel_score: instagramBreakdown.total,
+      instagram_channel_breakdown: instagramBreakdown
+    };
+  });
+  const whatsappItems = selectPlatformItems(scored, 'whatsapp_channel_score', limit);
+  const whatsappUrls = new Set(whatsappItems.map((item) => urlKey(item.url)));
+  const instagramRanked = scored.map((item) => ({
+    ...item,
+    instagram_selection_score: Math.max(0, item.instagram_channel_score - (whatsappUrls.has(urlKey(item.url)) ? 10 : 0))
+  }));
+  const instagramItems = selectPlatformItems(instagramRanked, 'instagram_selection_score', limit, whatsappUrls, Math.min(2, limit));
+  const instagramUrls = new Set(instagramItems.map((item) => urlKey(item.url)));
+  return {
+    whatsappItems,
+    instagramItems,
+    overlapCount: whatsappItems.filter((item) => instagramUrls.has(urlKey(item.url))).length
+  };
+}
+
 async function loadOwned() {
   const result = await queryLocal(`SELECT t.title,t.url,t.excerpt AS summary,t.image_url,t.published_at,t.updated_at,
     COALESCE(p.discover_clicks,0)::int AS discover_clicks,COALESCE(p.discover_impressions,0)::int AS discover_impressions,
@@ -363,15 +452,20 @@ export default async function handler(req, res) {
       const breakdown = digestScoreBreakdown(item);
       return { ...item, digest_score: breakdown.total, digest_score_breakdown: breakdown, digest_summary: digestSummary(item), read_signal_available: signal.available, total_clicks: signal.clicks, total_impressions: signal.impressions, topic_family: item.topic_family || topicFamily(item) };
     }), 80);
-    const dailyItems = selectDiverse(digestCandidates, 'digest_score', 5, 1);
-    const actualSignalCount = dailyItems.filter((item) => item.read_signal_available).length;
+    const { whatsappItems, instagramItems, overlapCount } = selectChannelPair(digestCandidates, 5);
+    const allDailyItems = unique([...whatsappItems, ...instagramItems], 10);
+    const actualSignalCount = allDailyItems.filter((item) => item.read_signal_available).length;
     const dailyDigest = {
-      items: dailyItems,
-      whatsapp_template: channelTemplate(dailyItems, 'whatsapp'),
-      instagram_template: channelTemplate(dailyItems, 'instagram'),
-      ranking_basis: actualSignalCount
-        ? 'Puan sırası: editoryal önem %34, gerçek Discover–News–Web performansı %28, paylaşım değeri %14, tazelik %12, görsel %6 ve kitle genişliği %6. Aynı konu ailesinden en fazla bir haber ilk seçim turuna girer.'
-        : 'Puan sırası: editoryal önem %34, paylaşım değeri %14, tazelik %12, görsel %6 ve kitle genişliği %6. Güncel performans oluştuğunda %28 ağırlıkla otomatik eklenir; aynı marka/konunun listeyi kaplaması engellenir.',
+      items: allDailyItems,
+      whatsapp_items: whatsappItems,
+      instagram_items: instagramItems,
+      whatsapp_template: channelTemplate(whatsappItems, 'whatsapp'),
+      instagram_template: channelTemplate(instagramItems, 'instagram'),
+      ranking_basis: {
+        whatsapp: 'Hız ve doğrudan bilgi değeri: editoryal önem %34, gerçek performans %24, tazelik %18, kullanım/fayda %14, geniş kitle etkisi %10.',
+        instagram: 'Görsel ve etkileşim değeri: editoryal önem %23, paylaşma-kaydetme %20, görsel güç %15, gerçek performans %14, sosyal/Discover uyumu %13, merak %8, tazelik %7.'
+      },
+      overlap_count: overlapCount,
       actual_signal_count: actualSignalCount,
       generated_at: nowIso()
     };
@@ -379,7 +473,7 @@ export default async function handler(req, res) {
     return json(res, 200, {
       story, reels, feed, published, daily_digest: dailyDigest,
       items: feed,
-      counts: { story: story.length, reels: reels.length, feed: feed.length, published: published.length, digest: dailyItems.length },
+      counts: { story: story.length, reels: reels.length, feed: feed.length, published: published.length, digest: allDailyItems.length },
       windows: { story_hours: 24, radar_hours: MAX_CANDIDATE_HOURS, published_hours: MAX_OWNED_HOURS },
       refreshed_at: nowIso(),
       scoring: {
