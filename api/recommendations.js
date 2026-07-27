@@ -454,10 +454,13 @@ export default async function handler(req, res) {
     const learnedTerms = new Map();
     let intelligenceModel = null;
     try {
-      const learned = await queryLocal(`SELECT title,discover_clicks,discover_impressions,discover_ctr FROM published_performance
-        WHERE title IS NOT NULL AND title<>'' AND discover_impressions>0 ORDER BY observed_at DESC LIMIT 300`);
+      const learned = await queryLocal(`SELECT title,discover_clicks,discover_impressions,discover_ctr,ga4_views,ga4_active_users,ga4_engagement_seconds,ga4_engagement_rate FROM published_performance
+        WHERE title IS NOT NULL AND title<>'' AND (discover_impressions>0 OR ga4_views>0) ORDER BY observed_at DESC LIMIT 500`);
       for (const row of learned.rows) {
-        const weight = Math.min(3, Math.log1p(Number(row.discover_impressions || 0)) / 3 + Number(row.discover_ctr || 0) * 8 + Math.log1p(Number(row.discover_clicks || 0)) / 2);
+        const searchWeight = Math.log1p(Number(row.discover_impressions || 0)) / 3 + Number(row.discover_ctr || 0) * 8 + Math.log1p(Number(row.discover_clicks || 0)) / 2;
+        const audienceWeight = Math.log1p(Number(row.ga4_views || 0)) / 4 + Math.log1p(Number(row.ga4_active_users || 0)) / 5
+          + Math.log1p(Number(row.ga4_engagement_seconds || 0)) / 9 + Number(row.ga4_engagement_rate || 0) * 2;
+        const weight = Math.min(3, searchWeight * .7 + audienceWeight * .3);
         for (const word of [...new Set(String(row.title).toLowerCase().replace(/[^a-z0-9çğıöşü\s]/gi, ' ').split(/\s+/).filter((item) => item.length >= 4))]) {
           learnedTerms.set(word, Math.max(learnedTerms.get(word) || 0, weight));
         }

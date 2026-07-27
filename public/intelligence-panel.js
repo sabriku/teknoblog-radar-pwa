@@ -20,7 +20,7 @@
     lifecycle: 'Her konunun ilk sinyalden doğrulama, görev ve yayın sonucuna uzanan zaman çizelgesi.',
     coverage: 'Yeni haber mi yazılmalı, mevcut Teknoblog içeriği mi güncellenmeli?',
     queue: 'Yazılacak haberlerin görev durumu ve tamamlanma ilerlemesi.',
-    performance: 'Search Console’dan gelen gerçek Discover ve Google News sonuçları.',
+    performance: 'Search Console ve GA4’ten gelen gerçek Discover, News, görüntülenme ve etkileşim sonuçları.',
     pioneer: 'Radar önerilerinin ilk yayın avantajına, Discover ve Google News başarısına gerçek katkısı.',
     accuracy: 'Radar tahminlerinin yayımlanan haberlerin gerçek performansıyla karşılaştırması.',
     weekly: 'Kazanan konular, güçlü kaynaklar ve kaçırılan yüksek potansiyelli adaylar.',
@@ -32,7 +32,7 @@
   };
   const savedView = localStorage.getItem(VIEW_KEY);
   const initialView = sections[savedView] && savedView !== 'today' ? savedView : 'command';
-  const state = { tab: initialView, strategy: localStorage.getItem(STRATEGY_KEY) || 'balanced', loading: false, data: {}, error: '', todayPosts: null, todayPostsError: '', queueSelected: new Set(), queueBusy: false, queueMessage: '' };
+  const state = { tab: initialView, strategy: localStorage.getItem(STRATEGY_KEY) || 'balanced', loading: false, data: {}, error: '', todayPosts: null, todayPostsError: '', queueSelected: new Set(), queueBusy: false, queueMessage: '', gaProperties: [] };
   const esc = (v = '') => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const fmt = (v) => v ? new Intl.DateTimeFormat('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' }).format(new Date(v)) : '—';
   const token = () => localStorage.getItem('tb_radar_cron_token') || localStorage.getItem('tb_cron_token') || '';
@@ -168,12 +168,14 @@
   }
   function performance(data) {
     const oauth = data.oauth || {};
-    if (!oauth.configured) return `<div class="tb-i-callout"><b>Google Search Console'u bağla</b><p>OAuth bilgileri yerel PostgreSQL'de şifreli saklanır. Radar yalnızca Search Console verilerini okur.</p><div class="tb-i-form"><label>OAuth Client ID<input id="tb-google-client-id" autocomplete="off" placeholder="…apps.googleusercontent.com"></label><label>OAuth Client Secret<input id="tb-google-client-secret" type="password" autocomplete="new-password"></label><label>Search Console mülkü<input id="tb-google-site" value="${esc(oauth.site_url || 'sc-domain:teknoblog.com')}"></label><label>Yetkili yönlendirme adresi<input value="${esc(oauth.redirect_uri || '')}" readonly></label><button data-google-save>Kaydet ve Google ile bağlan</button></div></div>`;
-    if (!oauth.connected) return `<div class="tb-i-callout"><b>OAuth uygulaması hazır.</b><p>Search Console okuma iznini vermek için Google hesabınızla bağlantıyı tamamlayın.</p><button data-google-connect>Google ile bağlan</button><p>Search Console mülkü: ${esc(oauth.site_url || '')}</p></div>`;
-    const list = (items, mode) => items?.length ? `<div class="tb-i-table">${items.map((i) => `<div><b><a href="${esc(i.url)}" target="_blank">${esc(i.title || i.url)}</a></b>${pill(`Öncelik ${i.performance_priority}`, i.performance_priority >= 70 ? 'hot' : '')}${pill(`Discover ${i.discover_clicks}/${i.discover_impressions}`)}${pill(`News ${i.google_news_clicks}/${i.google_news_impressions}`)}<span>${fmt(i.published_at)} · ${i.age_days} gün önce</span></div>`).join('')}</div>` : empty(mode === 'discover' ? 'Son 14 günde Discover sinyali yok.' : 'Son 14 günde Google News sinyali yok.');
+    const propertyOptions = state.gaProperties.map((property) => `<option value="${esc(property.id)}" ${String(property.id) === String(oauth.analytics_property_id || '') ? 'selected' : ''}>${esc(property.name)} · ${esc(property.account)} (${esc(property.id)})</option>`).join('');
+    const analyticsSetup = `<div class="tb-i-callout"><b>Google Analytics 4 · Gerçek kullanıcı performansı</b><p>Sayfa görüntüleme, aktif kullanıcı, oturum ve etkileşim süresi puanlamaya kontrollü biçimde katılır. GA4 Mülk Kimliği sayısal değerdir.</p><div class="tb-i-form"><label>GA4 Mülk Kimliği<input id="tb-google-property" inputmode="numeric" value="${esc(oauth.analytics_property_id || '')}" placeholder="123456789"></label>${propertyOptions ? `<label>Bulunan mülkler<select id="tb-google-property-select"><option value="">Mülk seçin</option>${propertyOptions}</select></label>` : ''}<button data-google-connect>Google izinlerini yenile</button><button data-ga4-discover>GA4 mülklerini bul</button><button data-ga4-save>${oauth.analytics_configured ? 'GA4 ayarını güncelle' : 'GA4 mülkünü kaydet'}</button></div></div>`;
+    if (!oauth.configured) return `<div class="tb-i-callout"><b>Google performans verilerini bağla</b><p>OAuth bilgileri yerel PostgreSQL'de şifreli saklanır. Radar yalnızca Search Console ve Google Analytics verilerini okur.</p><div class="tb-i-form"><label>OAuth Client ID<input id="tb-google-client-id" autocomplete="off" placeholder="…apps.googleusercontent.com"></label><label>OAuth Client Secret<input id="tb-google-client-secret" type="password" autocomplete="new-password"></label><label>Search Console mülkü<input id="tb-google-site" value="${esc(oauth.site_url || 'sc-domain:teknoblog.com')}"></label><label>GA4 Mülk Kimliği<input id="tb-google-property" inputmode="numeric" placeholder="123456789"></label><label>Yetkili yönlendirme adresi<input value="${esc(oauth.redirect_uri || '')}" readonly></label><button data-google-save>Kaydet ve Google ile bağlan</button></div></div>`;
+    if (!oauth.connected) return `<div class="tb-i-callout"><b>OAuth uygulaması hazır.</b><p>Search Console ve Google Analytics salt okunur izinlerini vermek için Google hesabınızla bağlantıyı tamamlayın.</p><button data-google-connect>Google ile bağlan</button><p>Search Console mülkü: ${esc(oauth.site_url || '')}</p></div>`;
+    const list = (items, mode) => items?.length ? `<div class="tb-i-table">${items.map((i) => `<div><b><a href="${esc(i.url)}" target="_blank">${esc(i.title || i.url)}</a></b>${pill(`Öncelik ${i.performance_priority}`, i.performance_priority >= 70 ? 'hot' : '')}${pill(`Discover ${i.discover_clicks}/${i.discover_impressions}`)}${pill(`News ${i.google_news_clicks}/${i.google_news_impressions}`)}${pill(`GA4 ${Math.round(i.ga4_views || 0)} görüntülenme`)}${pill(`${Math.round((i.ga4_engagement_rate || 0) * 100)}% etkileşim`)}<span>${fmt(i.published_at)} · ${i.age_days} gün önce</span></div>`).join('')}</div>` : empty(mode === 'discover' ? 'Son 14 günde Discover sinyali yok.' : mode === 'analytics' ? 'GA4 verisi henüz eşzamanlanmadı.' : 'Son 14 günde Google News sinyali yok.');
     const totals = data.totals || {}; const model = data.model || {};
     const evaluation=model.metrics?.evaluation||{};
-    return `<div class="tb-i-actions"><button data-action="sync_gsc">Search Console'u eşzamanla</button><button data-action="train_model">Modeli yeniden eğit</button></div><p>Yalnızca son ${data.window_days || 14} günde yayımlanan yazılar gösterilir. Sıralamada Discover %58, Google News %32, Web %10 ağırlığa sahiptir.</p><div class="tb-i-metrics"><div><b>${totals.discover_clicks || 0}</b><span>Discover tıklaması</span></div><div><b>${totals.discover_impressions || 0}</b><span>Discover gösterimi</span></div><div><b>${totals.news_clicks || 0}</b><span>Google News tıklaması</span></div><div><b>${totals.news_impressions || 0}</b><span>Google News gösterimi</span></div><div><b>${model.sample_count || 0}</b><span>öğrenme örneği</span></div><div><b>%${evaluation.discover?.balanced_accuracy || 0}</b><span>Discover dengeli başarı · F1 %${evaluation.discover?.f1 || 0}</span></div><div><b>%${evaluation.news?.balanced_accuracy || 0}</b><span>News dengeli başarı · F1 %${evaluation.news?.f1 || 0}</span></div><div><b>${model.model_version ? 'Aktif' : 'Bekliyor'}</b><span>${model.model_version ? esc(model.model_version) : 'ilk eğitim gerekli'}</span></div></div><h3>✨ Discover önceliği</h3>${list(data.discover_items, 'discover')}<h3>📰 Google News önceliği</h3>${list(data.news_items, 'news')}`;
+    return `<div class="tb-i-actions"><button data-action="${oauth.analytics_configured ? 'sync_performance' : 'sync_gsc'}">${oauth.analytics_configured ? 'Tüm performansı eşzamanla' : "Search Console'u eşzamanla"}</button><button data-action="train_model">Modeli yeniden eğit</button></div><p>Yalnızca son ${data.window_days || 14} günde yayımlanan yazılar gösterilir. Öncelik: Discover %42, Google News %24, GA4 gerçek kullanıcı performansı %20, Web %6, tazelik %8.</p>${analyticsSetup}<div class="tb-i-metrics"><div><b>${totals.discover_clicks || 0}</b><span>Discover tıklaması</span></div><div><b>${totals.discover_impressions || 0}</b><span>Discover gösterimi</span></div><div><b>${totals.news_clicks || 0}</b><span>Google News tıklaması</span></div><div><b>${totals.news_impressions || 0}</b><span>Google News gösterimi</span></div><div><b>${Math.round(totals.ga4_views || 0)}</b><span>GA4 görüntülenme</span></div><div><b>${Math.round(totals.ga4_active_users || 0)}</b><span>GA4 aktif kullanıcı</span></div><div><b>${Math.round((totals.ga4_engagement_seconds || 0) / 60)}</b><span>etkileşim dakikası</span></div><div><b>${model.sample_count || 0}</b><span>öğrenme örneği</span></div><div><b>%${evaluation.discover?.balanced_accuracy || 0}</b><span>Discover dengeli başarı · F1 %${evaluation.discover?.f1 || 0}</span></div><div><b>%${evaluation.news?.balanced_accuracy || 0}</b><span>News dengeli başarı · F1 %${evaluation.news?.f1 || 0}</span></div><div><b>${model.model_version ? 'Aktif' : 'Bekliyor'}</b><span>${model.model_version ? esc(model.model_version) : 'ilk eğitim gerekli'}</span></div></div><h3>✨ Discover önceliği</h3>${list(data.discover_items, 'discover')}<h3>📰 Google News önceliği</h3>${list(data.news_items, 'news')}<h3>📊 GA4 gerçek okur ilgisi</h3>${list(data.analytics_items, 'analytics')}`;
   }
   function lab(data) {
     const d = data.distribution || {};
@@ -347,15 +349,45 @@
     if (save) {
       save.disabled = true;
       try {
-        await google('', { method: 'POST', headers: { 'content-type': 'application/json', 'x-cron-token': token() }, body: JSON.stringify({ client_id: document.getElementById('tb-google-client-id')?.value || '', client_secret: document.getElementById('tb-google-client-secret')?.value || '', site_url: document.getElementById('tb-google-site')?.value || 'sc-domain:teknoblog.com' }) });
+        await google('', { method: 'POST', headers: { 'content-type': 'application/json', 'x-cron-token': token() }, body: JSON.stringify({ client_id: document.getElementById('tb-google-client-id')?.value || '', client_secret: document.getElementById('tb-google-client-secret')?.value || '', site_url: document.getElementById('tb-google-site')?.value || 'sc-domain:teknoblog.com', analytics_property_id: document.getElementById('tb-google-property')?.value || '' }) });
         const data = await google('?action=start'); window.open(data.auth_url, 'tbGoogleOAuth', 'width=620,height=760');
       } catch (e) { alert(e.message); } finally { save.disabled = false; }
+      return;
+    }
+    const gaDiscover = event.target.closest('[data-ga4-discover]');
+    if (gaDiscover) {
+      gaDiscover.disabled = true;
+      try {
+        const data = await google('?action=analytics-properties');
+        state.gaProperties = Array.isArray(data.properties) ? data.properties : [];
+        render();
+      } catch (e) { alert(`${e.message}\n\nÖnce “Google izinlerini yenile” ile Analytics salt okunur iznini verin.`); }
+      finally { gaDiscover.disabled = false; }
+      return;
+    }
+    const gaSave = event.target.closest('[data-ga4-save]');
+    if (gaSave) {
+      gaSave.disabled = true;
+      try {
+        const propertyId = document.getElementById('tb-google-property')?.value || document.getElementById('tb-google-property-select')?.value || '';
+        if (!/^\d+$/.test(propertyId.trim())) throw new Error('Geçerli sayısal GA4 Mülk Kimliği gerekli.');
+        await google('', { method: 'POST', headers: { 'content-type': 'application/json', 'x-cron-token': token() }, body: JSON.stringify({ analytics_property_id: propertyId.trim() }) });
+        state.data.performance = null;
+        await post({ action: 'sync_ga4' }, true);
+        await load('performance', true);
+      } catch (e) { alert(e.message); } finally { gaSave.disabled = false; }
       return;
     }
     const action = event.target.closest('[data-action]');
     if (action) { action.disabled = true; try { await post({ action: action.dataset.action }, true); state.data = {}; await load(state.tab, true); } catch (e) { alert(e.message); } finally { action.disabled = false; } }
   });
   document.addEventListener('change', (event) => {
+    const property = event.target.closest('#tb-google-property-select');
+    if (property && property.value) {
+      const input = document.getElementById('tb-google-property');
+      if (input) input.value = property.value;
+      return;
+    }
     const strategy = event.target.closest('[data-strategy]');
     if (strategy) {
       state.strategy = strategy.value || 'balanced';

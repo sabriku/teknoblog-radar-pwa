@@ -20,7 +20,15 @@ function decrypt(value) {
 export async function getGoogleConfig() {
   const result = await queryLocal(`SELECT encrypted_value FROM app_secrets WHERE key='google_search_console' LIMIT 1`);
   const stored = result.rows[0]?.encrypted_value ? decrypt(result.rows[0].encrypted_value) : {};
-  return { client_id: process.env.GOOGLE_CLIENT_ID || stored.client_id || '', client_secret: process.env.GOOGLE_CLIENT_SECRET || stored.client_secret || '', refresh_token: process.env.GOOGLE_REFRESH_TOKEN || stored.refresh_token || '', site_url: process.env.GSC_SITE_URL || stored.site_url || 'sc-domain:teknoblog.com', connected_at: stored.connected_at || null };
+  return {
+    client_id: process.env.GOOGLE_CLIENT_ID || stored.client_id || '',
+    client_secret: process.env.GOOGLE_CLIENT_SECRET || stored.client_secret || '',
+    refresh_token: process.env.GOOGLE_REFRESH_TOKEN || stored.refresh_token || '',
+    site_url: process.env.GSC_SITE_URL || stored.site_url || 'sc-domain:teknoblog.com',
+    analytics_property_id: process.env.GA4_PROPERTY_ID || stored.analytics_property_id || '',
+    connected_at: stored.connected_at || null,
+    scopes_updated_at: stored.scopes_updated_at || null
+  };
 }
 export async function saveGoogleConfig(config) {
   const merged = { ...(await getGoogleConfig()), ...config };

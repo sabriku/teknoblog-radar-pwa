@@ -23,6 +23,14 @@ if (authResponse.ok && auth.connected) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || `sync_gsc HTTP ${response.status}`);
   console.log(JSON.stringify({ action: 'sync_gsc', ...data }));
+  if (auth.analytics_configured) {
+    const ga4Response = await fetch(`${baseUrl}/api/intelligence`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-cron-token': token }, body: JSON.stringify({ action: 'sync_ga4' }), signal: AbortSignal.timeout(180000)
+    });
+    const ga4 = await ga4Response.json().catch(() => ({}));
+    if (!ga4Response.ok) throw new Error(ga4.error || `sync_ga4 HTTP ${ga4Response.status}`);
+    console.log(JSON.stringify({ action: 'sync_ga4', ...ga4 }));
+  }
 } else {
   console.log(JSON.stringify({ action: 'sync_gsc', skipped: true, reason: 'Google Search Console bağlı değil.' }));
 }

@@ -736,27 +736,34 @@ async function performanceSection() {
     ORDER BY published_at DESC LIMIT 500`)).rows;
   const ranked = stored.map((item) => {
     const ageDays = Math.max(0, (Date.now() - new Date(item.published_at).getTime()) / 86400000);
-    const discoverStrength = Math.log1p(Number(item.discover_clicks) || 0) * 22 + Math.log1p(Number(item.discover_impressions) || 0) * 5 + (Number(item.discover_ctr) || 0) * 20;
-    const newsStrength = Math.log1p(Number(item.google_news_clicks) || 0) * 20 + Math.log1p(Number(item.google_news_impressions) || 0) * 4;
-    const webStrength = Math.log1p(Number(item.web_clicks) || 0) * 8 + Math.log1p(Number(item.web_impressions) || 0) * 1.5;
-    const priority = discoverStrength * 0.58 + newsStrength * 0.32 + webStrength * 0.10 + Math.max(0, 1 - ageDays / 14) * 14;
-    return { ...item, age_days: Math.round(ageDays * 10) / 10, discover_strength: Math.round(discoverStrength), news_strength: Math.round(newsStrength), performance_priority: Math.min(100, Math.round(priority)) };
+    const discoverStrength = clamp(Math.log1p(Number(item.discover_clicks) || 0) * 18 + Math.log1p(Number(item.discover_impressions) || 0) * 4 + (Number(item.discover_ctr) || 0) * 18);
+    const newsStrength = clamp(Math.log1p(Number(item.google_news_clicks) || 0) * 18 + Math.log1p(Number(item.google_news_impressions) || 0) * 4);
+    const webStrength = clamp(Math.log1p(Number(item.web_clicks) || 0) * 11 + Math.log1p(Number(item.web_impressions) || 0) * 2);
+    const ga4Strength = clamp(Math.log1p(Number(item.ga4_views) || 0) * 11 + Math.log1p(Number(item.ga4_active_users) || 0) * 8
+      + Math.log1p(Number(item.ga4_engagement_seconds) || 0) * 3 + (Number(item.ga4_engagement_rate) || 0) * 18);
+    const priority = discoverStrength * 0.42 + newsStrength * 0.24 + ga4Strength * 0.20 + webStrength * 0.06 + Math.max(0, 1 - ageDays / 14) * 8;
+    return { ...item, age_days: Math.round(ageDays * 10) / 10, discover_strength: Math.round(discoverStrength), news_strength: Math.round(newsStrength), ga4_strength: Math.round(ga4Strength), performance_priority: Math.min(100, Math.round(priority)) };
   });
-  const signaled = ranked.filter((item) => Number(item.discover_impressions) > 0 || Number(item.discover_clicks) > 0 || Number(item.google_news_impressions) > 0 || Number(item.google_news_clicks) > 0);
+  const signaled = ranked.filter((item) => Number(item.discover_impressions) > 0 || Number(item.discover_clicks) > 0 || Number(item.google_news_impressions) > 0 || Number(item.google_news_clicks) > 0 || Number(item.ga4_views) > 0);
   const items = (signaled.length ? signaled : ranked).sort((a, b) => b.performance_priority - a.performance_priority || new Date(b.published_at) - new Date(a.published_at)).slice(0, 100);
   const discoverItems = ranked.filter((item) => Number(item.discover_impressions) > 0 || Number(item.discover_clicks) > 0).sort((a, b) => b.discover_strength - a.discover_strength || new Date(b.published_at) - new Date(a.published_at)).slice(0, 30);
   const newsItems = ranked.filter((item) => Number(item.google_news_impressions) > 0 || Number(item.google_news_clicks) > 0).sort((a, b) => b.news_strength - a.news_strength || new Date(b.published_at) - new Date(a.published_at)).slice(0, 30);
+  const analyticsItems = ranked.filter((item) => Number(item.ga4_views) > 0).sort((a, b) => b.ga4_strength - a.ga4_strength || new Date(b.published_at) - new Date(a.published_at)).slice(0, 30);
   const config = await getGoogleConfig();
   const activeModel = await loadIntelligenceModel();
   const configured = Boolean(config.site_url && config.client_id && config.client_secret && config.refresh_token);
+  const analyticsConfigured = Boolean(config.analytics_property_id && config.refresh_token);
   return {
-    configured, items, discover_items: discoverItems, news_items: newsItems,
+    configured, analytics_configured: analyticsConfigured, analytics_property_id: config.analytics_property_id || '', items, discover_items: discoverItems, news_items: newsItems, analytics_items: analyticsItems,
     window_days: 14,
     totals: {
       discover_clicks: ranked.reduce((sum, item) => sum + (Number(item.discover_clicks) || 0), 0),
       discover_impressions: ranked.reduce((sum, item) => sum + (Number(item.discover_impressions) || 0), 0),
       news_clicks: ranked.reduce((sum, item) => sum + (Number(item.google_news_clicks) || 0), 0),
-      news_impressions: ranked.reduce((sum, item) => sum + (Number(item.google_news_impressions) || 0), 0)
+      news_impressions: ranked.reduce((sum, item) => sum + (Number(item.google_news_impressions) || 0), 0),
+      ga4_views: ranked.reduce((sum, item) => sum + (Number(item.ga4_views) || 0), 0),
+      ga4_active_users: ranked.reduce((sum, item) => sum + (Number(item.ga4_active_users) || 0), 0),
+      ga4_engagement_seconds: ranked.reduce((sum, item) => sum + (Number(item.ga4_engagement_seconds) || 0), 0)
     },
     model: activeModel ? { model_version: activeModel.model_version, trained_at: activeModel.trained_at, sample_count: activeModel.sample_count, discover_positive_rate: activeModel.discover_positive_rate, news_positive_rate: activeModel.news_positive_rate, metrics: activeModel.metrics } : null,
     note: configured ? null : 'Google Search Console bağlantısını bu ekrandan güvenli biçimde kurabilirsiniz.'
@@ -920,6 +927,77 @@ async function syncGsc() {
   const outcomes = await reconcilePredictionOutcomes();
   const trained = await trainIntelligenceModel();
   return { urls: combined.size, snapshots: snapshots.length, history_days: historyDays, outcomes, trained };
+}
+
+function ga4Date(value = '') {
+  const digits = String(value || '').replace(/\D/g, '');
+  return digits.length === 8 ? `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}` : '';
+}
+
+async function syncGa4() {
+  const config = await getGoogleConfig();
+  const propertyId = String(config.analytics_property_id || '').replace(/^properties\//, '').trim();
+  const token = await googleAccessToken();
+  if (!propertyId || !token) throw new Error('Google Analytics bağlantısı veya GA4 Mülk Kimliği eksik.');
+  const known = await queryLocal(`SELECT url,title,published_at FROM teknoblog_content WHERE published_at>=NOW()-INTERVAL '120 days' ORDER BY published_at DESC LIMIT 15000`);
+  const knownByCanonical = new Map(known.rows.map((item) => [canonicalUrl(item.url), item]));
+  const existing = await queryLocal(`SELECT MAX(snapshot_date) AS latest FROM analytics_performance_snapshots`);
+  const historyDays = existing.rows[0]?.latest ? 8 : 90;
+  const endDate = new Date().toISOString().slice(0, 10);
+  const startDate = new Date(Date.now() - historyDays * 86400000).toISOString().slice(0, 10);
+  const response = await fetch(`https://analyticsdata.googleapis.com/v1beta/properties/${encodeURIComponent(propertyId)}:runReport`, {
+    method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, signal: AbortSignal.timeout(30000),
+    body: JSON.stringify({
+      dateRanges: [{ startDate, endDate }],
+      dimensions: [{ name: 'date' }, { name: 'pagePathPlusQueryString' }, { name: 'pageTitle' }],
+      metrics: [{ name: 'screenPageViews' }, { name: 'activeUsers' }, { name: 'sessions' }, { name: 'engagedSessions' }, { name: 'userEngagementDuration' }, { name: 'engagementRate' }],
+      limit: '100000', keepEmptyRows: false
+    })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data?.error?.message || `Google Analytics Data API HTTP ${response.status}`);
+  const snapshots = new Map();
+  const totals = new Map();
+  for (const row of data.rows || []) {
+    const date = ga4Date(row.dimensionValues?.[0]?.value);
+    const path = String(row.dimensionValues?.[1]?.value || '').split('?')[0];
+    const pageTitle = String(row.dimensionValues?.[2]?.value || '');
+    const canonical = canonicalUrl(`https://www.teknoblog.com${path.startsWith('/') ? path : `/${path}`}`);
+    const post = knownByCanonical.get(canonical);
+    if (!date || !post) continue;
+    const values = (row.metricValues || []).map((entry) => Number(entry.value) || 0);
+    const record = { url: post.url, snapshot_date: date, page_title: pageTitle || post.title || '', views: values[0], active_users: values[1], sessions: values[2], engaged_sessions: values[3], engagement_seconds: values[4], engagement_rate: values[5] };
+    const key = `${post.url}\n${date}`;
+    const day = snapshots.get(key) || { ...record, views: 0, active_users: 0, sessions: 0, engaged_sessions: 0, engagement_seconds: 0, engagement_rate: 0 };
+    day.views += record.views; day.active_users += record.active_users; day.sessions += record.sessions; day.engaged_sessions += record.engaged_sessions; day.engagement_seconds += record.engagement_seconds;
+    day.engagement_rate = day.sessions ? day.engaged_sessions / day.sessions : record.engagement_rate;
+    snapshots.set(key, day);
+  }
+  for (const record of snapshots.values()) {
+    const total = totals.get(record.url) || { url: record.url, views: 0, active_users: 0, sessions: 0, engaged_sessions: 0, engagement_seconds: 0, engagement_rate: 0 };
+    total.views += record.views; total.active_users += record.active_users; total.sessions += record.sessions; total.engaged_sessions += record.engaged_sessions; total.engagement_seconds += record.engagement_seconds;
+    total.engagement_rate = total.sessions ? total.engaged_sessions / total.sessions : 0;
+    totals.set(record.url, total);
+  }
+  const snapshotRows = [...snapshots.values()];
+  for (let offset = 0; offset < snapshotRows.length; offset += 1000) {
+    const chunk = snapshotRows.slice(offset, offset + 1000);
+    await queryLocal(`INSERT INTO analytics_performance_snapshots(url,snapshot_date,page_title,views,active_users,sessions,engaged_sessions,engagement_seconds,engagement_rate,synced_at)
+      SELECT x.url,x.snapshot_date,x.page_title,x.views,x.active_users,x.sessions,x.engaged_sessions,x.engagement_seconds,x.engagement_rate,NOW()
+      FROM jsonb_to_recordset($1::jsonb) AS x(url text,snapshot_date date,page_title text,views float,active_users float,sessions float,engaged_sessions float,engagement_seconds float,engagement_rate float)
+      ON CONFLICT(url,snapshot_date) DO UPDATE SET page_title=EXCLUDED.page_title,views=EXCLUDED.views,active_users=EXCLUDED.active_users,sessions=EXCLUDED.sessions,engaged_sessions=EXCLUDED.engaged_sessions,engagement_seconds=EXCLUDED.engagement_seconds,engagement_rate=EXCLUDED.engagement_rate,synced_at=NOW()`, [JSON.stringify(chunk)]);
+  }
+  for (const item of totals.values()) {
+    await queryLocal(`INSERT INTO published_performance(url,ga4_views,ga4_active_users,ga4_sessions,ga4_engaged_sessions,ga4_engagement_seconds,ga4_engagement_rate,observed_at,payload)
+      VALUES($1,$2,$3,$4,$5,$6,$7,NOW(),jsonb_build_object('ga4',$8::jsonb)) ON CONFLICT(url) DO UPDATE SET
+      ga4_views=EXCLUDED.ga4_views,ga4_active_users=EXCLUDED.ga4_active_users,ga4_sessions=EXCLUDED.ga4_sessions,
+      ga4_engaged_sessions=EXCLUDED.ga4_engaged_sessions,ga4_engagement_seconds=EXCLUDED.ga4_engagement_seconds,
+      ga4_engagement_rate=EXCLUDED.ga4_engagement_rate,observed_at=NOW(),payload=COALESCE(published_performance.payload,'{}'::jsonb)||EXCLUDED.payload`,
+    [item.url, item.views, item.active_users, item.sessions, item.engaged_sessions, item.engagement_seconds, item.engagement_rate, JSON.stringify(item)]);
+  }
+  await queryLocal(`UPDATE published_performance p SET title=t.title,published_at=t.published_at FROM teknoblog_content t
+    WHERE regexp_replace(p.url,'/+$','')=regexp_replace(t.url,'/+$','') AND (p.title IS NULL OR p.title='' OR p.published_at IS NULL)`);
+  return { urls: totals.size, snapshots: snapshotRows.length, history_days: historyDays, property_id: propertyId };
 }
 
 async function queueAction(body) {
@@ -1207,6 +1285,11 @@ export default async function handler(req, res) {
     }
     if (body.action === 'reconcile_queue_publications') return json(res, 200, { ok: true, ...(await reconcileQueuePublications()) });
     if (body.action === 'sync_gsc') return json(res, 200, { ok: true, stored: await syncGsc() });
+    if (body.action === 'sync_ga4') return json(res, 200, { ok: true, stored: await syncGa4() });
+    if (body.action === 'sync_performance') {
+      const [gsc, ga4] = await Promise.all([syncGsc(), syncGa4()]);
+      return json(res, 200, { ok: true, gsc, ga4 });
+    }
     if (body.action === 'train_model') return json(res, 200, { ok: true, model: await trainIntelligenceModel() });
     if (body.action === 'configure_signal_slack') return json(res, 200, { ok: true, ...(await configureSignalSlack(body)) });
     if (body.action === 'run_alerts') return json(res, 200, { ok: true, ...(await runAlerts()) });

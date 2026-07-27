@@ -23,7 +23,13 @@ try {
   const minute = new Date().getUTCMinutes();
   const followupActions = ['run_alerts'];
   if (minute % 15 < 5) followupActions.push('sync_teknoblog', 'reconcile_queue_publications');
-  if (minute < 5) followupActions.push('sync_gsc');
+  if (minute < 5) {
+    try {
+      const authResponse = await fetch(`${baseUrl}/api/google-auth`, { signal: controller.signal });
+      const auth = await authResponse.json().catch(() => ({}));
+      if (authResponse.ok && auth.connected) followupActions.push(auth.analytics_configured ? 'sync_performance' : 'sync_gsc');
+    } catch {}
+  }
   for (const action of followupActions) {
     try {
       const followup = await fetch(`${baseUrl}/api/intelligence?token=${encodeURIComponent(token)}`, {

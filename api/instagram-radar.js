@@ -57,7 +57,9 @@ function performanceSignal(item = {}) {
   const discover = logSignal(number(item, 'discover_clicks'), 24) * .55 + logSignal(number(item, 'discover_impressions'), 8) * .45;
   const news = logSignal(number(item, 'google_news_clicks'), 22) * .60 + logSignal(number(item, 'google_news_impressions'), 7) * .40;
   const web = logSignal(number(item, 'web_clicks'), 18) * .65 + logSignal(number(item, 'web_impressions'), 6) * .35;
-  return clamp(discover * .50 + news * .30 + web * .20, 100);
+  const analytics = logSignal(number(item, 'ga4_views'), 15) * .45 + logSignal(number(item, 'ga4_active_users'), 17) * .30
+    + logSignal(number(item, 'ga4_engagement_seconds'), 6) * .15 + Math.min(100, number(item, 'ga4_engagement_rate') * 100) * .10;
+  return clamp(discover * .42 + news * .25 + analytics * .25 + web * .08, 100);
 }
 
 export function editorialImportance(item = {}) {
@@ -362,7 +364,10 @@ async function loadOwned() {
   const result = await queryLocal(`SELECT t.title,t.url,t.excerpt AS summary,t.image_url,t.published_at,t.updated_at,
     COALESCE(p.discover_clicks,0)::int AS discover_clicks,COALESCE(p.discover_impressions,0)::int AS discover_impressions,
     COALESCE(p.google_news_clicks,0)::int AS google_news_clicks,COALESCE(p.google_news_impressions,0)::int AS google_news_impressions,
-    COALESCE(p.web_clicks,0)::int AS web_clicks,COALESCE(p.web_impressions,0)::int AS web_impressions
+    COALESCE(p.web_clicks,0)::int AS web_clicks,COALESCE(p.web_impressions,0)::int AS web_impressions,
+    COALESCE(p.ga4_views,0)::int AS ga4_views,COALESCE(p.ga4_active_users,0)::int AS ga4_active_users,
+    COALESCE(p.ga4_sessions,0)::int AS ga4_sessions,COALESCE(p.ga4_engagement_seconds,0)::float AS ga4_engagement_seconds,
+    COALESCE(p.ga4_engagement_rate,0)::float AS ga4_engagement_rate
     FROM teknoblog_content t LEFT JOIN published_performance p
       ON regexp_replace(t.url,'/+$','')=regexp_replace(p.url,'/+$','')
     WHERE t.published_at>=NOW()-INTERVAL '48 hours' ORDER BY t.published_at DESC LIMIT 160`);
