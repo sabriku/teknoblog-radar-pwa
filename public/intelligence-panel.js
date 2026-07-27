@@ -45,7 +45,7 @@
     return data;
   }
   async function post(body, auth = false) {
-    const response = await fetch(`/api/intelligence${auth ? `?token=${encodeURIComponent(token())}` : ''}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const response = await fetch(`/api/intelligence${auth && token() ? `?token=${encodeURIComponent(token())}` : ''}`, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
     return data;
@@ -65,7 +65,7 @@
     return state.todayPosts;
   }
   async function google(path = '', options = {}) {
-    const response = await fetch(`/api/google-auth${path}`, { cache: 'no-store', ...options });
+    const response = await fetch(`/api/google-auth${path}`, { cache: 'no-store', credentials: 'same-origin', ...options });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
     return data;

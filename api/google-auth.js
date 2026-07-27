@@ -1,9 +1,15 @@
 import { json, nowIso } from './_lib.js';
 import { createOAuthState, getGoogleConfig, googleAccessToken, saveGoogleConfig, verifyOAuthState } from './_google-auth.js';
+import { readSession } from '../lib/lock.js';
 
 const REDIRECT_URI = 'https://radar.teknolojisk.com/api/google-auth/callback';
 function bodyOf(req) { return typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {}); }
-function authorized(req, body = {}) { const expected = process.env.CRON_TOKEN || ''; const supplied = req.query?.token || req.headers['x-cron-token'] || body.token || ''; return Boolean(expected && supplied === expected); }
+function authorized(req, body = {}) {
+  if (readSession(req)) return true;
+  const expected = process.env.CRON_TOKEN || '';
+  const supplied = req.query?.token || req.headers['x-cron-token'] || body.token || '';
+  return Boolean(expected && supplied === expected);
+}
 
 export default async function handler(req, res) {
   try {

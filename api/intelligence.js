@@ -4,6 +4,7 @@ import { json, queryLocal, safeText, nowIso } from './_lib.js';
 import { getGoogleConfig, googleAccessToken } from './_google-auth.js';
 import { getAppSecret, saveAppSecret } from './_app-secrets.js';
 import { extractIntelligenceFeatures, loadIntelligenceModel, trainIntelligenceModel } from './_intelligence-model.js';
+import { readSession } from '../lib/lock.js';
 
 const STOP = new Set('ve veya ile için bir bu şu daha yeni son ilk olan olarak göre sonra önce hakkında üzerinde geliyor geldi olacak oldu neden nasıl hangi ne zaman teknoloji tech says report reportedly could may its the and for from with that this have has will into over after before'.split(' '));
 
@@ -13,6 +14,7 @@ function bodyOf(req) {
 }
 
 function authorized(req) {
+  if (readSession(req)) return true;
   const expected = process.env.CRON_TOKEN || '';
   const supplied = req.query?.token || req.headers['x-cron-token'] || bodyOf(req).token || '';
   return Boolean(expected && supplied === expected);
