@@ -16,6 +16,7 @@ const merelyRecent = {
 assert.ok(editorialImportance(important) > editorialImportance(merelyRecent), 'kritik ve geniş etkili haber daha önemli sayılmalı');
 assert.ok(storyScore(important) > storyScore(merelyRecent), 'Story seçimi yalnızca en yeni haberi öne çıkarmamalı');
 assert.ok(digestScore(important) > digestScore(merelyRecent), 'Kanal özeti editoryal öneme göre sıralanmalı');
+assert.equal(editorialImportance({ title: 'Marvel yeni Ghost Rider oyuncusunu duyurdu', summary: 'Apple TV uygulamasında da izlenebilecek.' }), 0, 'eğlence haberi özetteki teknoloji kelimesi nedeniyle seçilmemeli');
 
 const diverse = selectDiverse([
   { title: 'Samsung Galaxy S27 duyuruldu', story_score: 96, topic_family: 'samsung' },
@@ -24,5 +25,6 @@ const diverse = selectDiverse([
   { title: 'WhatsApp güvenlik özelliği geldi', story_score: 88, topic_family: 'social' }
 ], 'story_score', 3, 1);
 assert.deepEqual(diverse.map((item) => item.topic_family), ['samsung', 'apple', 'social'], 'ilk seçim turu marka ve konu çeşitliliği sağlamalı');
+assert.deepEqual(diverse.map((item) => item.story_score), [96, 90, 88], 'çeşitlilik seçiminden sonra nihai liste puana göre azalan kalmalı');
 
 console.log('instagram ranking tests passed');

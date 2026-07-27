@@ -4,7 +4,9 @@ const MAX_CANDIDATE_HOURS = 24;
 const MAX_OWNED_HOURS = 48;
 const STOP = new Set('ve veya ile için bir bu şu daha yeni son ilk olan olarak göre sonra önce hakkında üzerinde geliyor geldi olacak oldu neden nasıl hangi ne zaman teknoloji teknolojik tech says report reportedly could may its the and for from with that this have has will into over after before'.split(' '));
 const NOISE = /\b(maç|macı|maci|futbol|voleybol|basketbol|kupa|canlı izle|hangi kanalda|burç|magazin|survivor)\b/i;
+const ENTERTAINMENT_NOISE = /\b(film|dizi|oyuncu|fragman|marvel|dc comics|netflix dizisi|sinema|gişe|ghost rider)\b/i;
 const TECH = /apple|iphone|ipad|ios|macbook|android|samsung|galaxy|xiaomi|huawei|honor|oppo|vivo|google|gemini|openai|chatgpt|yapay zeka|microsoft|windows|nvidia|amd|intel|whatsapp|instagram|youtube|telefon|tablet|laptop|kulaklık|akıllı saat|güvenlik|siber|uygulama|yazılım|robot|otomobil|elektrikli|uzay|nasa|spacex|oyun|playstation|xbox|nintendo|garmin|sony|kamera|cloud|bulut|çip|işlemci|ekran|batarya/i;
+const STRONG_TECH_TITLE = /\b(apple|iphone|ipad|ios|macbook|android|samsung|galaxy|xiaomi|huawei|honor|oppo|vivo|google|gemini|openai|chatgpt|microsoft|windows|nvidia|amd|intel|whatsapp|instagram|youtube|telefon|tablet|laptop|güvenlik|siber|uygulama|yazılım|robot|otomobil|elektrikli|uzay|nasa|spacex|playstation|xbox|nintendo|garmin|kamera|bulut|işlemci|ekran|batarya)\b/i;
 const URGENT = /duyurdu|tanıttı|yayınladı|başladı|çıktı|geldi|kaldırdı|yasak|açık|sızıntı|iddia|zam|fiyat|indirim|güncelleme|beta|bugün|şimdi/i;
 const REELS = /tanıttı|duyurdu|ilk kez|video|kamera|tasarım|özellik|karşılaştırma|test|inceleme|nasıl|hız|performans|oyun|robot|otomobil|katlanabilir|giyilebilir|demo/i;
 const SAVE_SHARE = /hangi|liste|özellik|güncelleme|fiyat|karşılaştırma|fark|nasıl|rehber|güvenlik|model|alacak|destek|bilmeniz|dikkat/i;
@@ -58,7 +60,8 @@ function performanceSignal(item = {}) {
 
 export function editorialImportance(item = {}) {
   const text = textOf(item);
-  if (NOISE.test(text) || !TECH.test(text)) return 0;
+  const title = String(item.title || '');
+  if (NOISE.test(text) || !TECH.test(text) || (ENTERTAINMENT_NOISE.test(title) && !STRONG_TECH_TITLE.test(title))) return 0;
   const summaryLength = clean(item.summary || item.excerpt || '').length;
   let score = 14;
   if (HIGH_IMPACT.test(text)) score += 30;
@@ -263,7 +266,7 @@ export function selectDiverse(items = [], scoreKey = 'story_score', limit = 10, 
     }
     if (selected.length >= limit) break;
   }
-  return selected;
+  return selected.sort((a, b) => number(b, scoreKey) - number(a, scoreKey) || editorialImportance(b) - editorialImportance(a) || ageHours(a) - ageHours(b));
 }
 
 async function loadOwned() {
@@ -347,7 +350,7 @@ export default async function handler(req, res) {
     const candidates = unique(candidateRaw.map(decorate), 1200);
     const combined = unique([...owned, ...candidates], 1300);
 
-    const story = selectDiverse(owned.filter((item) => item.age_hours <= 24 && item.story_score >= 44 && TECH.test(textOf(item)) && !NOISE.test(textOf(item))), 'story_score', limit, 2);
+    const story = selectDiverse(owned.filter((item) => item.age_hours <= 24 && item.story_score >= 44 && editorialImportance(item) >= 25), 'story_score', limit, 2);
     const reels = unique(combined.filter((item) => item.age_hours <= 24 && item.reels_score >= 46)
       .sort((a, b) => b.reels_score - a.reels_score || a.age_hours - b.age_hours), limit);
     const reelUrls = new Set(reels.map((item) => item.url));
@@ -355,7 +358,7 @@ export default async function handler(req, res) {
       .sort((a, b) => b.feed_score - a.feed_score || a.age_hours - b.age_hours), limit);
     const published = unique(owned.sort((a, b) => b.feed_score - a.feed_score || a.age_hours - b.age_hours), limit);
     const today = istanbulDay();
-    const digestCandidates = unique(owned.filter((item) => istanbulDay(item.published_at) === today && TECH.test(textOf(item)) && !NOISE.test(textOf(item))).map((item) => {
+    const digestCandidates = unique(owned.filter((item) => istanbulDay(item.published_at) === today && editorialImportance(item) >= 25).map((item) => {
       const signal = digestSignals(item);
       const breakdown = digestScoreBreakdown(item);
       return { ...item, digest_score: breakdown.total, digest_score_breakdown: breakdown, digest_summary: digestSummary(item), read_signal_available: signal.available, total_clicks: signal.clicks, total_impressions: signal.impressions, topic_family: item.topic_family || topicFamily(item) };
