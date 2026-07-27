@@ -21,6 +21,7 @@ const checks = [
   ['/api/trend-overview?google_trends=1&geo=all&category=all&window=24h&limit=12', 200],
   ['/api/opportunity-radar?limit=6', 200],
   ['/api/product-radar?hours=168&limit=6', 200],
+  ['/api/instagram-radar?limit=6', 200],
   ['/api/push-to-slack', 200]
 ];
 

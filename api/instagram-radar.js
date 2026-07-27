@@ -8,6 +8,18 @@ const TECH = /apple|iphone|ipad|ios|macbook|android|samsung|galaxy|xiaomi|huawei
 const URGENT = /duyurdu|tanıttı|yayınladı|başladı|çıktı|geldi|kaldırdı|yasak|açık|sızıntı|iddia|zam|fiyat|indirim|güncelleme|beta|bugün|şimdi/i;
 const REELS = /tanıttı|duyurdu|ilk kez|video|kamera|tasarım|özellik|karşılaştırma|test|inceleme|nasıl|hız|performans|oyun|robot|otomobil|katlanabilir|giyilebilir|demo/i;
 const SAVE_SHARE = /hangi|liste|özellik|güncelleme|fiyat|karşılaştırma|fark|nasıl|rehber|güvenlik|model|alacak|destek|bilmeniz|dikkat/i;
+const HIGH_IMPACT = /kritik|acil|yasak|mahkeme|ceza|geri çağır|güvenlik açığı|veri ihlali|hack|siber saldırı|dolandırıcılık|çöktü|kapatıldı|iptal edildi/i;
+const LAUNCH_IMPACT = /tanıttı|duyurdu|lansman|piyasaya çıktı|satışa çıktı|ön sipariş|yeni model|yeni ürün|yeni hizmet|ilk kez/i;
+const BROAD_REACH = /iphone|ios|android|samsung|galaxy|whatsapp|instagram|youtube|google|chatgpt|openai|gemini|windows|playstation|xbox|nintendo|telefon|yapay zeka/i;
+const PRACTICAL_IMPACT = /fiyat|indirim|zam|ücretsiz|güncelleme|hangi modeller|destek sona|nasıl|rehber|liste|karşılaştırma|pil|batarya|gizlilik/i;
+const TOPIC_FAMILIES = [
+  ['apple', /apple|iphone|ipad|ios|macbook|macos/i], ['samsung', /samsung|galaxy|one ui/i],
+  ['google-android', /google|android|pixel|gemini|chrome/i], ['ai', /openai|chatgpt|claude|copilot|yapay zeka/i],
+  ['social', /whatsapp|instagram|facebook|meta|threads|tiktok|youtube/i], ['microsoft', /microsoft|windows|xbox/i],
+  ['mobile', /xiaomi|huawei|honor|oppo|vivo|oneplus|telefon|tablet/i], ['gaming', /playstation|xbox|nintendo|steam|oyun/i],
+  ['security', /güvenlik|siber|hack|veri ihlali|dolandırıcılık/i], ['hardware', /nvidia|amd|intel|işlemci|çip|gpu|laptop|monitör/i],
+  ['mobility', /otomobil|elektrikli araç|tesla|otomotiv|garmin/i], ['science', /uzay|nasa|spacex|bilim|araştırma/i]
+];
 let liveOwnedCache = { expiresAt: 0, items: [] };
 
 function clamp(value, max = 97) { return Math.max(0, Math.min(max, Math.round(Number(value) || 0))); }
@@ -44,6 +56,32 @@ function performanceSignal(item = {}) {
   return clamp(discover * .50 + news * .30 + web * .20, 100);
 }
 
+export function editorialImportance(item = {}) {
+  const text = textOf(item);
+  if (NOISE.test(text) || !TECH.test(text)) return 0;
+  const summaryLength = clean(item.summary || item.excerpt || '').length;
+  let score = 14;
+  if (HIGH_IMPACT.test(text)) score += 30;
+  if (LAUNCH_IMPACT.test(text)) score += 21;
+  if (BROAD_REACH.test(text)) score += 17;
+  if (PRACTICAL_IMPACT.test(text)) score += 16;
+  if (URGENT.test(text)) score += 7;
+  if (summaryLength >= 100) score += 7;
+  if (titleTokens(item.title).length >= 4) score += 5;
+  score += Math.max(number(item, 'editorial_score'), number(item, 'total_score')) * .18;
+  return clamp(score, 100);
+}
+
+function shareIntent(item = {}) {
+  const text = textOf(item);
+  return clamp((SAVE_SHARE.test(text) ? 70 : 28) + (HIGH_IMPACT.test(text) ? 18 : 0) + (BROAD_REACH.test(text) ? 12 : 0), 100);
+}
+
+function topicFamily(item = {}) {
+  const text = textOf(item);
+  return TOPIC_FAMILIES.find(([, pattern]) => pattern.test(text))?.[0] || titleTokens(item.title).slice(0, 2).join('-') || 'general';
+}
+
 function istanbulDay(value = new Date()) {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Istanbul', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(value));
   const part = (type) => parts.find((entry) => entry.type === type)?.value || '01';
@@ -60,13 +98,20 @@ function digestSignals(item = {}) {
   const impressions = number(item, 'discover_impressions') + number(item, 'google_news_impressions') + number(item, 'web_impressions');
   return { clicks, impressions, available: clicks > 0 || impressions > 0 };
 }
-function digestScore(item = {}) {
-  const text = textOf(item);
+export function digestScoreBreakdown(item = {}) {
   const signal = digestSignals(item);
   const readScore = logSignal(signal.clicks, 20) * .65 + logSignal(signal.impressions, 7) * .35;
-  return clamp(freshness(item, 24) * .22 + readScore * .38 + (URGENT.test(text) ? 15 : 6)
-    + (TECH.test(text) ? 9 : 0) + (SAVE_SHARE.test(text) ? 7 : 2) + (hasImage(item) ? 6 : 0) + 8, 96);
+  const parts = {
+    editorial_importance: Math.round(editorialImportance(item) * .34),
+    actual_performance: Math.round(readScore * .28),
+    freshness: Math.round(freshness(item, 24) * .12),
+    share_value: Math.round(shareIntent(item) * .14),
+    visual: hasImage(item) ? 6 : 0,
+    broad_reach: BROAD_REACH.test(textOf(item)) ? 6 : 0
+  };
+  return { ...parts, total: clamp(Object.values(parts).reduce((sum, value) => sum + value, 0), 96) };
 }
+export function digestScore(item = {}) { return digestScoreBreakdown(item).total; }
 
 function channelTemplate(items = [], channel = 'whatsapp') {
   const numbers = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'];
@@ -80,11 +125,21 @@ function channelTemplate(items = [], channel = 'whatsapp') {
   return [heading, ...entries, footer].join('\n\n');
 }
 
-function storyScore(item = {}) {
+export function storyScoreBreakdown(item = {}) {
   const text = textOf(item);
-  return clamp(freshness(item, 24) * .38 + performanceSignal(item) * .14 + number(item, 'discover_score') * .10 + number(item, 'social_score') * .08
-    + (URGENT.test(text) ? 18 : 5) + (hasImage(item) ? 11 : 0) + (item.is_teknoblog ? 10 : 0) + (TECH.test(text) ? 8 : -14));
+  const parts = {
+    editorial_importance: Math.round(editorialImportance(item) * .30),
+    freshness: Math.round(freshness(item, 24) * .20),
+    actual_performance: Math.round(performanceSignal(item) * .18),
+    discover_fit: Math.round(number(item, 'discover_score') * .08),
+    social_fit: Math.round(number(item, 'social_score') * .10),
+    visual: hasImage(item) ? 7 : 0,
+    share_value: Math.round(shareIntent(item) * .07)
+  };
+  if (URGENT.test(text)) parts.editorial_importance += 3;
+  return { ...parts, total: clamp(Object.values(parts).reduce((sum, value) => sum + value, 0)) };
 }
+export function storyScore(item = {}) { return storyScoreBreakdown(item).total; }
 function reelsScore(item = {}) {
   const text = textOf(item);
   return clamp(freshness(item, 24) * .20 + performanceSignal(item) * .08 + number(item, 'social_score') * .20 + number(item, 'discover_score') * .10
@@ -145,7 +200,8 @@ function carouselPlan(item = {}) {
 }
 
 function decorate(item = {}) {
-  const story = storyScore(item);
+  const storyBreakdown = storyScoreBreakdown(item);
+  const story = storyBreakdown.total;
   const reels = reelsScore(item);
   const feed = feedScore(item);
   const best = story >= reels && story >= feed ? 'story' : reels >= feed ? 'reels' : 'carousel';
@@ -153,6 +209,7 @@ function decorate(item = {}) {
     ...item,
     age_hours: Math.round(ageHours(item) * 10) / 10,
     story_score: story,
+    story_score_breakdown: storyBreakdown,
     reels_score: reels,
     feed_score: feed,
     instagram_score: Math.max(story, reels, feed),
@@ -163,7 +220,8 @@ function decorate(item = {}) {
     carousel_plan: carouselPlan(item),
     reels_caption: captionFor(item, 'reels'),
     feed_caption: captionFor(item, 'feed'),
-    why_story: `${ageHours(item) <= 6 ? 'Çok güncel' : 'Güncel'} Teknoblog yayını${URGENT.test(textOf(item)) ? ', güçlü haber anı taşıyor' : ''}${hasImage(item) ? ' ve görseli hazır' : ''}.`,
+    topic_family: topicFamily(item),
+    why_story: `Story puanının ana nedenleri: editoryal önem ${storyBreakdown.editorial_importance}, tazelik ${storyBreakdown.freshness}, gerçek performans ${storyBreakdown.actual_performance}${hasImage(item) ? ' ve hazır haber görseli' : ''}.`,
     why_reels: `${REELS.test(textOf(item)) ? 'Gösterilebilir/demonstratif bir anlatı taşıyor' : 'Kısa videoda hızlı açıklanabilir'}${hasImage(item) ? '; görsel desteği var' : ''}.`,
     why_feed: `${SAVE_SHARE.test(textOf(item)) ? 'Kaydetme ve paylaşma niyeti üreten açıklayıcı yapı' : 'Akışta özetlenebilir haber değeri'} taşıyor.`
   };
@@ -189,6 +247,23 @@ function unique(items = [], limit = 10) {
     if (duplicateTopic) return false;
     seen.add(key); seenTitles.push(words); return true;
   }).slice(0, limit);
+}
+
+export function selectDiverse(items = [], scoreKey = 'story_score', limit = 10, firstPassLimit = 1) {
+  const ranked = [...items].sort((a, b) => number(b, scoreKey) - number(a, scoreKey) || editorialImportance(b) - editorialImportance(a) || ageHours(a) - ageHours(b));
+  const selected = [];
+  const counts = new Map();
+  for (const maxPerFamily of [firstPassLimit, Math.max(2, firstPassLimit + 1), Number.POSITIVE_INFINITY]) {
+    for (const item of ranked) {
+      if (selected.includes(item) || selected.length >= limit) continue;
+      const family = item.topic_family || topicFamily(item);
+      if ((counts.get(family) || 0) >= maxPerFamily) continue;
+      selected.push(item);
+      counts.set(family, (counts.get(family) || 0) + 1);
+    }
+    if (selected.length >= limit) break;
+  }
+  return selected;
 }
 
 async function loadOwned() {
@@ -272,7 +347,7 @@ export default async function handler(req, res) {
     const candidates = unique(candidateRaw.map(decorate), 1200);
     const combined = unique([...owned, ...candidates], 1300);
 
-    const story = unique(owned.filter((item) => item.age_hours <= 24 && item.story_score >= 50).sort((a, b) => b.story_score - a.story_score || a.age_hours - b.age_hours), limit);
+    const story = selectDiverse(owned.filter((item) => item.age_hours <= 24 && item.story_score >= 44 && TECH.test(textOf(item)) && !NOISE.test(textOf(item))), 'story_score', limit, 2);
     const reels = unique(combined.filter((item) => item.age_hours <= 24 && item.reels_score >= 46)
       .sort((a, b) => b.reels_score - a.reels_score || a.age_hours - b.age_hours), limit);
     const reelUrls = new Set(reels.map((item) => item.url));
@@ -280,18 +355,20 @@ export default async function handler(req, res) {
       .sort((a, b) => b.feed_score - a.feed_score || a.age_hours - b.age_hours), limit);
     const published = unique(owned.sort((a, b) => b.feed_score - a.feed_score || a.age_hours - b.age_hours), limit);
     const today = istanbulDay();
-    const dailyItems = unique(owned.filter((item) => istanbulDay(item.published_at) === today).map((item) => {
+    const digestCandidates = unique(owned.filter((item) => istanbulDay(item.published_at) === today && TECH.test(textOf(item)) && !NOISE.test(textOf(item))).map((item) => {
       const signal = digestSignals(item);
-      return { ...item, digest_score: digestScore(item), digest_summary: digestSummary(item), read_signal_available: signal.available, total_clicks: signal.clicks, total_impressions: signal.impressions };
-    }).sort((a, b) => b.digest_score - a.digest_score || b.total_clicks - a.total_clicks || a.age_hours - b.age_hours), 5);
+      const breakdown = digestScoreBreakdown(item);
+      return { ...item, digest_score: breakdown.total, digest_score_breakdown: breakdown, digest_summary: digestSummary(item), read_signal_available: signal.available, total_clicks: signal.clicks, total_impressions: signal.impressions, topic_family: item.topic_family || topicFamily(item) };
+    }), 80);
+    const dailyItems = selectDiverse(digestCandidates, 'digest_score', 5, 1);
     const actualSignalCount = dailyItems.filter((item) => item.read_signal_available).length;
     const dailyDigest = {
       items: dailyItems,
       whatsapp_template: channelTemplate(dailyItems, 'whatsapp'),
       instagram_template: channelTemplate(dailyItems, 'instagram'),
       ranking_basis: actualSignalCount
-        ? 'Mevcut Search Console, Discover ve Google News etkileşimi; güncellik ve editoryal önemle birlikte değerlendirildi.'
-        : 'Bugünün performans verileri henüz oluşmadığı için güncellik, editoryal önem, teknoloji odağı ve paylaşılabilirlik kullanıldı.',
+        ? 'Puan sırası: editoryal önem %34, gerçek Discover–News–Web performansı %28, paylaşım değeri %14, tazelik %12, görsel %6 ve kitle genişliği %6. Aynı konu ailesinden en fazla bir haber ilk seçim turuna girer.'
+        : 'Puan sırası: editoryal önem %34, paylaşım değeri %14, tazelik %12, görsel %6 ve kitle genişliği %6. Güncel performans oluştuğunda %28 ağırlıkla otomatik eklenir; aynı marka/konunun listeyi kaplaması engellenir.',
       actual_signal_count: actualSignalCount,
       generated_at: nowIso()
     };
@@ -303,7 +380,7 @@ export default async function handler(req, res) {
       windows: { story_hours: 24, radar_hours: MAX_CANDIDATE_HOURS, published_hours: MAX_OWNED_HOURS },
       refreshed_at: nowIso(),
       scoring: {
-        story: ['Teknoblog’da yayımlanmış olma', 'tazelik', 'haber anı', 'görsel', 'Discover ve News sinyali'],
+        story: ['editoryal önem %30', 'tazelik %20', 'gerçek performans %18', 'sosyal uygunluk %10', 'Discover uygunluğu %8', 'görsel %7', 'paylaşım değeri %7', 'marka/konu çeşitliliği'],
         reels: ['gösterilebilirlik', 'video kancası', 'sosyal ilgi', 'görsel', 'tazelik'],
         feed: ['kaydetme/paylaşma niyeti', 'arama bağlamı', 'karusel açıklanabilirliği', 'Discover sinyali', 'görsel']
       },
