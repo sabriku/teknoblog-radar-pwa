@@ -11,6 +11,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const PORT = Number(process.env.PORT || 3000);
+const LIVE_ANALYTICS_INTERVAL_MS = 5 * 60 * 1000;
 
 const API_ROUTES = {
   '/api/access': './api/access.js',
@@ -123,6 +124,36 @@ try {
   process.exit(1);
 }
 
+let liveAnalyticsRunning = false;
+async function refreshLiveAnalytics() {
+  if (liveAnalyticsRunning || !process.env.CRON_TOKEN) return;
+  liveAnalyticsRunning = true;
+  const endpoint = `http://127.0.0.1:${PORT}`;
+  const request = async (action) => {
+    const response = await fetch(`${endpoint}/api/intelligence`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-cron-token': process.env.CRON_TOKEN },
+      body: JSON.stringify({ action, ...(action === 'sync_teknoblog' ? { max_pages: 1 } : {}) }), signal: AbortSignal.timeout(120000)
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `${action} HTTP ${response.status}`);
+    return data;
+  };
+  try {
+    await request('sync_teknoblog');
+    const authResponse = await fetch(`${endpoint}/api/google-auth`, { signal: AbortSignal.timeout(15000) });
+    const auth = await authResponse.json().catch(() => ({}));
+    if (authResponse.ok && auth.connected && auth.analytics_configured) {
+      const result = await request('sync_ga4_live');
+      console.log(`GA4 live refresh: ${JSON.stringify(result.stored || result)}`);
+    }
+  } catch (error) {
+    console.error(`GA4 live refresh failed: ${error?.message || String(error)}`);
+  } finally { liveAnalyticsRunning = false; }
+}
+
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`Teknoblog Radar listening on http://127.0.0.1:${PORT}`);
+  const initialTimer = setTimeout(refreshLiveAnalytics, 15000);
+  const interval = setInterval(refreshLiveAnalytics, LIVE_ANALYTICS_INTERVAL_MS);
+  initialTimer.unref(); interval.unref();
 });

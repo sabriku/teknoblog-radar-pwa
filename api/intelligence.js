@@ -949,17 +949,23 @@ async function ga4Report(propertyId, token, body) {
   return data;
 }
 
-async function syncGa4(options = {}) {
+async function syncGa4Impl(options = {}) {
   const config = await getGoogleConfig();
   const propertyId = String(config.analytics_property_id || '').replace(/^properties\//, '').trim();
+  if (!propertyId) throw new Error('Google Analytics bağlantısı veya GA4 Mülk Kimliği eksik.');
+  const todayOnly = Boolean(options.todayOnly);
+  const endDate = istanbulDate();
+  if (todayOnly) {
+    const latest = await queryLocal(`SELECT synced_at FROM analytics_daily_totals WHERE snapshot_date=$1::date LIMIT 1`, [endDate]);
+    const syncedAt = latest.rows[0]?.synced_at ? new Date(latest.rows[0].synced_at).getTime() : 0;
+    if (syncedAt && Date.now() - syncedAt < 4 * 60 * 1000) return { skipped: true, reason: 'GA4 verisi zaten güncel.', today_only: true, property_id: propertyId };
+  }
   const token = await googleAccessToken();
-  if (!propertyId || !token) throw new Error('Google Analytics bağlantısı veya GA4 Mülk Kimliği eksik.');
+  if (!token) throw new Error('Google Analytics bağlantısı veya GA4 Mülk Kimliği eksik.');
   const known = await queryLocal(`SELECT url,title,published_at FROM teknoblog_content WHERE published_at>=NOW()-INTERVAL '120 days' ORDER BY published_at DESC LIMIT 15000`);
   const knownByCanonical = new Map(known.rows.map((item) => [canonicalUrl(item.url), item]));
   const existing = await queryLocal(`SELECT MAX(snapshot_date) AS latest FROM analytics_performance_snapshots`);
-  const todayOnly = Boolean(options.todayOnly);
   const historyDays = todayOnly ? 1 : (existing.rows[0]?.latest ? 8 : 90);
-  const endDate = istanbulDate();
   const startBase = new Date(`${endDate}T12:00:00Z`);
   startBase.setUTCDate(startBase.getUTCDate() - Math.max(0, historyDays - 1));
   const startDate = istanbulDate(startBase);
@@ -1035,6 +1041,14 @@ async function syncGa4(options = {}) {
   await queryLocal(`UPDATE published_performance p SET title=t.title,published_at=t.published_at FROM teknoblog_content t
     WHERE regexp_replace(p.url,'/+$','')=regexp_replace(t.url,'/+$','') AND (p.title IS NULL OR p.title='' OR p.published_at IS NULL)`);
   return { urls: totals.size, snapshots: snapshotRows.length, daily_totals: dailyData.rows?.length || 0, history_days: historyDays, today_only: todayOnly, property_id: propertyId };
+}
+
+let ga4SyncPromise = null;
+async function syncGa4(options = {}) {
+  if (ga4SyncPromise) return ga4SyncPromise;
+  ga4SyncPromise = syncGa4Impl(options);
+  try { return await ga4SyncPromise; }
+  finally { ga4SyncPromise = null; }
 }
 
 async function queueAction(body) {
