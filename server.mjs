@@ -11,7 +11,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const PORT = Number(process.env.PORT || 3000);
-const LIVE_ANALYTICS_INTERVAL_MS = 5 * 60 * 1000;
+const LIVE_ANALYTICS_INTERVAL_MINUTES = Math.max(15, Math.min(180, Number(process.env.GA4_LIVE_REFRESH_MINUTES) || 30));
+const LIVE_ANALYTICS_INTERVAL_MS = LIVE_ANALYTICS_INTERVAL_MINUTES * 60 * 1000;
 
 const API_ROUTES = {
   '/api/access': './api/access.js',
@@ -154,7 +155,7 @@ async function refreshLiveAnalytics() {
 
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`Teknoblog Radar listening on http://127.0.0.1:${PORT}`);
-  const initialTimer = setTimeout(refreshLiveAnalytics, 15000);
+  const initialTimer = setTimeout(refreshLiveAnalytics, 60000);
   const interval = setInterval(refreshLiveAnalytics, LIVE_ANALYTICS_INTERVAL_MS);
   initialTimer.unref(); interval.unref();
 });

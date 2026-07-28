@@ -27,7 +27,6 @@ try {
     const authResponse = await fetch(`${baseUrl}/api/google-auth`, { signal: controller.signal });
     const auth = await authResponse.json().catch(() => ({}));
     if (authResponse.ok && auth.connected) {
-      if (auth.analytics_configured) followupActions.push('sync_ga4_live');
       if (minute < 5) followupActions.push('sync_gsc');
     }
   } catch {}

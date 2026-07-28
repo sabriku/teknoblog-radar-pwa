@@ -1,6 +1,8 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { queryLocal } from './_lib.js';
 
+let accessTokenCache = { token: '', expiresAt: 0, credentialsKey: '' };
+
 function keyMaterial() {
   const secret = process.env.GOOGLE_CREDENTIAL_ENCRYPTION_KEY || process.env.CRON_TOKEN || '';
   if (!secret) throw new Error('Google kimlik bilgilerini şifrelemek için CRON_TOKEN gerekli.');
@@ -33,6 +35,7 @@ export async function getGoogleConfig() {
 export async function saveGoogleConfig(config) {
   const merged = { ...(await getGoogleConfig()), ...config };
   await queryLocal(`INSERT INTO app_secrets(key,encrypted_value,updated_at) VALUES('google_search_console',$1,NOW()) ON CONFLICT(key) DO UPDATE SET encrypted_value=EXCLUDED.encrypted_value,updated_at=NOW()`, [encrypt(merged)]);
+  accessTokenCache = { token: '', expiresAt: 0, credentialsKey: '' };
   return merged;
 }
 export function createOAuthState() {
@@ -48,7 +51,11 @@ export function verifyOAuthState(state = '') {
 export async function googleAccessToken() {
   if (process.env.GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN) return process.env.GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN;
   const config = await getGoogleConfig(); if (!config.client_id || !config.client_secret || !config.refresh_token) return '';
+  const credentialsKey = createHash('sha256').update(`${config.client_id}:${config.refresh_token}`).digest('hex');
+  if (accessTokenCache.token && accessTokenCache.credentialsKey === credentialsKey && accessTokenCache.expiresAt > Date.now() + 60_000) return accessTokenCache.token;
   const response = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: config.client_id, client_secret: config.client_secret, refresh_token: config.refresh_token, grant_type: 'refresh_token' }) });
   const data = await response.json(); if (!response.ok) throw new Error(data.error_description || data.error || 'Google OAuth başarısız');
-  return data.access_token || '';
+  const token = data.access_token || '';
+  if (token) accessTokenCache = { token, credentialsKey, expiresAt: Date.now() + Math.max(5 * 60, Number(data.expires_in || 3600) - 120) * 1000 };
+  return token;
 }

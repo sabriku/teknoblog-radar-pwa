@@ -956,29 +956,37 @@ async function syncGa4Impl(options = {}) {
   const todayOnly = Boolean(options.todayOnly);
   const endDate = istanbulDate();
   if (todayOnly) {
+    const cacheMinutes = Math.max(10, Math.min(175, Number(process.env.GA4_LIVE_CACHE_MINUTES) || 25));
     const latest = await queryLocal(`SELECT synced_at FROM analytics_daily_totals WHERE snapshot_date=$1::date LIMIT 1`, [endDate]);
     const syncedAt = latest.rows[0]?.synced_at ? new Date(latest.rows[0].synced_at).getTime() : 0;
-    if (syncedAt && Date.now() - syncedAt < 4 * 60 * 1000) return { skipped: true, reason: 'GA4 verisi zaten güncel.', today_only: true, property_id: propertyId };
+    if (syncedAt && Date.now() - syncedAt < cacheMinutes * 60 * 1000) return { skipped: true, reason: 'GA4 yerel önbelleği hâlâ güncel.', today_only: true, property_id: propertyId, cache_minutes: cacheMinutes };
   }
   const token = await googleAccessToken();
   if (!token) throw new Error('Google Analytics bağlantısı veya GA4 Mülk Kimliği eksik.');
   const known = await queryLocal(`SELECT url,title,published_at FROM teknoblog_content WHERE published_at>=NOW()-INTERVAL '120 days' ORDER BY published_at DESC LIMIT 15000`);
   const knownByCanonical = new Map(known.rows.map((item) => [canonicalUrl(item.url), item]));
+  const todayPaths = [...new Set(known.rows.filter((item) => item.published_at && istanbulDate(new Date(item.published_at)) === endDate).map((item) => {
+    try { return new URL(item.url).pathname || '/'; } catch { return ''; }
+  }).filter(Boolean))].slice(0, 100);
   const existing = await queryLocal(`SELECT MAX(snapshot_date) AS latest FROM analytics_performance_snapshots`);
   const historyDays = todayOnly ? 1 : (existing.rows[0]?.latest ? 8 : 90);
   const startBase = new Date(`${endDate}T12:00:00Z`);
   startBase.setUTCDate(startBase.getUTCDate() - Math.max(0, historyDays - 1));
   const startDate = istanbulDate(startBase);
-  const data = await ga4Report(propertyId, token, {
+  const liveMetrics = [{ name: 'screenPageViews' }, { name: 'activeUsers' }];
+  const fullMetrics = [...liveMetrics, { name: 'sessions' }, { name: 'engagedSessions' }, { name: 'userEngagementDuration' }, { name: 'engagementRate' }];
+  const pageRequest = {
     dateRanges: [{ startDate, endDate }],
-    dimensions: [{ name: 'date' }, { name: 'pagePathPlusQueryString' }, { name: 'pageTitle' }],
-    metrics: [{ name: 'screenPageViews' }, { name: 'activeUsers' }, { name: 'sessions' }, { name: 'engagedSessions' }, { name: 'userEngagementDuration' }, { name: 'engagementRate' }],
-    limit: '100000', keepEmptyRows: false
-  });
+    dimensions: [{ name: 'date' }, { name: todayOnly ? 'pagePath' : 'pagePathPlusQueryString' }, { name: 'pageTitle' }],
+    metrics: todayOnly ? liveMetrics : fullMetrics,
+    limit: todayOnly ? '2000' : '100000', keepEmptyRows: false, returnPropertyQuota: true
+  };
+  if (todayOnly && todayPaths.length) pageRequest.dimensionFilter = { filter: { fieldName: 'pagePath', inListFilter: { values: todayPaths, caseSensitive: false } } };
+  const data = todayOnly && !todayPaths.length ? { rows: [] } : await ga4Report(propertyId, token, pageRequest);
   const dailyData = await ga4Report(propertyId, token, {
     dateRanges: [{ startDate, endDate }], dimensions: [{ name: 'date' }],
-    metrics: [{ name: 'screenPageViews' }, { name: 'activeUsers' }, { name: 'sessions' }, { name: 'engagedSessions' }, { name: 'userEngagementDuration' }, { name: 'engagementRate' }],
-    limit: '1000', keepEmptyRows: false
+    metrics: todayOnly ? liveMetrics : fullMetrics,
+    limit: '1000', keepEmptyRows: false, returnPropertyQuota: true
   });
   const snapshots = new Map();
   const totals = new Map();
@@ -1040,7 +1048,8 @@ async function syncGa4Impl(options = {}) {
   }
   await queryLocal(`UPDATE published_performance p SET title=t.title,published_at=t.published_at FROM teknoblog_content t
     WHERE regexp_replace(p.url,'/+$','')=regexp_replace(t.url,'/+$','') AND (p.title IS NULL OR p.title='' OR p.published_at IS NULL)`);
-  return { urls: totals.size, snapshots: snapshotRows.length, daily_totals: dailyData.rows?.length || 0, history_days: historyDays, today_only: todayOnly, property_id: propertyId };
+  const quota = (value = {}) => ({ per_day_remaining: value.tokensPerDay?.remaining ?? null, per_hour_remaining: value.tokensPerHour?.remaining ?? null, project_hour_remaining: value.tokensPerProjectPerHour?.remaining ?? null });
+  return { urls: totals.size, snapshots: snapshotRows.length, daily_totals: dailyData.rows?.length || 0, history_days: historyDays, today_only: todayOnly, property_id: propertyId, filtered_paths: todayOnly ? todayPaths.length : null, quota: { page_report: quota(data.propertyQuota), daily_total: quota(dailyData.propertyQuota) } };
 }
 
 let ga4SyncPromise = null;

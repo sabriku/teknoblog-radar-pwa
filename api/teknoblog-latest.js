@@ -108,7 +108,7 @@ export default async function handler(req, res) {
       for (const item of items) item.analytics = { available: false };
     }
 
-    return json(res, 200, { items, day_key: dayKey, total: items.length, analytics_summary: analyticsSummary, analytics_source: 'GA4 · 5 dakikalık yerel PostgreSQL önbelleği' });
+    return json(res, 200, { items, day_key: dayKey, total: items.length, analytics_summary: analyticsSummary, analytics_source: 'GA4 · ekonomik 30 dakikalık yerel PostgreSQL önbelleği' });
   } catch (error) {
     return json(res, 500, { error: error?.message || String(error) });
   }
