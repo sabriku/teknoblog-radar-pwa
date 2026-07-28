@@ -22,6 +22,12 @@
 
   function todayKey() { return dayKey(new Date()); }
   function formatNumber(value) { return new Intl.NumberFormat('tr-TR').format(Math.max(0, Number(value) || 0)); }
+  function freshness(value) {
+    const seconds = Math.max(0, Math.round((Date.now() - new Date(value || 0).getTime()) / 1000));
+    if (!Number.isFinite(seconds) || !value) return 'henüz eşzamanlanmadı';
+    if (seconds < 60) return 'az önce';
+    return `${Math.floor(seconds / 60)} dk önce`;
+  }
 
   function escapeHtml(value) {
     return String(value ?? '')
@@ -64,6 +70,9 @@
         </div>
         <a href="https://www.teknoblog.com" target="_blank" rel="noopener noreferrer" style="flex:0 0 auto;font-size:12px;font-weight:800;color:#f04a0a;text-decoration:none;border:1px solid #f04a0a;border-radius:999px;padding:7px 9px;background:#fff">Siteye git</a>
       </div>
+      <div id="tb-latest-teknoblog-live" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:12px 0;padding:10px;border:1px solid #fdba74;border-radius:14px;background:linear-gradient(135deg,#fff7ed,#eff6ff)">
+        <div style="grid-column:1/-1;font-size:10px;font-weight:900;color:#9a3412"><span style="display:inline-block;width:7px;height:7px;margin-right:5px;border-radius:50%;background:#22c55e"></span>Bugünün canlı trafiği · yükleniyor</div>
+      </div>
       <div id="tb-latest-teknoblog-count" style="margin-bottom:12px;font-size:13px;color:#64748b;font-weight:700">Bugünkü haber sayısı hesaplanıyor...</div>
       <div id="tb-latest-teknoblog-list" style="display:flex;flex-direction:column;gap:10px;font-size:14px;color:#334155;max-height:760px;overflow:auto;padding-right:4px">
         <div>Yükleniyor...</div>
@@ -78,13 +87,16 @@
     const response = await fetch(`/api/teknoblog-latest?${params.toString()}`, { cache: 'no-store', headers: { accept: 'application/json' } });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data?.error || `HTTP ${response.status}`);
-    return Array.isArray(data?.items) ? data.items : [];
+    return { items: Array.isArray(data?.items) ? data.items : [], summary: data?.analytics_summary || null };
   }
 
   async function fetchAllTodayItems() {
     const all = [];
+    let summary = null;
     for (let page = 1; page <= 6; page += 1) {
-      const items = await fetchLatestPage(page);
+      const result = await fetchLatestPage(page);
+      const items = result.items;
+      if (!summary && result.summary) summary = result.summary;
       if (!items.length) break;
       all.push(...items);
       const todayItems = uniqueTodayItems(all);
@@ -93,7 +105,21 @@
       if (items.length < 60) break;
       if (todayItems.length >= 200) break;
     }
-    return uniqueTodayItems(all);
+    return { items: uniqueTodayItems(all), summary };
+  }
+
+  function renderLiveSummary(summary) {
+    const target = document.getElementById('tb-latest-teknoblog-live');
+    if (!target) return;
+    if (!summary?.available) {
+      target.innerHTML = '<div style="grid-column:1/-1;font-size:11px;font-weight:800;color:#64748b">GA4 canlı trafik özeti bekleniyor…</div>';
+      return;
+    }
+    target.innerHTML = `
+      <div style="grid-column:1/-1;display:flex;justify-content:space-between;gap:6px;font-size:10px;font-weight:900;color:#9a3412"><span><i style="display:inline-block;width:7px;height:7px;margin-right:5px;border-radius:50%;background:#22c55e"></i>Bugünün canlı trafiği</span><span style="color:#64748b">${escapeHtml(freshness(summary.updated_at))}</span></div>
+      <div style="padding:7px;border-radius:10px;background:#fff"><b style="display:block;font-size:17px;color:#047857">${formatNumber(summary.unique_visitors)}</b><span style="font-size:9px;font-weight:800;color:#64748b">Tekil</span></div>
+      <div style="padding:7px;border-radius:10px;background:#fff"><b style="display:block;font-size:17px;color:#1d4ed8">${formatNumber(summary.page_views)}</b><span style="font-size:9px;font-weight:800;color:#64748b">Görüntülenme</span></div>
+      <div style="padding:7px;border-radius:10px;background:#fff"><b style="display:block;font-size:17px;color:#7c3aed">${formatNumber(summary.sessions)}</b><span style="font-size:9px;font-weight:800;color:#64748b">Oturum</span></div>`;
   }
 
   async function loadLatest() {
@@ -101,7 +127,9 @@
     const count = document.getElementById('tb-latest-teknoblog-count');
     if (!list) return;
     try {
-      const items = await fetchAllTodayItems();
+      const result = await fetchAllTodayItems();
+      const items = result.items;
+      renderLiveSummary(result.summary);
       if (count) count.textContent = `Bugün yayımlanan haber sayısı: ${items.length}`;
       if (!items.length) {
         list.innerHTML = '<div style="font-size:13px;color:#64748b">Bugün yayımlanmış haber bulunamadı.</div>';
@@ -164,7 +192,7 @@
     observer.observe(document.body, { childList: true, subtree: true });
     window.addEventListener('hashchange', () => setTimeout(insertPanel, 50));
     window.addEventListener('load', insertPanel);
-    window.setInterval(() => { if (document.visibilityState === 'visible') loadLatest(); }, 5 * 60 * 1000);
+    window.setInterval(() => { if (document.visibilityState === 'visible') loadLatest(); }, 60 * 1000);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') loadLatest(); });
   }
 

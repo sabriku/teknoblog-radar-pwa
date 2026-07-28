@@ -69,30 +69,46 @@ export default async function handler(req, res) {
       .filter((item) => item.title && item.url)
       .sort((a, b) => new Date(b.published_at || 0).getTime() - new Date(a.published_at || 0).getTime());
 
+    let analyticsSummary = { available: false, day_key: dayKey };
     try {
       const normalizedUrls = items.map((item) => item.url.replace(/[?#].*$/, '').replace(/\/+$/, ''));
-      if (normalizedUrls.length) {
-        const performance = await queryLocal(`SELECT url,ga4_views,ga4_active_users,ga4_sessions,ga4_engaged_sessions,ga4_engagement_seconds,ga4_engagement_rate,observed_at,
-          COALESCE(payload ? 'ga4',false) AS ga4_available
-          FROM published_performance WHERE regexp_replace(split_part(split_part(url,'?',1),'#',1),'/+$','')=ANY($1::text[])`, [normalizedUrls]);
-        const byUrl = new Map(performance.rows.map((row) => [String(row.url || '').replace(/[?#].*$/, '').replace(/\/+$/, ''), row]));
-        for (const item of items) {
-          const metrics = byUrl.get(item.url.replace(/[?#].*$/, '').replace(/\/+$/, ''));
-          item.analytics = metrics ? {
-            available: Boolean(metrics.ga4_available),
-            unique_visitors: Math.round(Number(metrics.ga4_active_users) || 0),
-            page_views: Math.round(Number(metrics.ga4_views) || 0),
-            sessions: Math.round(Number(metrics.ga4_sessions) || 0),
-            engagement_rate: Number(metrics.ga4_engagement_rate) || 0,
-            updated_at: metrics.observed_at || null
-          } : { available: false };
-        }
+      const [performance, daily] = await Promise.all([
+        normalizedUrls.length
+          ? queryLocal(`SELECT url,views,active_users,sessions,engaged_sessions,engagement_seconds,engagement_rate,synced_at
+              FROM analytics_performance_snapshots
+              WHERE snapshot_date=$2::date AND regexp_replace(split_part(split_part(url,'?',1),'#',1),'/+$','')=ANY($1::text[])`, [normalizedUrls, dayKey])
+          : Promise.resolve({ rows: [] }),
+        queryLocal(`SELECT snapshot_date,views,active_users,sessions,engaged_sessions,engagement_seconds,engagement_rate,synced_at
+          FROM analytics_daily_totals WHERE snapshot_date=$1::date LIMIT 1`, [dayKey])
+      ]);
+      const byUrl = new Map(performance.rows.map((row) => [String(row.url || '').replace(/[?#].*$/, '').replace(/\/+$/, ''), row]));
+      for (const item of items) {
+        const metrics = byUrl.get(item.url.replace(/[?#].*$/, '').replace(/\/+$/, ''));
+        item.analytics = metrics ? {
+          available: true,
+          unique_visitors: Math.round(Number(metrics.active_users) || 0),
+          page_views: Math.round(Number(metrics.views) || 0),
+          sessions: Math.round(Number(metrics.sessions) || 0),
+          engagement_rate: Number(metrics.engagement_rate) || 0,
+          updated_at: metrics.synced_at || null
+        } : { available: false };
       }
+      const total = daily.rows[0];
+      if (total) analyticsSummary = {
+        available: true,
+        day_key: dayKey,
+        unique_visitors: Math.round(Number(total.active_users) || 0),
+        page_views: Math.round(Number(total.views) || 0),
+        sessions: Math.round(Number(total.sessions) || 0),
+        engaged_sessions: Math.round(Number(total.engaged_sessions) || 0),
+        engagement_rate: Number(total.engagement_rate) || 0,
+        updated_at: total.synced_at || null
+      };
     } catch {
       for (const item of items) item.analytics = { available: false };
     }
 
-    return json(res, 200, { items, day_key: dayKey, total: items.length, analytics_source: 'GA4 · yerel PostgreSQL önbelleği' });
+    return json(res, 200, { items, day_key: dayKey, total: items.length, analytics_summary: analyticsSummary, analytics_source: 'GA4 · 5 dakikalık yerel PostgreSQL önbelleği' });
   } catch (error) {
     return json(res, 500, { error: error?.message || String(error) });
   }

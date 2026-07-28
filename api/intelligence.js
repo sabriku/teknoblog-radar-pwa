@@ -936,7 +936,20 @@ function ga4Date(value = '') {
   return digits.length === 8 ? `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}` : '';
 }
 
-async function syncGa4() {
+function istanbulDate(value = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Istanbul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(value);
+}
+
+async function ga4Report(propertyId, token, body) {
+  const response = await fetch(`https://analyticsdata.googleapis.com/v1beta/properties/${encodeURIComponent(propertyId)}:runReport`, {
+    method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, signal: AbortSignal.timeout(30000), body: JSON.stringify(body)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data?.error?.message || `Google Analytics Data API HTTP ${response.status}`);
+  return data;
+}
+
+async function syncGa4(options = {}) {
   const config = await getGoogleConfig();
   const propertyId = String(config.analytics_property_id || '').replace(/^properties\//, '').trim();
   const token = await googleAccessToken();
@@ -944,20 +957,23 @@ async function syncGa4() {
   const known = await queryLocal(`SELECT url,title,published_at FROM teknoblog_content WHERE published_at>=NOW()-INTERVAL '120 days' ORDER BY published_at DESC LIMIT 15000`);
   const knownByCanonical = new Map(known.rows.map((item) => [canonicalUrl(item.url), item]));
   const existing = await queryLocal(`SELECT MAX(snapshot_date) AS latest FROM analytics_performance_snapshots`);
-  const historyDays = existing.rows[0]?.latest ? 8 : 90;
-  const endDate = new Date().toISOString().slice(0, 10);
-  const startDate = new Date(Date.now() - historyDays * 86400000).toISOString().slice(0, 10);
-  const response = await fetch(`https://analyticsdata.googleapis.com/v1beta/properties/${encodeURIComponent(propertyId)}:runReport`, {
-    method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, signal: AbortSignal.timeout(30000),
-    body: JSON.stringify({
-      dateRanges: [{ startDate, endDate }],
-      dimensions: [{ name: 'date' }, { name: 'pagePathPlusQueryString' }, { name: 'pageTitle' }],
-      metrics: [{ name: 'screenPageViews' }, { name: 'activeUsers' }, { name: 'sessions' }, { name: 'engagedSessions' }, { name: 'userEngagementDuration' }, { name: 'engagementRate' }],
-      limit: '100000', keepEmptyRows: false
-    })
+  const todayOnly = Boolean(options.todayOnly);
+  const historyDays = todayOnly ? 1 : (existing.rows[0]?.latest ? 8 : 90);
+  const endDate = istanbulDate();
+  const startBase = new Date(`${endDate}T12:00:00Z`);
+  startBase.setUTCDate(startBase.getUTCDate() - Math.max(0, historyDays - 1));
+  const startDate = istanbulDate(startBase);
+  const data = await ga4Report(propertyId, token, {
+    dateRanges: [{ startDate, endDate }],
+    dimensions: [{ name: 'date' }, { name: 'pagePathPlusQueryString' }, { name: 'pageTitle' }],
+    metrics: [{ name: 'screenPageViews' }, { name: 'activeUsers' }, { name: 'sessions' }, { name: 'engagedSessions' }, { name: 'userEngagementDuration' }, { name: 'engagementRate' }],
+    limit: '100000', keepEmptyRows: false
   });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data?.error?.message || `Google Analytics Data API HTTP ${response.status}`);
+  const dailyData = await ga4Report(propertyId, token, {
+    dateRanges: [{ startDate, endDate }], dimensions: [{ name: 'date' }],
+    metrics: [{ name: 'screenPageViews' }, { name: 'activeUsers' }, { name: 'sessions' }, { name: 'engagedSessions' }, { name: 'userEngagementDuration' }, { name: 'engagementRate' }],
+    limit: '1000', keepEmptyRows: false
+  });
   const snapshots = new Map();
   const totals = new Map();
   for (const row of data.rows || []) {
@@ -989,7 +1005,26 @@ async function syncGa4() {
       FROM jsonb_to_recordset($1::jsonb) AS x(url text,snapshot_date date,page_title text,views float,active_users float,sessions float,engaged_sessions float,engagement_seconds float,engagement_rate float)
       ON CONFLICT(url,snapshot_date) DO UPDATE SET page_title=EXCLUDED.page_title,views=EXCLUDED.views,active_users=EXCLUDED.active_users,sessions=EXCLUDED.sessions,engaged_sessions=EXCLUDED.engaged_sessions,engagement_seconds=EXCLUDED.engagement_seconds,engagement_rate=EXCLUDED.engagement_rate,synced_at=NOW()`, [JSON.stringify(chunk)]);
   }
-  for (const item of totals.values()) {
+  for (const row of dailyData.rows || []) {
+    const date = ga4Date(row.dimensionValues?.[0]?.value);
+    if (!date) continue;
+    const values = (row.metricValues || []).map((entry) => Number(entry.value) || 0);
+    await queryLocal(`INSERT INTO analytics_daily_totals(snapshot_date,views,active_users,sessions,engaged_sessions,engagement_seconds,engagement_rate,synced_at)
+      VALUES($1,$2,$3,$4,$5,$6,$7,NOW()) ON CONFLICT(snapshot_date) DO UPDATE SET
+      views=EXCLUDED.views,active_users=EXCLUDED.active_users,sessions=EXCLUDED.sessions,engaged_sessions=EXCLUDED.engaged_sessions,
+      engagement_seconds=EXCLUDED.engagement_seconds,engagement_rate=EXCLUDED.engagement_rate,synced_at=NOW()`,
+    [date, values[0], values[1], values[2], values[3], values[4], values[5]]);
+  }
+  let performanceTotals = totals;
+  if (todayOnly && totals.size) {
+    const affectedUrls = [...totals.keys()];
+    const aggregate = await queryLocal(`SELECT url,SUM(views) AS views,SUM(active_users) AS active_users,SUM(sessions) AS sessions,
+      SUM(engaged_sessions) AS engaged_sessions,SUM(engagement_seconds) AS engagement_seconds,
+      CASE WHEN SUM(sessions)>0 THEN SUM(engaged_sessions)/SUM(sessions) ELSE 0 END AS engagement_rate
+      FROM analytics_performance_snapshots WHERE snapshot_date>=$2::date-INTERVAL '7 days' AND url=ANY($1::text[]) GROUP BY url`, [affectedUrls, endDate]);
+    performanceTotals = new Map(aggregate.rows.map((item) => [item.url, item]));
+  }
+  for (const item of performanceTotals.values()) {
     await queryLocal(`INSERT INTO published_performance(url,ga4_views,ga4_active_users,ga4_sessions,ga4_engaged_sessions,ga4_engagement_seconds,ga4_engagement_rate,observed_at,payload)
       VALUES($1,$2,$3,$4,$5,$6,$7,NOW(),jsonb_build_object('ga4',$8::jsonb)) ON CONFLICT(url) DO UPDATE SET
       ga4_views=EXCLUDED.ga4_views,ga4_active_users=EXCLUDED.ga4_active_users,ga4_sessions=EXCLUDED.ga4_sessions,
@@ -999,7 +1034,7 @@ async function syncGa4() {
   }
   await queryLocal(`UPDATE published_performance p SET title=t.title,published_at=t.published_at FROM teknoblog_content t
     WHERE regexp_replace(p.url,'/+$','')=regexp_replace(t.url,'/+$','') AND (p.title IS NULL OR p.title='' OR p.published_at IS NULL)`);
-  return { urls: totals.size, snapshots: snapshotRows.length, history_days: historyDays, property_id: propertyId };
+  return { urls: totals.size, snapshots: snapshotRows.length, daily_totals: dailyData.rows?.length || 0, history_days: historyDays, today_only: todayOnly, property_id: propertyId };
 }
 
 async function queueAction(body) {
@@ -1288,6 +1323,7 @@ export default async function handler(req, res) {
     if (body.action === 'reconcile_queue_publications') return json(res, 200, { ok: true, ...(await reconcileQueuePublications()) });
     if (body.action === 'sync_gsc') return json(res, 200, { ok: true, stored: await syncGsc() });
     if (body.action === 'sync_ga4') return json(res, 200, { ok: true, stored: await syncGa4() });
+    if (body.action === 'sync_ga4_live') return json(res, 200, { ok: true, stored: await syncGa4({ todayOnly: true }) });
     if (body.action === 'sync_performance') {
       const [gsc, ga4] = await Promise.all([syncGsc(), syncGa4()]);
       return json(res, 200, { ok: true, gsc, ga4 });

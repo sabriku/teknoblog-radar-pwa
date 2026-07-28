@@ -21,20 +21,21 @@ try {
 
   console.log(JSON.stringify(data));
   const minute = new Date().getUTCMinutes();
-  const followupActions = ['run_alerts'];
-  if (minute % 15 < 5) followupActions.push('sync_teknoblog', 'reconcile_queue_publications');
-  if (minute < 5) {
-    try {
-      const authResponse = await fetch(`${baseUrl}/api/google-auth`, { signal: controller.signal });
-      const auth = await authResponse.json().catch(() => ({}));
-      if (authResponse.ok && auth.connected) followupActions.push(auth.analytics_configured ? 'sync_performance' : 'sync_gsc');
-    } catch {}
-  }
+  const followupActions = ['run_alerts', 'sync_teknoblog'];
+  if (minute % 15 < 5) followupActions.push('reconcile_queue_publications');
+  try {
+    const authResponse = await fetch(`${baseUrl}/api/google-auth`, { signal: controller.signal });
+    const auth = await authResponse.json().catch(() => ({}));
+    if (authResponse.ok && auth.connected) {
+      if (auth.analytics_configured) followupActions.push('sync_ga4_live');
+      if (minute < 5) followupActions.push('sync_gsc');
+    }
+  } catch {}
   for (const action of followupActions) {
     try {
       const followup = await fetch(`${baseUrl}/api/intelligence?token=${encodeURIComponent(token)}`, {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ action, ...(action === 'sync_teknoblog' ? { max_pages: 2 } : {}) }), signal: controller.signal
+        body: JSON.stringify({ action, ...(action === 'sync_teknoblog' ? { max_pages: 1 } : {}) }), signal: controller.signal
       });
       const followupData = await followup.json().catch(() => ({}));
       console.log(JSON.stringify({ action, ok: followup.ok, ...followupData }));

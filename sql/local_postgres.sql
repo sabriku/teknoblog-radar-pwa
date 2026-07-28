@@ -394,6 +394,17 @@ CREATE TABLE IF NOT EXISTS analytics_performance_snapshots (
   UNIQUE(url,snapshot_date)
 );
 
+CREATE TABLE IF NOT EXISTS analytics_daily_totals (
+  snapshot_date DATE PRIMARY KEY,
+  views DOUBLE PRECISION NOT NULL DEFAULT 0,
+  active_users DOUBLE PRECISION NOT NULL DEFAULT 0,
+  sessions DOUBLE PRECISION NOT NULL DEFAULT 0,
+  engaged_sessions DOUBLE PRECISION NOT NULL DEFAULT 0,
+  engagement_seconds DOUBLE PRECISION NOT NULL DEFAULT 0,
+  engagement_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
+  synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS intelligence_models (
   id BIGSERIAL PRIMARY KEY,
   model_version TEXT NOT NULL UNIQUE,
@@ -604,6 +615,7 @@ CREATE INDEX IF NOT EXISTS idx_performance_snapshots_date ON performance_snapsho
 CREATE INDEX IF NOT EXISTS idx_performance_snapshots_url ON performance_snapshots(url,snapshot_date DESC);
 CREATE INDEX IF NOT EXISTS idx_analytics_snapshots_date ON analytics_performance_snapshots(snapshot_date DESC);
 CREATE INDEX IF NOT EXISTS idx_analytics_snapshots_url ON analytics_performance_snapshots(url,snapshot_date DESC);
+CREATE INDEX IF NOT EXISTS idx_analytics_daily_totals_synced ON analytics_daily_totals(synced_at DESC);
 CREATE INDEX IF NOT EXISTS idx_predictions_probability ON content_predictions(discover_probability DESC,news_probability DESC);
 CREATE INDEX IF NOT EXISTS idx_feedback_url ON editorial_feedback(url,created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_prediction_outcomes_published ON prediction_outcomes(published_url,observed_at DESC);
