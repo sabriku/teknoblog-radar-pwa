@@ -5,6 +5,7 @@ const TECH = /\b(yapay zeka|ai|telefon|akıllı|iphone|ipad|macbook|android|ios|
 const NOISE = /\b(maç|macı|maci|futbol|basketbol|voleybol|hangi kanalda|canlı izle|transfer|magazin|burç|survivor|dizi|sevgilisi)\b/i;
 const DISCOVER = /\b(sızıntı|şaşırt|ilk kez|ortaya çıktı|büyük|kritik|değişiyor|yasak|ücretsiz|fiyat|özellik|model|liste|rekor|devrim|rakip|gelecek|gizli|beklenmedik)\b/i;
 const NEWS = /\b(duyurdu|tanıttı|çıktı|yayınlandı|başladı|satışa|güncelleme|anlaşma|satın aldı|açık|saldırı|dava|karar|yasak|zam|indirim|lansman|resmî|ifaşa|sızıntı)\b/i;
+const TURKEY_CONTEXT = /\b(türkiye|türk(?:iye'de|iye’de|iye için|iye pazarı)?|tl|türk lirası|btk|rekabet kurumu|resm[iî] gazete|e-devlet|trendyol|hepsiburada|n11|teknosa|mediamarkt türkiye|amazon\.com\.tr|turkcell|türk telekom|vodafone türkiye)\b/i;
 const COMPETITOR_SQL = `(^log(\\.com\\.tr)?$|shiftdelete|webtekno|donanımhaber|donanimhaber|webrazzi|chip( online)?|hardware plus|^hwp$|tamindir|technopat)`;
 
 function norm(value = '') { return safeText(value).toLocaleLowerCase('tr-TR').replace(/[^a-z0-9çğıöşü\s]/gi, ' ').replace(/\s+/g, ' ').trim(); }
@@ -24,9 +25,16 @@ function performanceStrength(row) {
 }
 function headline(title = '') { return safeText(title).replace(/\s*[|–—-]\s*(LOG|Webtekno|Webrazzi|ShiftDelete(?:\.Net)?|DonanımHaber).*$/i, '').trim(); }
 
-function promptFor(item) {
+export function hasTurkeyContext(item = {}) {
+  return TURKEY_CONTEXT.test(`${item.title || ''} ${item.summary || ''}`);
+}
+
+export function promptFor(item) {
   const refs = item.references.map((ref) => `- ${ref.source_name}: ${ref.title}\n  ${ref.url}`).join('\n');
-  return `Sen Teknoblog için çalışan kıdemli bir teknoloji editörüsün. Aşağıdaki rakip haberlerinden yararlanarak özgün, doğrulanmış ve kaynaklara dayalı bir Türkçe haber taslağı hazırla.\n\nKONU: ${item.title}\nFIRSAT: ${item.opportunity_label}\nDISCOVER PUANI: ${item.discover_score}/100\nGOOGLE NEWS PUANI: ${item.news_score}/100\nDEĞERLENDİRME: ${item.reasons.join(' ')}\n\nREFERANS HABERLER:\n${refs}\n\nKURALLAR:\n- Referanslarda bulunmayan hiçbir ayrıntıyı uydurma. Çelişen iddiaları açıkça belirt.\n- Rakip metinlerini kopyalama; bilgiyi yeniden doğrula ve Teknoblog üslubuyla özgünleştir.\n- Önce 3 Discover başlığı, 2 Google News başlığı ve 1 SEO başlığı öner.\n- En güçlü başlığı seçip kısa spot, haber gövdesi ve madde madde doğrulama notları üret.\n- Türkiye'deki kullanıcı açısından etkisini ve haberin neden şimdi önemli olduğunu açıkla.\n- Kullanılan referans URL'lerini taslağın sonunda listele.`;
+  const locationRule = hasTurkeyContext(item)
+    ? '- Bu gelişme doğrudan Türkiye bağlantılı. Türkiye’deki kullanıcılar, fiyat, erişim, takvim veya mevzuat açısından doğrulanabilen etkisini ayrı bir paragrafta açıkla.'
+    : '- Konu küresel. Yapay bir Türkiye bağlantısı kurma; Türkiye bölümünü, yerel fiyatı veya erişim durumunu yalnızca referanslarda doğrulanmış somut bilgi varsa ekle.';
+  return `Sen Teknoblog için çalışan kıdemli bir teknoloji editörüsün. Aşağıdaki rakip haberlerini yalnızca araştırma ve doğrulama kaynağı olarak kullanarak özgün, kaynaklara dayalı bir Türkçe teknoloji haberi hazırla.\n\nKONU: ${item.title}\nFIRSAT: ${item.opportunity_label}\nDISCOVER PUANI: ${item.discover_score}/100\nGOOGLE NEWS PUANI: ${item.news_score}/100\nDEĞERLENDİRME: ${item.reasons.join(' ')}\n\nREFERANS HABERLER:\n${refs}\n\nTEKNOBLOG ÜSLUBU VE YAZIM KURALLARI:\n- Metni Teknoblog’un sakin, güvenilir, açıklayıcı ve profesyonel haber üslubunda yaz.\n- Türkçe teknoloji yayını formatını kullan; doğal, akıcı ve ölçülü ol. Reklam dili, yapay heyecan, tık tuzağı ve rakip yayınlara gönderme kullanma.\n- Etken çatıyı ve kısa, anlaşılır cümleleri tercih et. Gereksiz tekrar, sonuç paragrafı ve “Sonuç olarak” kalıbı kullanma.\n- Rakip metinlerini kopyalama. Bilgileri yeniden yapılandır, özgünleştir ve referanslar arasında doğrula.\n- Referanslarda bulunmayan ayrıntıları uydurma. Çelişkili veya doğrulanmamış iddiaları kesin bilgi gibi sunma.\n${locationRule}\n\nÇIKTI FORMATI — AŞAĞIDAKİ TÜM BAŞLIKLARI EKSİKSİZ VER:\n1. EDİTORYAL KARAR\n- Haberleştirme kararı ve tek cümlelik gerekçe.\n\n2. BAŞLIK ÖNERİLERİ\n- 3 Google Discover başlığı\n- 2 Google News başlığı\n- 1 SEO başlığı\n- Seçilen ana haber başlığı\n\n3. SEO AÇIKLAMASI\n- 140–160 karakter uzunluğunda, ana konuyu ve temel arama niyetini doğal biçimde içeren tek bir meta description yaz.\n- Bu alanı boş bırakma ve spot metni aynen tekrarlama.\n\n4. SPOT\n- Haberin en önemli bilgisini veren, ana başlığı tamamlayan 1–2 cümlelik kısa spot yaz.\n\n5. HABER METNİ\n- Seçilen ana başlıkla uyumlu, yayına hazır haber gövdesi yaz.\n- Gerekiyorsa kısa ara başlıklar kullan; olayın ne olduğunu, neden önemli olduğunu ve kullanıcıya etkisini açıkla.\n\n6. DOĞRULAMA NOTLARI\n- Kesinleşen bilgileri, doğrulanması gereken iddiaları ve kaynaklar arasındaki olası çelişkileri maddeleyerek belirt.\n\n7. KAYNAKLAR\n- Yararlanılan referansların adını ve tam URL’sini listele.`;
 }
 
 function diversify(items, limit) {
