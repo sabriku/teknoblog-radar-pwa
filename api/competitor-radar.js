@@ -5,6 +5,7 @@ const TECH = /\b(yapay zeka|ai|telefon|akıllı|iphone|ipad|macbook|android|ios|
 const NOISE = /\b(maç|macı|maci|futbol|basketbol|voleybol|hangi kanalda|canlı izle|transfer|magazin|burç|survivor|dizi|sevgilisi)\b/i;
 const DISCOVER = /\b(sızıntı|şaşırt|ilk kez|ortaya çıktı|büyük|kritik|değişiyor|yasak|ücretsiz|fiyat|özellik|model|liste|rekor|devrim|rakip|gelecek|gizli|beklenmedik)\b/i;
 const NEWS = /\b(duyurdu|tanıttı|çıktı|yayınlandı|başladı|satışa|güncelleme|anlaşma|satın aldı|açık|saldırı|dava|karar|yasak|zam|indirim|lansman|resmî|ifaşa|sızıntı)\b/i;
+const COMPETITOR_SQL = `(^log(\\.com\\.tr)?$|shiftdelete|webtekno|donanımhaber|donanimhaber|webrazzi|chip( online)?|hardware plus|^hwp$|tamindir|technopat)`;
 
 function norm(value = '') { return safeText(value).toLocaleLowerCase('tr-TR').replace(/[^a-z0-9çğıöşü\s]/gi, ' ').replace(/\s+/g, ' ').trim(); }
 function tokens(value = '') { return new Set(norm(value).split(' ').filter((word) => word.length > 2 && !STOP.has(word))); }
@@ -53,14 +54,14 @@ export default async function handler(req, res) {
         LEFT JOIN LATERAL (SELECT MAX(discover_score) AS discover_score,MAX(editorial_score) AS editorial_score
           FROM topic_candidates tc WHERE tc.raw_feed_item_id=r.id) c ON true
         WHERE COALESCE(r.published_at,r.created_at)>=NOW()-($1::text||' hours')::interval AND s.is_active=true
-          AND (s.source_type='competitor' OR lower(s.name)~'(log|shiftdelete|webtekno|donanımhaber|donanimhaber|webrazzi|chip|hardware plus|hwp)')
-        ORDER BY COALESCE(r.published_at,r.created_at) DESC LIMIT 700`, [hours]),
+          AND lower(s.name)~$2
+        ORDER BY COALESCE(r.published_at,r.created_at) DESC LIMIT 700`, [hours, COMPETITOR_SQL]),
       queryLocal(`SELECT title,discover_clicks,discover_impressions,google_news_clicks,google_news_impressions FROM published_performance
         WHERE title IS NOT NULL AND published_at>=NOW()-INTERVAL '120 days' AND (discover_impressions>0 OR google_news_impressions>0)
         ORDER BY observed_at DESC LIMIT 800`),
       queryLocal(`SELECT title,url,published_at FROM teknoblog_content WHERE published_at>=NOW()-INTERVAL '45 days' ORDER BY published_at DESC LIMIT 2500`),
       queryLocal(`SELECT url,status FROM editorial_queue WHERE created_at>=NOW()-INTERVAL '14 days'`),
-      queryLocal(`SELECT id,name FROM sources WHERE is_active=true AND (source_type='competitor' OR lower(name)~'(log|shiftdelete|webtekno|donanımhaber|donanimhaber|webrazzi|chip|hardware plus|hwp)') ORDER BY priority_weight DESC`)
+      queryLocal(`SELECT id,name FROM sources WHERE is_active=true AND lower(name)~$1 ORDER BY priority_weight DESC`, [COMPETITOR_SQL])
     ]);
     const queueMap = new Map(queue.rows.map((row) => [canonical(row.url), row.status]));
     const ownTokens = own.rows.map((row) => ({ ...row, words: tokens(row.title) }));

@@ -25,8 +25,9 @@ function sortSourcesWithBoost(items = []) {
 }
 
 function isCompetitorSource(source = {}) {
-  return String(source.source_type || '').toLowerCase() === 'competitor'
-    || /(log(?:\.com\.tr)?|shiftdelete|webtekno|donanımhaber|donanimhaber|webrazzi|chip|hardware plus|hwp)/i.test(String(source.name || ''));
+  const name = String(source.name || '').trim().toLocaleLowerCase('tr-TR');
+  return /^(log(?:\.com\.tr)?|hwp)$/.test(name)
+    || /(shiftdelete|webtekno|donanımhaber|donanimhaber|webrazzi|chip(?: online)?|hardware plus|tamindir|technopat)/i.test(name);
 }
 
 function toPositiveInt(value, fallback) {
