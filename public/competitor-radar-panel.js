@@ -67,9 +67,9 @@
       if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
       state.items = data.items || []; state.summary = data.summary || {}; state.loaded = true;
       for (const id of [...state.selected]) if (!state.items.some((item) => String(item.id) === String(id))) state.selected.delete(id);
+      state.loading = false;
       render();
-    } catch (error) { render(); setNotice(`Rakip fırsatları alınamadı: ${error.message}`, true); }
-    finally { state.loading = false; }
+    } catch (error) { state.loading = false; render(); setNotice(`Rakip fırsatları alınamadı: ${error.message}`, true); }
   }
 
   function selectedItems(ids = state.selected) { return state.items.filter((item) => ids.has(String(item.id)) || ids.has(item.id)); }
