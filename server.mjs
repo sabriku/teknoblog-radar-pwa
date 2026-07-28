@@ -16,6 +16,7 @@ const LIVE_ANALYTICS_INTERVAL_MS = 5 * 60 * 1000;
 const API_ROUTES = {
   '/api/access': './api/access.js',
   '/api/auth': './api/auth.js',
+  '/api/competitor-radar': './api/competitor-radar.js',
   '/api/google-news-tech': './api/google-news-tech.js',
   '/api/google-auth': './api/google-auth.js',
   '/api/google-auth/callback': './api/google-auth.js',

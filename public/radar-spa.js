@@ -4,6 +4,7 @@
   const VALID_TABS = new Set([
     'news',
     'early-signals',
+    'competitor-radar',
     'search',
     'sources',
     'opportunities',
@@ -19,6 +20,7 @@
   const LABELS = {
     news: 'Haberler',
     'early-signals': 'Öncü Radar',
+    'competitor-radar': 'Rakip Fırsatları',
     search: 'Arama',
     sources: 'Kaynaklar',
     opportunities: 'Fırsatlar',
@@ -32,6 +34,7 @@
   const ICONS = {
     news: '📰',
     'early-signals': '🚨',
+    'competitor-radar': '🕵️',
     search: '🔎',
     sources: '🗂️',
     opportunities: '🏷️',
@@ -94,6 +97,7 @@
     const map = {
       news: 'Ana haber akışı, kaynak filtresi ve görünüm seçenekleri.',
       'early-signals': 'Trend olmadan önce yakalanan ve ilk yayın avantajı sağlayan gelişmeler.',
+      'competitor-radar': 'Rakip yayınlardaki haberleri Discover ve Google News fırsatına dönüştüren çalışma alanı.',
       search: 'Haberler, Teknoblog arşivi, trend kümeleri ve kaynaklarda birleşik arama.',
       sources: 'RSS kaynaklarını ekleme, toplu içe aktarma ve kaynak listesini yönetme.',
       opportunities: 'Fırsat ve fiyat sinyallerini editoryal bağlamda izleme.',

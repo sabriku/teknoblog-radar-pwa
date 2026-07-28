@@ -24,6 +24,11 @@ function sortSourcesWithBoost(items = []) {
   });
 }
 
+function isCompetitorSource(source = {}) {
+  return String(source.source_type || '').toLowerCase() === 'competitor'
+    || /(log(?:\.com\.tr)?|shiftdelete|webtekno|donanımhaber|donanimhaber|webrazzi|chip|hardware plus|hwp)/i.test(String(source.name || ''));
+}
+
 function toPositiveInt(value, fallback) {
   const n = Number.parseInt(String(value ?? ''), 10);
   return Number.isFinite(n) && n >= 0 ? n : fallback;
@@ -113,7 +118,8 @@ export default async function handler(req, res) {
 
     if (sourcesError) return json(res, 500, { error: sourcesError.message });
 
-    const sortedSources = sortSourcesWithBoost(allSources || []);
+    const competitorOnly = String(req.query?.source_type || '').toLowerCase() === 'competitor';
+    const sortedSources = sortSourcesWithBoost((allSources || []).filter((source) => !competitorOnly || isCompetitorSource(source)));
     const sources = sortedSources.slice(sourceOffset, sourceOffset + sourceLimit);
 
     let ingested = 0;
@@ -305,6 +311,7 @@ export default async function handler(req, res) {
       processed_sources,
       source_limit: sourceLimit,
       source_offset: sourceOffset,
+      source_type: competitorOnly ? 'competitor' : 'all',
       has_more: sortedSources.length > sourceOffset + sourceLimit,
       item_limit: itemLimit,
       debug,
