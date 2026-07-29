@@ -485,6 +485,14 @@ export function compareItems(a, b, sortKey) {
   if (sortKey === 'published_at' || sortKey === 'updated_at') return adjustedScore(b, sortKey) - adjustedScore(a, sortKey);
   const diff = adjustedScore(b, sortKey) - adjustedScore(a, sortKey);
   if (diff) return diff;
+  if (sortKey === 'discover_score') {
+    const rawDiff = scoreValue(b, 'precalibrated_discover_score') - scoreValue(a, 'precalibrated_discover_score');
+    if (rawDiff) return rawDiff;
+    const probabilityDiff = scoreValue(b, 'discover_probability') - scoreValue(a, 'discover_probability');
+    if (probabilityDiff) return probabilityDiff;
+    const affinityDiff = scoreValue(b, 'published_discover_affinity') - scoreValue(a, 'published_discover_affinity');
+    if (affinityDiff) return affinityDiff;
+  }
   return timeValue(b?.published_at || b?.updated_at || b?.created_at) - timeValue(a?.published_at || a?.updated_at || a?.created_at);
 }
 

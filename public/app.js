@@ -99,7 +99,13 @@
           if (Number.isFinite(rankA) && Number.isFinite(rankB) && rankA !== rankB) return rankA - rankB;
         }
         const diff = score(b, 'discover_score') - score(a, 'discover_score');
-        return diff || timestamp(b) - timestamp(a);
+        if (diff) return diff;
+        const rawDiff = score(b, 'precalibrated_discover_score') - score(a, 'precalibrated_discover_score');
+        if (rawDiff) return rawDiff;
+        const probabilityDiff = score(b, 'discover_probability') - score(a, 'discover_probability');
+        if (probabilityDiff) return probabilityDiff;
+        const affinityDiff = score(b, 'published_discover_affinity') - score(a, 'published_discover_affinity');
+        return affinityDiff || timestamp(b) - timestamp(a);
       }
       const diff = freshnessAdjustedScore(b, state.sort) - freshnessAdjustedScore(a, state.sort);
       return diff || timestamp(b) - timestamp(a);

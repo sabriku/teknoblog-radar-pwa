@@ -29,5 +29,10 @@ assert.ok(calibrated[5].discover_score >= 82 && calibrated[5].discover_score <= 
 assert.ok(calibrated[15].discover_score >= 75 && calibrated[15].discover_score <= 81, 'takip eden dilim 75–81 aralığında olmalı');
 assert.deepEqual(calibrated.map((item) => item.discover_score), [...calibrated].map((item) => item.discover_score).sort((a, b) => b - a), 'kalibrasyon Discover sırasını bozmamalı');
 assert.equal(calibrated[0].precalibrated_discover_score, 100, 'kalibrasyon öncesi puan denetim için korunmalı');
+const tied = [
+  { title: 'Düşük ham puan', discover_score: 90, precalibrated_discover_score: 70, published_at: '2026-07-29T09:00:00Z' },
+  { title: 'Yüksek ham puan', discover_score: 90, precalibrated_discover_score: 74, published_at: '2026-07-29T08:00:00Z' }
+].sort((a, b) => compareItems(a, b, 'discover_score'));
+assert.equal(tied[0].title, 'Yüksek ham puan', 'eşit kalibre puanlarda gerçek intelligence sırası korunmalı');
 
 console.log('recommendations scoring tests passed');
