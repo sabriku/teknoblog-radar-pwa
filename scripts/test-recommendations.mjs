@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { buildPerformanceProfiles, calibrateDiscoverScores, compareItems, performanceAffinity } from '../api/recommendations.js';
+import { buildPerformanceProfiles, calibrateDiscoverScores, compareItems, diversifyItems, performanceAffinity } from '../api/recommendations.js';
 
 const profiles = buildPerformanceProfiles([
   { title: 'Garmin yeni akıllı saat modelini tanıttı', discover_clicks: 900, discover_impressions: 70000, discover_ctr: .013, ga4_views: 24000, ga4_active_users: 21000, ga4_engagement_rate: .72 },
@@ -34,5 +34,14 @@ const tied = [
   { title: 'Yüksek ham puan', discover_score: 90, precalibrated_discover_score: 74, published_at: '2026-07-29T08:00:00Z' }
 ].sort((a, b) => compareItems(a, b, 'discover_score'));
 assert.equal(tied[0].title, 'Yüksek ham puan', 'eşit kalibre puanlarda gerçek intelligence sırası korunmalı');
+
+const samsungHeavy = [
+  ...Array.from({ length: 20 }, (_, index) => ({ title: `Samsung Galaxy haberi ${index}`, brand_name: 'Samsung', source_name: `Samsung kaynak ${index % 4}`, discover_score: 100 - index * .2, published_at: now })),
+  ...['Apple', 'Google', 'Xiaomi', 'Huawei', 'NVIDIA', 'AMD', 'Intel', 'Garmin'].flatMap((brand, brandIndex) => Array.from({ length: 3 }, (_, index) => ({ title: `${brand} haberi ${index}`, brand_name: brand, source_name: `${brand} kaynak`, discover_score: 94 - brandIndex - index * .2, published_at: now })))
+];
+const diversified = diversifyItems(samsungHeavy, 'discover_score').slice(0, 20);
+const samsungCount = diversified.filter((item) => item.brand_name === 'Samsung').length;
+assert.ok(samsungCount <= 4, `ilk 20 içinde Samsung kotası aşılmamalı (gelen: ${samsungCount})`);
+assert.ok(new Set(diversified.map((item) => item.brand_name)).size >= 6, 'ilk 20 listesi farklı markaları görünür kılmalı');
 
 console.log('recommendations scoring tests passed');

@@ -1,7 +1,7 @@
 (() => {
   const VIEW_KEY = 'tb_news_card_view';
   const SORT_KEY = 'tb_news_sort';
-  const BRAND_DIVERSITY_KEY = 'tb_news_brand_diversity_v2';
+  const BRAND_DIVERSITY_KEY = 'tb_news_brand_diversity_v3';
   const VALID_SORTS = new Set(['discover_score', 'traffic_score', 'published_at', 'total_score', 'conversion_score', 'social_score', 'editorial_score']);
   const VALID_VIEWS = new Set(['cards-2', 'cards-3', 'cards-4', 'stack', 'compact', 'list']);
   const VIEW_LABELS = {
@@ -27,7 +27,7 @@
     loading: false,
     lastError: '',
     requestSequence: 0,
-    brandDiversity: localStorage.getItem(BRAND_DIVERSITY_KEY) === '1'
+    brandDiversity: localStorage.getItem(BRAND_DIVERSITY_KEY) !== '0'
   };
 
   const esc = (value) => String(value ?? '')
@@ -185,7 +185,7 @@
     if (!wrap) return;
     const names = ['all', ...new Set(state.items.map(sourceName).filter(Boolean))].sort((a, b) => a === 'all' ? -1 : b === 'all' ? 1 : a.localeCompare(b, 'tr'));
     if (!names.includes(state.source)) state.source = 'all';
-    wrap.innerHTML = `<label for="tb-source-select" style="font-size:13px;font-weight:800;color:#111827;white-space:nowrap">Kaynak</label><select id="tb-source-select" style="min-width:260px;max-width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:12px;background:#fff;font-weight:800;color:#374151">${names.map((name) => `<option value="${esc(name)}"${state.source === name ? ' selected' : ''}>${esc(name === 'all' ? 'Tüm kaynaklar' : name)}</option>`).join('')}</select>${state.sort === 'discover_score' ? `<button type="button" class="tb-view-btn" data-brand-diversity aria-pressed="${state.brandDiversity ? 'true' : 'false'}" title="Tek bir markanın Discover listesini kaplamasını önler"><span class="tb-view-icon">◈</span><span>Dengeli marka dağılımı</span></button>` : ''}`;
+    wrap.innerHTML = `<label for="tb-source-select" style="font-size:13px;font-weight:800;color:#111827;white-space:nowrap">Kaynak</label><select id="tb-source-select" style="min-width:260px;max-width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:12px;background:#fff;font-weight:800;color:#374151">${names.map((name) => `<option value="${esc(name)}"${state.source === name ? ' selected' : ''}>${esc(name === 'all' ? 'Tüm kaynaklar' : name)}</option>`).join('')}</select>${state.sort === 'discover_score' ? `<button type="button" class="tb-view-btn" data-brand-diversity aria-pressed="${state.brandDiversity ? 'true' : 'false'}" title="Tek bir markanın Discover listesini kaplamasını önler; kapatıldığında ham puan sırası gösterilir"><span class="tb-view-icon">◈</span><span>Marka dengesi: ${state.brandDiversity ? 'Açık' : 'Kapalı'}</span></button>` : ''}`;
   }
 
   function renderViewBar() {
@@ -300,7 +300,8 @@
     const requestedSort = state.sort;
     try {
       state.lastError = '';
-      const data = await fetchJson(`/api/recommendations?sort=${encodeURIComponent(requestedSort)}&diversify=${state.brandDiversity ? '1' : '0'}&t=${Date.now()}`, { timeoutMs: 25000 });
+      const diversify = requestedSort === 'discover_score' && state.brandDiversity ? '1' : '0';
+      const data = await fetchJson(`/api/recommendations?sort=${encodeURIComponent(requestedSort)}&diversify=${diversify}&t=${Date.now()}`, { timeoutMs: 25000 });
       if (requestId !== state.requestSequence || requestedSort !== state.sort) return;
       state.items = Array.isArray(data.items) ? data.items : [];
     } catch (error) {

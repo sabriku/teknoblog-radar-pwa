@@ -496,7 +496,7 @@ export function compareItems(a, b, sortKey) {
   return timeValue(b?.published_at || b?.updated_at || b?.created_at) - timeValue(a?.published_at || a?.updated_at || a?.created_at);
 }
 
-function diversifyItems(items = [], sortKey = 'published_at') {
+export function diversifyItems(items = [], sortKey = 'published_at') {
   if (sortKey === 'published_at' || sortKey === 'updated_at' || items.length < 4) return items;
   const remaining = items.slice();
   const selected = [];
@@ -507,6 +507,8 @@ function diversifyItems(items = [], sortKey = 'published_at') {
   while (selected.length < target && remaining.length) {
     let bestIndex = 0;
     let bestValue = -Infinity;
+    let foundBelowCap = false;
+    const topBrandCap = selected.length < 20 ? 4 : Infinity;
     for (let index = 0; index < Math.min(100, remaining.length); index += 1) {
       const item = remaining[index];
       const source = String(item.source_name || 'unknown').toLocaleLowerCase('tr-TR');
@@ -515,9 +517,13 @@ function diversifyItems(items = [], sortKey = 'published_at') {
       const sourcePenalty = Math.max(0, (sourceCounts.get(source) || 0) - 1) * 5;
       const topicPenalty = Math.max(0, (topicCounts.get(topic) || 0) - 2) * 4;
       const brandCount = brandCounts.get(brand) || 0;
+      const brandCap = brand === 'Diğer teknoloji' && selected.length < 20 ? 6 : topBrandCap;
+      const belowCap = brandCount < brandCap;
+      if (foundBelowCap && !belowCap) continue;
       const brandPenalty = brand === 'Diğer teknoloji' ? Math.max(0, brandCount - 3) * 3
         : brandCount === 0 ? 0 : brandCount === 1 ? 2 : 11 + (brandCount - 2) * 8;
       const value = adjustedScore(item, sortKey) - sourcePenalty - topicPenalty - brandPenalty - index * .015;
+      if (belowCap && !foundBelowCap) { foundBelowCap = true; bestValue = -Infinity; }
       if (value > bestValue) { bestValue = value; bestIndex = index; }
     }
     const [picked] = remaining.splice(bestIndex, 1);
@@ -602,7 +608,7 @@ export default async function handler(req, res) {
 
     enriched.sort((a, b) => compareItems(a, b, sortKey));
     const diversitySetting = String(req.query?.diversify || '');
-    const diversityApplied = diversitySetting === '1';
+    const diversityApplied = diversitySetting ? diversitySetting === '1' : discoverMode;
     if (diversityApplied) enriched = diversifyItems(enriched, sortKey);
     if (intelligenceModel) {
       try { await savePredictions(enriched, intelligenceModel.model_version); } catch {}
