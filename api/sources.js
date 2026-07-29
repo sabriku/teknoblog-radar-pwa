@@ -1,24 +1,10 @@
 import { getSupabaseAdmin, json, parseFeedItems, hashValue, chooseFeedUrl, safeText, nowIso } from './_lib.js';
 
-const PRIORITY_BOOSTS = {
-  'engadget': 35,
-  'digital trends': 35,
-  'log.com.tr': 35,
-  'log': 20
-};
-
-function boostedPriority(source = {}) {
-  const name = String(source?.name || '').toLowerCase().trim();
-  const base = Number(source?.priority_weight || 0);
-  for (const [key, boost] of Object.entries(PRIORITY_BOOSTS)) {
-    if (name === key || name.includes(key)) return base + boost;
-  }
-  return base;
-}
-
-function sortSourcesWithBoost(items = []) {
+export function sortSourcesByPriority(items = []) {
   return [...items].sort((a, b) => {
-    const diff = boostedPriority(b) - boostedPriority(a);
+    const activeDiff = Number(b?.is_active !== false) - Number(a?.is_active !== false);
+    if (activeDiff !== 0) return activeDiff;
+    const diff = Number(b?.priority_weight || 0) - Number(a?.priority_weight || 0);
     if (diff !== 0) return diff;
     return String(a?.name || '').localeCompare(String(b?.name || ''), 'tr');
   });
@@ -34,6 +20,47 @@ function getCutoff(period = '') {
 
 function clamp(value) {
   return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function hasOwn(object, key) {
+  return Object.prototype.hasOwnProperty.call(object || {}, key);
+}
+
+function validHttpUrl(value = '', { optional = false } = {}) {
+  const text = String(value || '').trim();
+  if (!text && optional) return '';
+  try {
+    const url = new URL(text);
+    return ['http:', 'https:'].includes(url.protocol) ? url.toString() : '';
+  } catch {
+    return '';
+  }
+}
+
+export function normalizeSourcePatch(body = {}, current = {}) {
+  const patch = {};
+  if (hasOwn(body, 'name')) patch.name = String(body.name || '').trim();
+  if (hasOwn(body, 'rss_url') || hasOwn(body, 'feed_url')) {
+    const feed = validHttpUrl(body.rss_url ?? body.feed_url);
+    if (!feed) throw new Error('Geçerli bir RSS / Feed URL gerekli.');
+    patch.rss_url = feed;
+    patch.feed_url = feed;
+  }
+  if (hasOwn(body, 'site_url')) {
+    const rawSite = String(body.site_url || '').trim();
+    const site = validHttpUrl(rawSite, { optional: true });
+    if (rawSite && !site) throw new Error('Site URL geçerli bir http/https adresi olmalı.');
+    patch.site_url = site;
+  }
+  if (hasOwn(body, 'source_type')) patch.source_type = String(body.source_type || 'news').trim();
+  if (hasOwn(body, 'market_relevance')) patch.market_relevance = String(body.market_relevance || 'global').trim();
+  if (hasOwn(body, 'priority_weight')) patch.priority_weight = clamp(Number(body.priority_weight));
+  if (hasOwn(body, 'trust_score')) patch.trust_score = clamp(Number(body.trust_score));
+  if (hasOwn(body, 'is_active')) patch.is_active = Boolean(body.is_active);
+  if (hasOwn(body, 'description')) patch.description = String(body.description || '').trim();
+  if (Object.keys(patch).length === 0) throw new Error('Güncellenecek alan bulunamadı.');
+  if (hasOwn(patch, 'name') && !patch.name) throw new Error('Kaynak adı boş bırakılamaz.');
+  return { ...patch, updated_at: nowIso() };
 }
 
 function normalizeUrl(value = '') {
@@ -345,7 +372,7 @@ export default async function handler(req, res) {
       const { data, error } = await query;
       if (error) return json(res, 500, { error: error.message });
       if (id) return json(res, 200, { item: Array.isArray(data) ? (data[0] || null) : null });
-      return json(res, 200, { items: sortSourcesWithBoost(data || []) });
+      return json(res, 200, { items: sortSourcesByPriority(data || []) });
     }
 
     if (req.method === 'POST') {
@@ -367,9 +394,14 @@ export default async function handler(req, res) {
         return json(res, 200, { ok: true, source_id: sourceId, ...result });
       }
 
-      const feed = body.rss_url || body.feed_url || '';
+      const feed = validHttpUrl(body.rss_url || body.feed_url || '');
+      if (!String(body.name || '').trim()) return json(res, 400, { error: 'Kaynak adı gerekli.' });
+      if (!feed) return json(res, 400, { error: 'Geçerli bir RSS / Feed URL gerekli.' });
+      const rawSite = String(body.site_url || '').trim();
+      const siteUrl = validHttpUrl(rawSite, { optional: true });
+      if (rawSite && !siteUrl) return json(res, 400, { error: 'Site URL geçerli bir http/https adresi olmalı.' });
       const inferred = inferSourceSettings({ name: body.name || '', site_url: body.site_url || feed }, feed);
-      const payload = { name: body.name || '', feed_url: feed, rss_url: feed, site_url: body.site_url || '', source_type: body.source_type || inferred.source_type, market_relevance: body.market_relevance || inferred.market_relevance, priority_weight: Number(body.priority_weight || inferred.priority_weight), trust_score: Number(body.trust_score || inferred.trust_score), is_active: body.is_active ?? true };
+      const payload = { name: String(body.name).trim(), feed_url: feed, rss_url: feed, site_url: siteUrl, source_type: body.source_type || inferred.source_type, market_relevance: body.market_relevance || inferred.market_relevance, priority_weight: hasOwn(body, 'priority_weight') ? clamp(Number(body.priority_weight)) : inferred.priority_weight, trust_score: hasOwn(body, 'trust_score') ? clamp(Number(body.trust_score)) : inferred.trust_score, is_active: body.is_active ?? true, created_at: nowIso(), updated_at: nowIso() };
       const { data, error } = await supabase.from('sources').insert(payload).select().single();
       if (error) return json(res, 500, { error: error.message });
       return json(res, 200, { item: data });
@@ -379,9 +411,11 @@ export default async function handler(req, res) {
       const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
       const sourceId = String(body.id || body.source_id || '').trim();
       if (!sourceId) return json(res, 400, { error: 'id gerekli' });
-      const feed = body.rss_url || body.feed_url || '';
-      const inferred = inferSourceSettings({ name: body.name || '', site_url: body.site_url || feed }, feed);
-      const payload = { name: body.name || '', feed_url: feed, rss_url: feed, site_url: body.site_url || '', source_type: body.source_type || inferred.source_type, market_relevance: body.market_relevance || inferred.market_relevance, priority_weight: Number(body.priority_weight || inferred.priority_weight), trust_score: Number(body.trust_score || inferred.trust_score), is_active: body.is_active ?? true };
+      const { data: current, error: currentError } = await supabase.from('sources').select('*').eq('id', sourceId).limit(1).single();
+      if (currentError || !current) return json(res, 404, { error: 'Kaynak bulunamadı.' });
+      let payload;
+      try { payload = normalizeSourcePatch(body, current); }
+      catch (error) { return json(res, 400, { error: error?.message || String(error) }); }
       const { data, error } = await supabase.from('sources').update(payload).eq('id', sourceId).select().single();
       if (error) return json(res, 500, { error: error.message });
       return json(res, 200, { item: data });
