@@ -63,8 +63,8 @@
     try {
       const params = new URLSearchParams({ hours: state.hours, limit: '60', _: String(Date.now()) });
       if (state.type !== 'all') params.set('type', state.type); if (state.media !== 'all') params.set('media', state.media); if (state.brand !== 'all') params.set('brand', state.brand);
-      if (force) { params.set('refresh','1'); params.set('token',authToken()); }
-      const response = await fetch(`/api/product-radar?${params}`, { cache: 'no-store' }); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      if (force) params.set('refresh','1');
+      const response = await fetch(`/api/product-radar?${params}`, { cache: 'no-store', credentials: 'same-origin' }); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
       state.items = Array.isArray(data.items) ? data.items : []; state.brands = Array.isArray(data.brands) ? data.brands : state.brands; state.coverage = data.coverage || state.coverage; state.refreshedAt = data.refreshed_at || new Date().toISOString();
     } catch (error) { state.items = []; state.error = `Yeni Ürün Radarı verisi alınamadı: ${error.message || error}`; }
     finally { state.loading = false; render(); }

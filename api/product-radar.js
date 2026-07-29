@@ -1,4 +1,5 @@
 import { chooseFeedUrl, hashValue, json, parseFeedItems, queryLocal, safeText } from './_lib.js';
+import { readSession } from '../lib/lock.js';
 
 const CACHE_MINUTES = 20;
 const FETCH_TIMEOUT = 12000;
@@ -61,10 +62,11 @@ const GUIDE_TITLE = /^(build|building|how to|using|create|creating|get started|a
 const STOP = new Set('the a an and or for with from this that new now its our your to of in on by as is are be ile ve veya bir yeni için olan olarak da de bu şu'.split(' '));
 const MOMENTUM_STOP = new Set('announce announces announced unveil unveils unveiled introduce introduces introduced launch launches launched available meet product device smart screen screenless health fitness tracker technology service platform update feature'.split(' '));
 
-function authorized(req) {
+export function authorizedProductRefresh(req) {
   const expected = process.env.CRON_TOKEN || '';
   const supplied = String(req.query?.token || req.headers?.['x-cron-token'] || '');
-  return Boolean(expected && supplied && supplied === expected);
+  if (expected && supplied && supplied === expected) return true;
+  return Boolean(readSession(req));
 }
 
 function normalizeUrl(value = '') {
@@ -259,7 +261,7 @@ export default async function handler(req, res) {
     const last = (await queryLocal(`SELECT created_at AS synced_at FROM product_radar_runs WHERE status='completed' AND notes LIKE $1 ORDER BY created_at DESC LIMIT 1`, [`${ALGORITHM_VERSION};%`])).rows[0];
     const stale = !last?.synced_at || Date.now() - new Date(last.synced_at).getTime() > CACHE_MINUTES * 60000;
     const force = String(req.query?.refresh || '') === '1';
-    if (force && !authorized(req)) return json(res, 401, { error: 'Yetkisiz istek' });
+    if (force && !authorizedProductRefresh(req)) return json(res, 401, { error: 'Yetkisiz istek' });
     let sync = null;
     if (stale || force) sync = await syncRadar();
     const result = await itemsFor(req);
