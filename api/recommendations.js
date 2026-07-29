@@ -148,6 +148,50 @@ export function performanceAffinity(item = {}, profiles = []) {
   return { discover: clampScore(discover), traffic: clampScore(traffic), match };
 }
 
+function percentileDiscoverScore(percentile) {
+  const value = Math.max(0, Math.min(1, Number(percentile) || 0));
+  if (value < .02) return Math.round(96 - value / .02 * 6);
+  if (value < .10) return Math.round(89 - (value - .02) / .08 * 7);
+  if (value < .25) return Math.round(81 - (value - .10) / .15 * 6);
+  if (value < .50) return Math.round(74 - (value - .25) / .25 * 9);
+  return Math.round(64 - (value - .50) / .50 * 29);
+}
+
+export function calibrateDiscoverScores(items = []) {
+  const eligible = items.filter((item) => ageHours(item) <= 24 && !isHardNoise(item));
+  if (!eligible.length) return items;
+  const ranked = eligible.slice().sort((a, b) => {
+    const scoreDiff = scoreValue(b, 'discover_score') - scoreValue(a, 'discover_score');
+    if (scoreDiff) return scoreDiff;
+    const probabilityDiff = scoreValue(b, 'discover_probability') - scoreValue(a, 'discover_probability');
+    if (probabilityDiff) return probabilityDiff;
+    const affinityDiff = scoreValue(b, 'published_discover_affinity') - scoreValue(a, 'published_discover_affinity');
+    if (affinityDiff) return affinityDiff;
+    return timeValue(b.published_at || b.created_at) - timeValue(a.published_at || a.created_at);
+  });
+  const calibration = new Map();
+  ranked.forEach((item, index) => {
+    const percentile = (index + .5) / ranked.length;
+    calibration.set(item, { score: percentileDiscoverScore(percentile), percentile });
+  });
+  return items.map((item) => {
+    const calibrated = calibration.get(item);
+    if (!calibrated) return item;
+    const original = scoreValue(item, 'discover_score');
+    return {
+      ...item,
+      precalibrated_discover_score: original,
+      discover_percentile: Math.max(1, Math.round((1 - calibrated.percentile) * 100)),
+      radar_discover_score: calibrated.score,
+      discover_score: calibrated.score,
+      score_reasons: [
+        ...(item.score_reasons || []),
+        { signal: 'discover_percentile_calibration', impact: calibrated.score - original, label: `Son 24 saatlik aday havuzunda ilk %${Math.max(1, Math.round(calibrated.percentile * 100))}` }
+      ]
+    };
+  });
+}
+
 function brandName(item = {}) {
   const title = String(item.title || '').toLocaleLowerCase('tr-TR');
   const context = [item.summary, item.excerpt, item.description].filter(Boolean).join(' ').toLocaleLowerCase('tr-TR');
@@ -542,6 +586,7 @@ export default async function handler(req, res) {
       .filter((item) => hasTechSignal(item) || ageHours(item) <= 48);
 
     let enriched = dedupeItems([...candidateItems, ...rawFallback]).map((item) => withRadarScores(item, learnedTerms, performanceProfiles, intelligenceModel));
+    enriched = calibrateDiscoverScores(enriched);
 
     if (discoverMode) {
       enriched = enriched.filter((item) => ageHours(item) <= 24);
