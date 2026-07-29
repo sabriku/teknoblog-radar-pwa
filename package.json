@@ -11,7 +11,7 @@
   },
   "scripts": {
     "check": "node --check server.mjs && node --check api/_lib.js",
-    "test": "node scripts/test-intelligence.mjs && node scripts/test-instagram-radar.mjs",
+    "test": "node scripts/test-intelligence.mjs && node scripts/test-instagram-radar.mjs && node scripts/test-recommendations.mjs",
     "smoke": "node scripts/smoke-local.mjs",
     "refresh": "node scripts/refresh-local.mjs",
     "maintenance": "node scripts/maintenance-local.mjs"

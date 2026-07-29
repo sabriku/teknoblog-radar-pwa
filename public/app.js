@@ -1,7 +1,7 @@
 (() => {
   const VIEW_KEY = 'tb_news_card_view';
   const SORT_KEY = 'tb_news_sort';
-  const BRAND_DIVERSITY_KEY = 'tb_news_brand_diversity';
+  const BRAND_DIVERSITY_KEY = 'tb_news_brand_diversity_v2';
   const VALID_SORTS = new Set(['discover_score', 'traffic_score', 'published_at', 'total_score', 'conversion_score', 'social_score', 'editorial_score']);
   const VALID_VIEWS = new Set(['cards-2', 'cards-3', 'cards-4', 'stack', 'compact', 'list']);
   const VIEW_LABELS = {
@@ -27,7 +27,7 @@
     loading: false,
     lastError: '',
     requestSequence: 0,
-    brandDiversity: localStorage.getItem(BRAND_DIVERSITY_KEY) !== '0'
+    brandDiversity: localStorage.getItem(BRAND_DIVERSITY_KEY) === '1'
   };
 
   const esc = (value) => String(value ?? '')

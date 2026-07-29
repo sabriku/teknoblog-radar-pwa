@@ -72,6 +72,8 @@ const BRAND_PATTERNS = [
   ['ASUS', /\basus\b|\brog\b|\bzenfone\b/i]
 ];
 
+const PERFORMANCE_STOP_WORDS = new Set('haber haberi yeni son için ile bir bu şu daha olan olarak teknoloji teknolojik özellik özellikleri modeli model update güncelleme duyurdu tanıttı çıktı yayınlandı geliyor başladı şimdi today latest launch launches launched announces announced gets getting will from with that this the and'.split(' '));
+
 function scoreValue(item, key) {
   const value = Number(item?.[key]);
   return Number.isFinite(value) ? value : 0;
@@ -99,6 +101,51 @@ function textOf(item = {}) {
     item.canonical_url,
     item.link
   ].filter(Boolean).join(' ').toLowerCase();
+}
+
+function performanceTokens(value = '') {
+  return new Set(String(value || '').toLocaleLowerCase('tr-TR').replace(/[^a-z0-9çğıöşü\s]/gi, ' ').split(/\s+/)
+    .filter((word) => word.length >= 3 && !PERFORMANCE_STOP_WORDS.has(word)));
+}
+
+function tokenSimilarity(leftValue = '', rightValue = '') {
+  const left = leftValue instanceof Set ? leftValue : performanceTokens(leftValue);
+  const right = rightValue instanceof Set ? rightValue : performanceTokens(rightValue);
+  if (!left.size || !right.size) return 0;
+  let common = 0;
+  for (const word of left) if (right.has(word)) common += 1;
+  return common / Math.max(2, Math.min(left.size, right.size));
+}
+
+export function buildPerformanceProfiles(rows = []) {
+  const prepared = rows.map((row) => ({
+    ...row,
+    words: performanceTokens(row.title),
+    discoverRaw: Math.log1p(Number(row.discover_clicks || 0)) * 14 + Math.log1p(Number(row.discover_impressions || 0)) * 6 + Math.min(0.35, Number(row.discover_ctr || 0)) * 100,
+    trafficRaw: Math.log1p(Number(row.ga4_views || 0)) * 15 + Math.log1p(Number(row.ga4_active_users || 0)) * 8 + Math.min(1, Number(row.ga4_engagement_rate || 0)) * 15
+  })).filter((row) => row.title && row.words.size);
+  const discoverMax = Math.max(1, ...prepared.map((row) => row.discoverRaw));
+  const trafficMax = Math.max(1, ...prepared.map((row) => row.trafficRaw));
+  return prepared.map((row) => ({
+    title: row.title,
+    words: row.words,
+    discover_strength: clampScore(row.discoverRaw / discoverMax * 100),
+    traffic_strength: clampScore(row.trafficRaw / trafficMax * 100)
+  })).filter((row) => row.discover_strength >= 25 || row.traffic_strength >= 25);
+}
+
+export function performanceAffinity(item = {}, profiles = []) {
+  const words = performanceTokens(`${item.title || ''} ${item.summary || item.description || item.excerpt || ''}`);
+  let discover = 0; let traffic = 0; let match = '';
+  for (const profile of profiles) {
+    const similarity = tokenSimilarity(words, profile.words);
+    if (similarity < .24) continue;
+    const discoverValue = similarity * Number(profile.discover_strength || 0);
+    const trafficValue = similarity * Number(profile.traffic_strength || 0);
+    if (discoverValue > discover) { discover = discoverValue; match = profile.title; }
+    traffic = Math.max(traffic, trafficValue);
+  }
+  return { discover: clampScore(discover), traffic: clampScore(traffic), match };
 }
 
 function brandName(item = {}) {
@@ -260,7 +307,7 @@ function learnedPerformanceBoost(item = {}, learnedTerms = new Map()) {
   return Math.min(8, Math.round(words.sort((a, b) => (learnedTerms.get(b) || 0) - (learnedTerms.get(a) || 0)).slice(0, 3).reduce((sum, word) => sum + (learnedTerms.get(word) || 0), 0)));
 }
 
-function withRadarScores(item = {}, learnedTerms = new Map(), modelRow = null) {
+function withRadarScores(item = {}, learnedTerms = new Map(), performanceProfiles = [], modelRow = null) {
   const originalScores = {
     original_discover_score: scoreValue(item, 'discover_score'),
     original_traffic_score: scoreValue(item, 'traffic_score'),
@@ -269,15 +316,20 @@ function withRadarScores(item = {}, learnedTerms = new Map(), modelRow = null) {
     original_social_score: scoreValue(item, 'social_score'),
     original_total_score: scoreValue(item, 'total_score')
   };
-  const learningBoost = modelRow ? 0 : learnedPerformanceBoost(item, learnedTerms);
-  const heuristicDiscover = clampScore(computedDiscoverScore(item) + learningBoost);
+  const learningBoost = learnedPerformanceBoost(item, learnedTerms);
+  const affinity = performanceAffinity(item, performanceProfiles);
+  const computedDiscover = computedDiscoverScore(item);
+  const heuristicDiscover = clampScore(performanceProfiles.length
+    ? computedDiscover * .84 + affinity.discover * .16 + Math.min(4, learningBoost)
+    : computedDiscover + learningBoost);
   const heuristicEditorial = computedEditorialScore(item, heuristicDiscover);
   const prediction = predictWithModel(item, modelRow, { discover: heuristicDiscover, editorial: heuristicEditorial, news: heuristicEditorial });
   const discoverWeight = modelRow ? modelInfluence(modelRow, 'discover', .45) : 0;
   const newsWeight = modelRow ? modelInfluence(modelRow, 'news', .28) : 0;
   const editorialWeight = prediction.editorial_probability != null ? Math.min(.2, modelInfluence(modelRow, 'editorial', 0)) : 0;
   const discover = clampScore(heuristicDiscover * (1 - discoverWeight) + prediction.discover_probability * discoverWeight);
-  const traffic = computedTrafficScore(item, discover);
+  const computedTraffic = computedTrafficScore(item, discover);
+  const traffic = clampScore(performanceProfiles.length ? computedTraffic * .88 + affinity.traffic * .12 : computedTraffic);
   const editorialBase = computedEditorialScore(item, discover);
   const editorial = clampScore(
     editorialBase * Math.max(0, 1 - newsWeight - editorialWeight) +
@@ -305,6 +357,8 @@ function withRadarScores(item = {}, learnedTerms = new Map(), modelRow = null) {
   if (TRAFFIC_PATTERNS.some((pattern) => pattern.test(textOf(item)))) reasons.push({ signal: 'search_intent', impact: 10, label: 'Arama ve trafik niyeti mevcut' });
   if (item.image_url || item.image || item.thumbnail) reasons.push({ signal: 'image', impact: 6, label: 'Haber görseli mevcut' });
   if (learningBoost > 0) reasons.push({ signal: 'performance_learning', impact: learningBoost, label: 'Geçmiş Teknoblog Discover performansından öğrenilen konu sinyali' });
+  if (affinity.discover >= 35) reasons.push({ signal: 'published_discover_affinity', impact: Math.round(affinity.discover * .16), label: `Teknoblog’da iyi Discover performansı gösteren benzer konu: ${affinity.match}` });
+  if (affinity.traffic >= 35) reasons.push({ signal: 'published_traffic_affinity', impact: Math.round(affinity.traffic * .12), label: 'Teknoblog’da yüksek trafik alan konu geçmişiyle uyumlu' });
   for (const reason of prediction.reasons.slice(0, 3)) reasons.push({ signal: `intelligence_${reason.channel}`, impact: reason.impact, label: `${reason.channel === 'discover' ? 'Discover' : 'Google News'} geçmişi: ${reason.label}` });
   if (isHardNoise(item)) reasons.push({ signal: 'noise', impact: -40, label: 'Gürültü filtresi riski' });
   return {
@@ -320,6 +374,9 @@ function withRadarScores(item = {}, learnedTerms = new Map(), modelRow = null) {
     score_confidence: confidence,
     score_reasons: reasons,
     performance_learning_boost: learningBoost,
+    published_discover_affinity: affinity.discover,
+    published_traffic_affinity: affinity.traffic,
+    published_performance_match: affinity.match || null,
     intelligence_model_version: prediction.model_version,
     discover_probability: prediction.discover_probability,
     news_probability: prediction.news_probability,
@@ -380,7 +437,7 @@ function adjustedScore(item, sortKey) {
   return scoreValue(item, sortKey);
 }
 
-function compareItems(a, b, sortKey) {
+export function compareItems(a, b, sortKey) {
   if (sortKey === 'published_at' || sortKey === 'updated_at') return adjustedScore(b, sortKey) - adjustedScore(a, sortKey);
   const diff = adjustedScore(b, sortKey) - adjustedScore(a, sortKey);
   if (diff) return diff;
@@ -435,7 +492,7 @@ export default async function handler(req, res) {
     if (String(req.query?.opportunity || '') === '1') return await opportunityRadar(req, res);
 
     const supabase = getSupabaseAdmin();
-    const sort = req.query?.sort || 'published_at';
+    const sort = req.query?.sort || 'discover_score';
     const allowedSorts = ['total_score', 'traffic_score', 'conversion_score', 'discover_score', 'social_score', 'editorial_score', 'updated_at', 'published_at'];
     const sortKey = allowedSorts.includes(sort) ? sort : 'published_at';
     const discoverMode = sortKey === 'discover_score';
@@ -452,10 +509,13 @@ export default async function handler(req, res) {
     const sourceMap = new Map((sources || []).map((source) => [String(source.id), source.name || '']));
     const rawMap = new Map((rawItems || []).map((item) => [String(item.id), item]));
     const learnedTerms = new Map();
+    let performanceProfiles = [];
     let intelligenceModel = null;
     try {
       const learned = await queryLocal(`SELECT title,discover_clicks,discover_impressions,discover_ctr,ga4_views,ga4_active_users,ga4_engagement_seconds,ga4_engagement_rate FROM published_performance
-        WHERE title IS NOT NULL AND title<>'' AND (discover_impressions>0 OR ga4_views>0) ORDER BY observed_at DESC LIMIT 500`);
+        WHERE title IS NOT NULL AND title<>'' AND published_at>=NOW()-INTERVAL '365 days' AND (discover_impressions>0 OR ga4_views>0)
+        ORDER BY (discover_clicks*12 + LN(1+discover_impressions)*8 + LN(1+ga4_views)*10 + LN(1+ga4_active_users)*6) DESC, observed_at DESC LIMIT 800`);
+      performanceProfiles = buildPerformanceProfiles(learned.rows);
       for (const row of learned.rows) {
         const searchWeight = Math.log1p(Number(row.discover_impressions || 0)) / 3 + Number(row.discover_ctr || 0) * 8 + Math.log1p(Number(row.discover_clicks || 0)) / 2;
         const audienceWeight = Math.log1p(Number(row.ga4_views || 0)) / 4 + Math.log1p(Number(row.ga4_active_users || 0)) / 5
@@ -481,7 +541,7 @@ export default async function handler(req, res) {
       .filter((item) => !isTrendFeedItem(item))
       .filter((item) => hasTechSignal(item) || ageHours(item) <= 48);
 
-    let enriched = dedupeItems([...candidateItems, ...rawFallback]).map((item) => withRadarScores(item, learnedTerms, intelligenceModel));
+    let enriched = dedupeItems([...candidateItems, ...rawFallback]).map((item) => withRadarScores(item, learnedTerms, performanceProfiles, intelligenceModel));
 
     if (discoverMode) {
       enriched = enriched.filter((item) => ageHours(item) <= 24);
@@ -489,7 +549,7 @@ export default async function handler(req, res) {
 
     enriched.sort((a, b) => compareItems(a, b, sortKey));
     const diversitySetting = String(req.query?.diversify || '');
-    const diversityApplied = diversitySetting === '0' ? false : discoverMode || diversitySetting === '1';
+    const diversityApplied = diversitySetting === '1';
     if (diversityApplied) enriched = diversifyItems(enriched, sortKey);
     if (intelligenceModel) {
       try { await savePredictions(enriched, intelligenceModel.model_version); } catch {}
@@ -515,6 +575,7 @@ export default async function handler(req, res) {
           editorial: modelInfluence(intelligenceModel, 'editorial', 0)
         } : null,
         performance_learning_terms: learnedTerms.size,
+        published_performance_profiles: performanceProfiles.length,
         normalized_scores: ['total_score', 'traffic_score', 'conversion_score', 'discover_score', 'social_score', 'editorial_score']
       }
     });

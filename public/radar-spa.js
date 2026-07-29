@@ -1,6 +1,5 @@
 (() => {
   const TAB_KEY = 'tb_spa_active_tab';
-  const FOCUS_KEY = 'tb_first_mover_focus_v1';
   const VALID_TABS = new Set([
     'news',
     'early-signals',
@@ -49,14 +48,7 @@
     const hash = decodeURIComponent(String(window.location.hash || '').replace(/^#/, ''));
     if (LEGACY_TABS.has(hash)) return 'decision-center';
     if (VALID_TABS.has(hash)) return hash;
-    if (localStorage.getItem(FOCUS_KEY) !== '1') {
-      localStorage.setItem(FOCUS_KEY, '1');
-      return 'early-signals';
-    }
-    const saved = localStorage.getItem(TAB_KEY);
-    if (LEGACY_TABS.has(saved)) return 'decision-center';
-    if (VALID_TABS.has(saved)) return saved;
-    return 'early-signals';
+    return 'news';
   }
 
   function setActive(tab, push = true) {
