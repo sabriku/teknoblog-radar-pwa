@@ -10,8 +10,8 @@
     "pg": "^8.13.1"
   },
   "scripts": {
-    "check": "node --check server.mjs && node --check api/_lib.js && node --check api/sources.js && node --check public/sources-manager.js",
-    "test": "node scripts/test-intelligence.mjs && node scripts/test-instagram-radar.mjs && node scripts/test-recommendations.mjs && node scripts/test-sources.mjs && node scripts/test-product-radar-auth.mjs",
+    "check": "node --check server.mjs && node --check api/_lib.js && node --check api/sources.js && node --check api/competitor-radar.js && node --check public/sources-manager.js && node --check public/competitor-radar-panel.js",
+    "test": "node scripts/test-intelligence.mjs && node scripts/test-instagram-radar.mjs && node scripts/test-recommendations.mjs && node scripts/test-sources.mjs && node scripts/test-product-radar-auth.mjs && node scripts/test-competitor-radar.mjs",
     "smoke": "node scripts/smoke-local.mjs",
     "refresh": "node scripts/refresh-local.mjs",
     "maintenance": "node scripts/maintenance-local.mjs"
