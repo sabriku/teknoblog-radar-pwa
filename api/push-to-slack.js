@@ -47,6 +47,24 @@ function normalizeReferences(item = {}) {
   return references;
 }
 
+export function buildDigestSlackText(items = [], title = 'Teknoblog Radar · Rakip Fırsatları') {
+  const lines = [`*${escapeText(title)}*`, `${items.length} seçili rakip fırsatı`, ''];
+  items.forEach((item, itemIndex) => {
+    lines.push(`*${itemIndex + 1}. ${escapeText(item.title)}*`);
+    if (item.source_name) lines.push(`Kaynak: ${escapeText(item.source_name)}`);
+    lines.push(item.url);
+    if (item.references.length) {
+      lines.push('Referanslar:');
+      item.references.slice(0, 4).forEach((reference, referenceIndex) => {
+        const label = [reference.source_name, reference.title].filter(Boolean).join(' — ').slice(0, 150) || `Referans ${referenceIndex + 1}`;
+        lines.push(`• <${reference.url}|${escapeText(label)}>`);
+      });
+    }
+    lines.push('');
+  });
+  return lines.join('\n').trim();
+}
+
 async function readSharedSentUrls(supabase) {
   try {
     const { data, error } = await supabase
@@ -132,10 +150,25 @@ export default async function handler(req, res) {
       return json(res, 400, { error: 'Gönderilecek haber bulunamadı.' });
     }
 
+    const deliveryMode = body.delivery_mode === 'digest' ? 'digest' : 'individual';
     let sent = 0;
     const errors = [];
+    const sentUrls = [];
 
-    for (const item of normalized) {
+    if (deliveryMode === 'digest') {
+      const response = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        body: JSON.stringify({ text: buildDigestSlackText(normalized, String(body.title || '').trim() || undefined) })
+      });
+      if (response.ok) {
+        sent = normalized.length;
+        sentUrls.push(...normalized.map((item) => item.url));
+      } else {
+        const text = await response.text();
+        errors.push(text || `HTTP ${response.status}`);
+      }
+    } else for (const item of normalized) {
       const lines = [
         `*${escapeText(item.title)}*`,
         item.source_name ? `Kaynak: ${escapeText(item.source_name)}` : '',
@@ -163,6 +196,7 @@ export default async function handler(req, res) {
 
       if (response.ok) {
         sent += 1;
+        sentUrls.push(item.url);
       } else {
         const text = await response.text();
         errors.push(text || `HTTP ${response.status}`);
@@ -172,13 +206,14 @@ export default async function handler(req, res) {
     }
 
     const shared = await readSharedSentUrls(supabase);
-    const mergedUrls = [...shared.urls, ...normalized.map((item) => item.url)];
+    const mergedUrls = [...shared.urls, ...sentUrls];
     const storedUrls = await writeSharedSentUrls(supabase, shared.rowId, mergedUrls);
 
     return json(res, 200, {
       ok: errors.length === 0,
       sent,
       requested: normalized.length,
+      delivery_mode: deliveryMode,
       errors: errors.slice(0, 10),
       shared_urls: storedUrls
     });

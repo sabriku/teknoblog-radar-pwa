@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { clusterCompetitorRows, hasTurkeyContext, performanceProfile, promptFor } from '../api/competitor-radar.js';
+import { buildDigestSlackText } from '../api/push-to-slack.js';
 
 const clusters = clusterCompetitorRows([
   { id: '1', source_name: 'DonanımHaber', title: 'Apple yeni iPhone modelini tanıttı', url: 'https://a.example/iphone', published_at: new Date().toISOString(), trust_score: 80 },
@@ -28,5 +29,13 @@ assert.match(prompt, /X özeti/);
 assert.match(prompt, /Yapay bir Türkiye bağlantısı kurma/);
 assert.match(prompt, /https:\/\/www\.log\.com\.tr\/garmin-urun/);
 assert.doesNotMatch(prompt, /3 Google Discover başlığı/);
+
+const slackDigest = buildDigestSlackText([{
+  title: 'Yeni teknoloji fırsatı', url: 'https://example.com/main', source_name: 'DonanımHaber',
+  references: [{ source_name: 'LOG', title: 'Aynı konunun ikinci kaynağı', url: 'https://example.com/reference' }]
+}]);
+assert.match(slackDigest, /Teknoblog Radar · Rakip Fırsatları/);
+assert.match(slackDigest, /https:\/\/example\.com\/main/);
+assert.match(slackDigest, /https:\/\/example\.com\/reference/);
 
 console.log('competitor radar tests passed');
