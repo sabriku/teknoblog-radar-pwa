@@ -169,17 +169,22 @@ export default async function handler(req, res) {
       const velocity = clamp(20 + sourceCount * 19 + Math.min(4, recentCount) * 8 + (hoursOld <= 4 ? 16 : hoursOld <= 12 ? 8 : 0), 20, 100);
       const tech = TECH.test(text) ? 100 : 48; const discoverIntent = DISCOVER.test(text) ? 100 : 48; const newsIntent = NEWS.test(text) ? 100 : 42;
       const trust = (Number(row.trust_score) || 70) * .7 + (Number(row.priority_weight) || 70) * .3; const image = row.image_url ? 100 : 25;
-      const historyDiscover = match ? match.row.profile.discover * match.similarity / 100 : 25;
-      const historyNews = match ? match.row.profile.news * match.similarity / 100 : 22;
-      const historyAudience = match ? match.row.profile.audience * match.similarity / 100 : 25;
+      // Missing history is neutral, not a penalty. Only a real matched winner may
+      // lift the score; sparse GSC/GA4 history must not hide a breaking story.
+      const historyDiscover = match ? Math.max(45, match.row.profile.discover * match.similarity / 100) : 45;
+      const historyNews = match ? Math.max(42, match.row.profile.news * match.similarity / 100) : 42;
+      const historyAudience = match ? Math.max(45, match.row.profile.audience * match.similarity / 100) : 45;
       let discoverScore = clamp(fresh * .17 + discoverIntent * .15 + historyDiscover * .24 + historyAudience * .13 + velocity * .15 + trust * .08 + image * .08, 20, 98);
       let newsScore = clamp(fresh * .20 + newsIntent * .18 + historyNews * .23 + velocity * .18 + trust * .09 + tech * .07 + historyAudience * .05, 20, 98);
       let intelligence = null;
       if (activeModel) {
         intelligence = predictWithModel({ title, summary: row.summary, image_url: row.image_url, source_name: row.source_name, published_at: row.published_at || row.created_at }, activeModel, { discover: discoverScore, news: newsScore, editorial: Math.max(discoverScore, newsScore) });
         const discoverWeight = Math.min(.32, modelInfluence(activeModel, 'discover', .22)); const newsWeight = Math.min(.30, modelInfluence(activeModel, 'news', .2));
-        discoverScore = clamp(discoverScore * (1 - discoverWeight) + intelligence.discover_probability * discoverWeight, 20, 98);
-        newsScore = clamp(newsScore * (1 - newsWeight) + intelligence.news_probability * newsWeight, 20, 98);
+        // The learned model is a corroborating signal. A model trained on sparse
+        // historical coverage may lift a candidate, but cannot bury a fresh,
+        // multi-source breaking story by more than three points.
+        discoverScore = clamp(Math.max(discoverScore - 3, discoverScore * (1 - discoverWeight) + intelligence.discover_probability * discoverWeight), 20, 98);
+        newsScore = clamp(Math.max(newsScore - 3, newsScore * (1 - newsWeight) + intelligence.news_probability * newsWeight), 20, 98);
       }
       if (written) { discoverScore = clamp(discoverScore - 20, 10, 98); newsScore = clamp(newsScore - 24, 10, 98); }
       const opportunity = Math.max(discoverScore, newsScore);
