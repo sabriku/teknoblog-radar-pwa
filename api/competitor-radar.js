@@ -2,7 +2,7 @@ import { json, queryLocal, safeText } from './_lib.js';
 import { loadIntelligenceModel, modelInfluence, predictWithModel } from './_intelligence-model.js';
 
 const STOP = new Set('bir bu şu ve veya ile için gibi daha en son yeni olan olarak da de mı mi mu mü ne nasıl neden hangi göre kadar sonra önce artık diye the and for from into over after before report reportedly'.split(' '));
-const TECH = /\b(yapay zeka|ai|telefon|akıllı|iphone|ipad|macbook|android|ios|windows|uygulama|güncelleme|yazılım|donanım|işlemci|çip|gpu|ekran|kamera|batarya|otomobil|elektrikli|robot|uydu|uzay|internet|siber|güvenlik|oyun|playstation|xbox|nintendo|google|apple|samsung|xiaomi|huawei|oppo|vivo|honor|meta|openai|microsoft|nvidia|amd|intel|tesla|byd|garmin)\b/i;
+const TECH = /\b(yapay zeka|ai|telefon|akıllı|iphone|ipad|macbook|android|ios|windows|uygulama|güncelleme|yazılım|donanım|işlemci|çip|gpu|ekran|kamera|batarya|otomobil|elektrikli|robot|uydu|uzay|internet|siber|güvenlik|oyun|playstation|xbox|nintendo|google|apple|samsung|xiaomi|huawei|oppo|vivo|honor|meta|openai|microsoft|nvidia|amd|intel|tesla|byd|garmin|bmw|volkswagen|hyundai|honda|renault|citro[eë]n|spotify|netflix|disney|telegram|linkedin|reddit|booking|startup|girişim|fintech|e-ticaret|dijital platform|sosyal medya|streaming|havacılık|savunma)\b/i;
 const NOISE = /\b(maç|macı|maci|futbol|basketbol|voleybol|hangi kanalda|canlı izle|transfer|magazin|burç|survivor|dizi|sevgilisi)\b/i;
 const DISCOVER = /\b(sızıntı|şaşırt|ilk kez|ortaya çıktı|büyük|kritik|değişiyor|yasak|ücretsiz|fiyat|özellik|model|liste|rekor|rakip|gelecek|gizli|beklenmedik|kullanıcı|pil|kamera)\b/i;
 const NEWS = /\b(duyurdu|tanıttı|çıktı|yayınlandı|başladı|satışa|güncelleme|anlaşma|satın aldı|açık|saldırı|dava|karar|yasak|zam|indirim|lansman|resmî|ifaşa|sızıntı)\b/i;
@@ -86,7 +86,7 @@ export function clusterCompetitorRows(rows = []) {
   const seen = new Set();
   for (const row of rows) {
     const url = canonical(row.url); const title = headline(row.title); const text = `${title} ${row.summary || ''}`;
-    if (!url || !title || seen.has(url) || (NOISE.test(text) && !TECH.test(text))) continue;
+    if (!url || !title || seen.has(url) || !TECH.test(text) || NOISE.test(text)) continue;
     seen.add(url);
     const words = tokens(title);
     let cluster = null; let score = 0;
@@ -104,6 +104,17 @@ export function clusterCompetitorRows(rows = []) {
     if (rowQuality > leadQuality) { cluster.lead = { ...row, title }; cluster.words = words; }
   }
   return clusters;
+}
+
+export function classifyOpportunity({ channelScore = 0, velocity = 0, sourceCount = 1, performanceMatch = null, written = false } = {}) {
+  if (written) return { score: clamp(channelScore - 18, 10, 98), key: 'written', label: 'Teknoblog’da yazıldı' };
+  const history = performanceMatch ? Math.max(Number(performanceMatch.discover_score || 0), Number(performanceMatch.news_score || 0), Number(performanceMatch.audience_score || 0)) : 0;
+  const corroboration = Math.min(10, Math.max(0, Number(sourceCount || 1) - 1) * 4);
+  const score = clamp(3 + Number(channelScore) * .72 + Number(velocity) * .16 + history * .06 + corroboration, 20, 98);
+  if (score >= 77) return { score, key: 'critical', label: 'Kritik fırsat' };
+  if (score >= 69) return { score, key: 'high', label: 'Yüksek öncelik' };
+  if (score >= 57) return { score, key: 'opportunity', label: 'Fırsat' };
+  return { score, key: 'watch', label: 'Takip et' };
 }
 
 function bestPerformanceMatch(words, profiles) {
@@ -187,12 +198,12 @@ export default async function handler(req, res) {
         newsScore = clamp(Math.max(newsScore - 3, newsScore * (1 - newsWeight) + intelligence.news_probability * newsWeight), 20, 98);
       }
       if (written) { discoverScore = clamp(discoverScore - 20, 10, 98); newsScore = clamp(newsScore - 24, 10, 98); }
-      const opportunity = Math.max(discoverScore, newsScore);
-      const opportunityKey = written ? 'written' : opportunity >= 84 ? 'critical' : opportunity >= 72 ? 'high' : opportunity >= 59 ? 'opportunity' : 'watch';
-      const opportunityLabel = written ? 'Teknoblog’da yazıldı' : opportunityKey === 'critical' ? 'Kritik fırsat' : opportunityKey === 'high' ? 'Yüksek öncelik' : opportunityKey === 'opportunity' ? 'Fırsat' : 'Takip et';
-      const reasons = [fresh >= 80 ? 'Haber ilk 12 saatinde.' : 'Haber güncel zaman penceresinde.', sourceCount > 1 ? `${sourceCount} rakip yayın aynı konu kümesinde.` : 'Şimdilik tek rakip kaynakta.', velocity >= 72 ? 'Rakipler arasında hızlı yayılıyor.' : 'Yayılma hızı henüz sınırlı.', match?.row.profile.discover >= 55 ? 'Benzer konu Teknoblog’da güçlü Discover performansı üretti.' : match?.row.profile.news >= 55 ? 'Benzer konu Teknoblog’da Google News performansı üretti.' : match?.row.profile.audience >= 55 ? 'Benzer konu Teknoblog’da yüksek GA4 ilgisi gördü.' : 'Güçlü geçmiş performans eşleşmesi yok.', DISCOVER.test(text) ? 'Başlık kullanıcı etkisi ve merak sinyali taşıyor.' : NEWS.test(text) ? 'Somut, zaman duyarlı haber olayı içeriyor.' : 'Açı ve birincil kaynak doğrulaması gerekiyor.'];
       const performanceMatch = match ? { title: match.row.title, url: match.row.url, similarity: match.similarity, discover_score: match.row.profile.discover, news_score: match.row.profile.news, audience_score: match.row.profile.audience, discover_clicks: Number(match.row.discover_clicks || 0), news_clicks: Number(match.row.google_news_clicks || 0), ga4_views: Number(match.row.ga4_views || 0) } : null;
-      const item = { id: String(row.id), title, url: row.url, source_name: row.source_name, image_url: row.image_url || cluster.rows.find((entry) => entry.image_url)?.image_url || '', summary: safeText(row.summary || ''), published_at: row.published_at || row.created_at, age_hours: Math.round(hoursOld * 10) / 10, discover_score: discoverScore, news_score: newsScore, opportunity_score: opportunity, opportunity_key: opportunityKey, opportunity_label: opportunityLabel, source_count: sourceCount, velocity_score: velocity, reasons, references, performance_match: performanceMatch, intelligence: intelligence ? { model_version: intelligence.model_version, confidence: intelligence.confidence } : null, queue_status: queueMap.get(canonical(row.url)) || null, written_match: written ? { title: written.title, url: written.url, score: Math.round(writtenScore * 100) } : null };
+      const channelScore = Math.max(discoverScore, newsScore);
+      const tier = classifyOpportunity({ channelScore, velocity, sourceCount, performanceMatch, written: Boolean(written) });
+      const tierReason = tier.key === 'critical' ? 'Çoklu kanıt ve yüksek yayılma hızı acil yayın penceresi oluşturuyor.' : tier.key === 'high' ? 'Güçlü kanal puanı veya rakip yayılımı yüksek öncelik oluşturuyor.' : tier.key === 'opportunity' ? 'Haber değerlendirilebilir, ancak ek doğrulama veya daha güçlü açı gerekiyor.' : 'Sinyal izlenmeli; yayın için henüz yeterli kanıt yok.';
+      const reasons = [tierReason, fresh >= 80 ? 'Haber ilk 12 saatinde.' : 'Haber güncel zaman penceresinde.', sourceCount > 1 ? `${sourceCount} rakip yayın aynı konu kümesinde.` : 'Şimdilik tek rakip kaynakta.', velocity >= 72 ? 'Rakipler arasında hızlı yayılıyor.' : 'Yayılma hızı henüz sınırlı.', match?.row.profile.discover >= 55 ? 'Benzer konu Teknoblog’da güçlü Discover performansı üretti.' : match?.row.profile.news >= 55 ? 'Benzer konu Teknoblog’da Google News performansı üretti.' : match?.row.profile.audience >= 55 ? 'Benzer konu Teknoblog’da yüksek GA4 ilgisi gördü.' : 'Güçlü geçmiş performans eşleşmesi yok.', DISCOVER.test(text) ? 'Başlık kullanıcı etkisi ve merak sinyali taşıyor.' : NEWS.test(text) ? 'Somut, zaman duyarlı haber olayı içeriyor.' : 'Açı ve birincil kaynak doğrulaması gerekiyor.'];
+      const item = { id: String(row.id), title, url: row.url, source_name: row.source_name, image_url: row.image_url || cluster.rows.find((entry) => entry.image_url)?.image_url || '', summary: safeText(row.summary || ''), published_at: row.published_at || row.created_at, age_hours: Math.round(hoursOld * 10) / 10, discover_score: discoverScore, news_score: newsScore, channel_score: channelScore, opportunity_score: tier.score, opportunity_key: tier.key, opportunity_label: tier.label, source_count: sourceCount, velocity_score: velocity, reasons, references, performance_match: performanceMatch, intelligence: intelligence ? { model_version: intelligence.model_version, confidence: intelligence.confidence } : null, queue_status: queueMap.get(canonical(row.url)) || null, written_match: written ? { title: written.title, url: written.url, score: Math.round(writtenScore * 100) } : null };
       item.prompt = promptFor(item); raw.push(item);
     }
     raw.sort((a, b) => (a.opportunity_key === 'written') - (b.opportunity_key === 'written') || b.opportunity_score - a.opportunity_score || b.velocity_score - a.velocity_score || new Date(b.published_at) - new Date(a.published_at));

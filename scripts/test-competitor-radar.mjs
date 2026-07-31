@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { clusterCompetitorRows, hasTurkeyContext, performanceProfile, promptFor } from '../api/competitor-radar.js';
+import { classifyOpportunity, clusterCompetitorRows, hasTurkeyContext, performanceProfile, promptFor } from '../api/competitor-radar.js';
 import { buildDigestSlackText } from '../api/push-to-slack.js';
 
 const clusters = clusterCompetitorRows([
@@ -13,6 +13,11 @@ assert.equal(clusters.find((cluster) => cluster.rows.length === 2)?.rows.length,
 const profile = performanceProfile({ discover_clicks: 250, discover_impressions: 35000, discover_ctr: .007, google_news_clicks: 40, google_news_impressions: 9000, ga4_views: 80000, ga4_active_users: 50000, ga4_engagement_rate: .62 });
 assert.ok(profile.discover > 60, 'gerçek Discover performansı güçlü sinyal üretmeli');
 assert.ok(profile.audience > 60, 'GA4 hit geçmişi güçlü sinyal üretmeli');
+
+assert.equal(classifyOpportunity({ channelScore: 76, velocity: 90, sourceCount: 3, performanceMatch: { discover_score: 72 } }).key, 'critical');
+assert.equal(classifyOpportunity({ channelScore: 72, velocity: 75, sourceCount: 2 }).key, 'high');
+assert.equal(classifyOpportunity({ channelScore: 64, velocity: 55, sourceCount: 1 }).key, 'opportunity');
+assert.equal(classifyOpportunity({ channelScore: 48, velocity: 35, sourceCount: 1 }).key, 'watch');
 
 const item = {
   title: 'Garmin yeni akıllı saatini duyurdu', summary: 'Küresel ürün duyurusu', opportunity_label: 'Kritik fırsat', discover_score: 86, news_score: 81, velocity_score: 72,
