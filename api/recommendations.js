@@ -2,6 +2,37 @@ import { getSupabaseAdmin, json, queryLocal } from './_lib.js';
 import opportunityRadar from './opportunity-radar.js';
 import { loadIntelligenceModel, modelInfluence, predictWithModel, primaryTopicKey, savePredictions } from './_intelligence-model.js';
 
+const RESPONSE_CACHE_TTL_MS = 45 * 1000;
+const RESPONSE_CACHE_STALE_MS = 10 * 60 * 1000;
+const PREDICTION_WRITE_INTERVAL_MS = 5 * 60 * 1000;
+const responseCache = new Map();
+let predictionWritePromise = null;
+let lastPredictionWriteAt = 0;
+
+function requestedLimit(req) {
+  return Math.max(1, Math.min(250, Number(req.query?.limit) || 160));
+}
+
+function responseCacheKey(req, sortKey, diversityApplied) {
+  return `${sortKey}:${diversityApplied ? 1 : 0}:${requestedLimit(req)}`;
+}
+
+function cachedPayload(entry, state) {
+  return {
+    ...entry.payload,
+    filters: { ...entry.payload.filters, cache: state, cache_age_seconds: Math.max(0, Math.round((Date.now() - entry.createdAt) / 1000)) }
+  };
+}
+
+function schedulePredictionWrite(items, modelVersion) {
+  if (!modelVersion || predictionWritePromise || Date.now() - lastPredictionWriteAt < PREDICTION_WRITE_INTERVAL_MS) return;
+  lastPredictionWriteAt = Date.now();
+  predictionWritePromise = new Promise((resolve) => setTimeout(resolve, 0))
+    .then(() => savePredictions(items.slice(0, 160), modelVersion))
+    .catch(() => 0)
+    .finally(() => { predictionWritePromise = null; });
+}
+
 const HARD_NOISE_PATTERNS = [
   /hull\s*city/i, /polonya/i, /voleybol/i, /futbol/i, /basketbol/i, /\bkupa\b/i,
   /hangi\s*kanalda/i, /canli\s*izle|canlı\s*izle/i, /\bmac[iı]\b/i, /\bmaç[ıi]?\b/i,
@@ -546,6 +577,7 @@ async function safeSelect(builder) {
 }
 
 export default async function handler(req, res) {
+  let activeCacheKey = '';
   try {
     if (String(req.query?.opportunity || '') === '1') return await opportunityRadar(req, res);
 
@@ -554,11 +586,24 @@ export default async function handler(req, res) {
     const allowedSorts = ['total_score', 'traffic_score', 'conversion_score', 'discover_score', 'social_score', 'editorial_score', 'updated_at', 'published_at'];
     const sortKey = allowedSorts.includes(sort) ? sort : 'published_at';
     const discoverMode = sortKey === 'discover_score';
+    const diversitySetting = String(req.query?.diversify || '');
+    const diversityApplied = diversitySetting ? diversitySetting === '1' : discoverMode;
+    activeCacheKey = responseCacheKey(req, sortKey, diversityApplied);
+    const cached = responseCache.get(activeCacheKey);
+    const cacheAge = cached ? Date.now() - cached.createdAt : Infinity;
+    if (String(req.query?.refresh || '') !== '1' && cacheAge <= RESPONSE_CACHE_TTL_MS) {
+      return json(res, 200, cachedPayload(cached, 'fresh'));
+    }
+
+    const candidateCutoff = new Date(Date.now() - 14 * 86400000).toISOString();
+    const rawCutoff = new Date(Date.now() - 7 * 86400000).toISOString();
+    const candidateColumns = 'id,raw_feed_item_id,source_id,source_name,title,item_title,feed_title,summary,description,excerpt,url,canonical_url,link,image_url,thumbnail,image,content_type_hint,total_score,traffic_score,conversion_score,discover_score,social_score,editorial_score,status,published_at,created_at,updated_at';
+    const rawColumns = 'id,source_id,source_name,source_url,title,url,canonical_url,link,summary,description,excerpt,image_url,thumbnail,image,published_at,created_at,updated_at';
 
     const [{ data: candidates, error: candidateError }, { data: sources, error: sourcesError }, { data: rawItems, error: rawError }] = await Promise.all([
-      safeSelect(supabase.from('topic_candidates').select('*').eq('status', 'active').limit(2500)),
+      safeSelect(supabase.from('topic_candidates').select(candidateColumns).eq('status', 'active').gte('created_at', candidateCutoff).order('created_at', { ascending: false }).limit(1600)),
       safeSelect(supabase.from('sources').select('id,name')),
-      safeSelect(supabase.from('raw_feed_items').select('*').order('created_at', { ascending: false }).limit(25000))
+      safeSelect(supabase.from('raw_feed_items').select(rawColumns).gte('created_at', rawCutoff).order('created_at', { ascending: false }).limit(5000))
     ]);
 
     if (sourcesError) return json(res, 500, { error: sourcesError.message });
@@ -607,22 +652,22 @@ export default async function handler(req, res) {
     }
 
     enriched.sort((a, b) => compareItems(a, b, sortKey));
-    const diversitySetting = String(req.query?.diversify || '');
-    const diversityApplied = diversitySetting ? diversitySetting === '1' : discoverMode;
     if (diversityApplied) enriched = diversifyItems(enriched, sortKey);
-    if (intelligenceModel) {
-      try { await savePredictions(enriched, intelligenceModel.model_version); } catch {}
-    }
+    if (intelligenceModel) schedulePredictionWrite(enriched, intelligenceModel.model_version);
 
-    return json(res, 200, {
-      items: enriched.slice(0, 500),
+    const limit = requestedLimit(req);
+    const payload = {
+      items: enriched.slice(0, limit),
       filters: {
         sort: sortKey,
         includes_raw_feed_fallback: true,
         candidate_error: candidateError?.message || null,
         candidate_count: candidateItems.length,
         raw_fallback_count: rawFallback.length,
-        returned_count: Math.min(enriched.length, 500),
+        returned_count: Math.min(enriched.length, limit),
+        available_count: enriched.length,
+        query_candidate_limit: 1600,
+        query_raw_limit: 5000,
         diversity_applied: diversityApplied,
         diversity_mode: diversityApplied ? 'source_topic_brand_balanced' : 'strict_score',
         scoring_model: intelligenceModel ? 'intelligence_v1' : 'calibrated_v2',
@@ -635,10 +680,24 @@ export default async function handler(req, res) {
         } : null,
         performance_learning_terms: learnedTerms.size,
         published_performance_profiles: performanceProfiles.length,
-        normalized_scores: ['total_score', 'traffic_score', 'conversion_score', 'discover_score', 'social_score', 'editorial_score']
+        normalized_scores: ['total_score', 'traffic_score', 'conversion_score', 'discover_score', 'social_score', 'editorial_score'],
+        cache: 'miss'
       }
-    });
+    };
+    responseCache.set(activeCacheKey, { payload, createdAt: Date.now() });
+    if (responseCache.size > 32) {
+      const oldest = [...responseCache.entries()].sort((a, b) => a[1].createdAt - b[1].createdAt).slice(0, responseCache.size - 24);
+      oldest.forEach(([key]) => responseCache.delete(key));
+    }
+    return json(res, 200, payload);
   } catch (error) {
+    const stale = activeCacheKey ? responseCache.get(activeCacheKey) : null;
+    if (stale && Date.now() - stale.createdAt <= RESPONSE_CACHE_STALE_MS) {
+      return json(res, 200, {
+        ...cachedPayload(stale, 'stale'),
+        warning: `Güncel sorgu tamamlanamadı; son başarılı sonuç gösteriliyor: ${error?.message || String(error)}`
+      });
+    }
     return json(res, 500, { error: error?.message || String(error) });
   }
 }

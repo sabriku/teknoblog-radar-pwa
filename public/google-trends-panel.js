@@ -207,7 +207,14 @@
     }
   }
 
-  function start() { if (!render()) return setTimeout(start, 200); load(); setInterval(() => { if (location.hash === '#google-trends') load(); }, 10 * 60000); }
+  function start() {
+    if (!render()) return setTimeout(start, 200);
+    window.addEventListener('tb-spa-tab-change', (event) => {
+      if (event.detail?.tab === 'google-trends' && !state.refreshedAt && !state.loading) load();
+    });
+    if (location.hash === '#google-trends') load();
+    setInterval(() => { if (location.hash === '#google-trends') load(); }, 10 * 60000);
+  }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
   else start();
 })();

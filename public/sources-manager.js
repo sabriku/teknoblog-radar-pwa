@@ -267,6 +267,16 @@
     $('tb-sm-status')?.addEventListener('change', (event) => { state.status = event.target.value || 'all'; renderSources(); });
   }
 
-  function boot() { ensureUi(); bind(); loadSources(); }
+  let sourceManagerLoaded = false;
+  function loadSourceManagerOnce() {
+    if (sourceManagerLoaded) return;
+    sourceManagerLoaded = true;
+    loadSources();
+  }
+  function boot() {
+    ensureUi(); bind();
+    window.addEventListener('tb-spa-tab-change', (event) => { if (event.detail?.tab === 'sources') loadSourceManagerOnce(); });
+    if (location.hash === '#sources') loadSourceManagerOnce();
+  }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true }); else boot();
 })();

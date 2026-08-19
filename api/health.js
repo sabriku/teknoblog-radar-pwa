@@ -1,28 +1,18 @@
-import { databaseStatus, getSupabaseAdmin, initializeDatabase, json, nowIso } from './_lib.js';
+import { databaseStatus, initializeDatabase, json, nowIso, queryLocal } from './_lib.js';
 
 export default async function handler(req, res) {
   try {
     await initializeDatabase();
-    const database = getSupabaseAdmin();
-    const [{ error, count: sourceCount }, { error: runError, count: pipelineRunCount }] = await Promise.all([
-      database.from('sources').select('id', { count: 'exact', head: true }),
-      database.from('pipeline_runs').select('id', { count: 'exact', head: true })
-    ]);
-
-    if (error || runError) {
-      return json(res, 500, {
-        status: 'error',
-        database: 'local_postgresql',
-        message: error?.message || runError?.message,
-        now: nowIso()
-      });
-    }
+    const counts = await queryLocal(`SELECT
+      (SELECT COUNT(*)::int FROM sources) AS sources,
+      (SELECT COUNT(*)::int FROM pipeline_runs) AS pipeline_runs`);
+    const row = counts.rows[0] || {};
 
     return json(res, 200, {
       status: 'ok',
       database: 'local_postgresql',
       database_status: databaseStatus(),
-      counts: { sources: sourceCount, pipeline_runs: pipelineRunCount },
+      counts: { sources: Number(row.sources || 0), pipeline_runs: Number(row.pipeline_runs || 0) },
       now: nowIso()
     });
   } catch (error) {

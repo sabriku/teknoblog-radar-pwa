@@ -117,6 +117,19 @@
     finally { state.loading = false; render(); }
   }
 
-  function start() { if (started) return; started = true; let tries = 0; const wait = setInterval(() => { tries += 1; if (render() || tries > 60) { clearInterval(wait); load(); setInterval(load, REFRESH_MS); } }, 250); }
+  function start() {
+    if (started) return; started = true; let tries = 0;
+    const wait = setInterval(() => {
+      tries += 1;
+      if (render() || tries > 60) {
+        clearInterval(wait);
+        if (location.hash === '#opportunities') load();
+        setInterval(() => { if (location.hash === '#opportunities') load(); }, REFRESH_MS);
+      }
+    }, 250);
+    window.addEventListener('tb-spa-tab-change', (event) => {
+      if (event.detail?.tab === 'opportunities' && !state.refreshedAt && !state.loading) load();
+    });
+  }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true }); else start();
 })();

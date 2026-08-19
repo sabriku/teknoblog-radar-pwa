@@ -132,10 +132,17 @@
   function start() {
     if (started) return; started = true;
     let tries = 0;
-    const wait = setInterval(async () => {
+    const wait = setInterval(() => {
       tries += 1;
-      if (render() || tries > 60) { clearInterval(wait); await fetchItems(); if (!timer) timer = setInterval(fetchItems, REFRESH_MS); }
+      if (render() || tries > 60) {
+        clearInterval(wait);
+        if (location.hash === '#instagram') fetchItems();
+        if (!timer) timer = setInterval(() => { if (location.hash === '#instagram') fetchItems(); }, REFRESH_MS);
+      }
     }, 250);
+    window.addEventListener('tb-spa-tab-change', (event) => {
+      if (event.detail?.tab === 'instagram' && !state.refreshedAt && !state.loading) fetchItems();
+    });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true }); else start();
 })();

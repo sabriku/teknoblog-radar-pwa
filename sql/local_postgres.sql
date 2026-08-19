@@ -596,6 +596,8 @@ CREATE INDEX IF NOT EXISTS idx_raw_items_created ON raw_feed_items(created_at DE
 CREATE INDEX IF NOT EXISTS idx_raw_items_published ON raw_feed_items(published_at DESC NULLS LAST);
 CREATE INDEX IF NOT EXISTS idx_candidates_status_created ON topic_candidates(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_candidates_status_published ON topic_candidates(status, published_at DESC NULLS LAST);
+CREATE INDEX IF NOT EXISTS idx_candidates_status_created_cover ON topic_candidates(status, created_at DESC) INCLUDE (source_id,raw_feed_item_id,published_at);
+CREATE INDEX IF NOT EXISTS idx_raw_items_created_cover ON raw_feed_items(created_at DESC) INCLUDE (source_id,published_at);
 CREATE INDEX IF NOT EXISTS idx_pipeline_runs_status ON pipeline_runs(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_opportunity_offers_recent ON opportunity_offers(last_seen_at DESC, price ASC);
 CREATE INDEX IF NOT EXISTS idx_opportunity_offers_product ON opportunity_offers(product_key, price ASC);

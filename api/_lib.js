@@ -67,7 +67,16 @@ function db() {
     return null;
   }
   if (!pool) {
-    pool = new Pool({ connectionString, max: 8, idleTimeoutMillis: 30000, connectionTimeoutMillis: 6000 });
+    pool = new Pool({
+      connectionString,
+      max: 12,
+      min: 1,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 10000,
+      statement_timeout: 30000,
+      query_timeout: 35000,
+      keepAlive: true
+    });
     pool.on('error', (error) => { dbDisabledReason = error?.message || String(error); });
   }
   return pool;
@@ -106,7 +115,17 @@ export async function queryLocal(text, params = []) {
 }
 
 export function databaseStatus() {
-  return { configured: Boolean(databaseUrl()), ready: schemaReady, error: dbDisabledReason || null };
+  return {
+    configured: Boolean(databaseUrl()),
+    ready: schemaReady,
+    error: dbDisabledReason || null,
+    pool: pool ? {
+      total: pool.totalCount,
+      idle: pool.idleCount,
+      waiting: pool.waitingCount,
+      max: pool.options.max
+    } : { total: 0, idle: 0, waiting: 0, max: 12 }
+  };
 }
 
 export function hashValue(value) { return createHash('sha1').update(String(value)).digest('hex'); }

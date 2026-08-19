@@ -282,8 +282,8 @@
       if (mounted) {
         clearInterval(timer);
         started = true;
-        await fetchNews();
-        if (!refreshTimer) refreshTimer = setInterval(() => fetchNews(), REFRESH_MS);
+        if (location.hash === '#google-news') await fetchNews();
+        if (!refreshTimer) refreshTimer = setInterval(() => { if (location.hash === '#google-news') fetchNews(); }, REFRESH_MS);
         return;
       }
 
@@ -293,6 +293,10 @@
       }
     }, 250);
   }
+
+  window.addEventListener('tb-spa-tab-change', (event) => {
+    if (event.detail?.tab === 'google-news' && started && !state.refreshedAt && !state.loading) fetchNews();
+  });
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', waitForLayoutAndStart, { once: true });

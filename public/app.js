@@ -301,7 +301,7 @@
     try {
       state.lastError = '';
       const diversify = requestedSort === 'discover_score' && state.brandDiversity ? '1' : '0';
-      const data = await fetchJson(`/api/recommendations?sort=${encodeURIComponent(requestedSort)}&diversify=${diversify}&t=${Date.now()}`, { timeoutMs: 25000 });
+      const data = await fetchJson(`/api/recommendations?sort=${encodeURIComponent(requestedSort)}&diversify=${diversify}&limit=160&t=${Date.now()}`, { timeoutMs: 35000 });
       if (requestId !== state.requestSequence || requestedSort !== state.sort) return;
       state.items = Array.isArray(data.items) ? data.items : [];
     } catch (error) {
