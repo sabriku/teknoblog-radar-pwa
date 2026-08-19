@@ -157,18 +157,32 @@ export function buildPerformanceProfiles(rows = []) {
   })).filter((row) => row.title && row.words.size);
   const discoverMax = Math.max(1, ...prepared.map((row) => row.discoverRaw));
   const trafficMax = Math.max(1, ...prepared.map((row) => row.trafficRaw));
-  return prepared.map((row) => ({
+  const profiles = prepared.map((row) => ({
     title: row.title,
     words: row.words,
     discover_strength: clampScore(row.discoverRaw / discoverMax * 100),
     traffic_strength: clampScore(row.trafficRaw / trafficMax * 100)
   })).filter((row) => row.discover_strength >= 25 || row.traffic_strength >= 25);
+  const tokenIndex = new Map();
+  for (const profile of profiles) for (const word of profile.words) {
+    const bucket = tokenIndex.get(word) || [];
+    bucket.push(profile);
+    tokenIndex.set(word, bucket);
+  }
+  Object.defineProperty(profiles, 'tokenIndex', { value: tokenIndex, enumerable: false });
+  return profiles;
 }
 
 export function performanceAffinity(item = {}, profiles = []) {
   const words = performanceTokens(`${item.title || ''} ${item.summary || item.description || item.excerpt || ''}`);
+  let comparableProfiles = profiles;
+  if (profiles.tokenIndex instanceof Map) {
+    const matching = new Set();
+    for (const word of words) for (const profile of profiles.tokenIndex.get(word) || []) matching.add(profile);
+    comparableProfiles = [...matching];
+  }
   let discover = 0; let traffic = 0; let match = '';
-  for (const profile of profiles) {
+  for (const profile of comparableProfiles) {
     const similarity = tokenSimilarity(words, profile.words);
     if (similarity < .24) continue;
     const discoverValue = similarity * Number(profile.discover_strength || 0);

@@ -10,6 +10,11 @@ const similar = performanceAffinity({ title: 'Garmin yeni spor saati ortaya çı
 const unrelated = performanceAffinity({ title: 'Adobe Photoshop abonelik seçeneklerini yeniledi' }, profiles);
 assert.ok(similar.discover > unrelated.discover, 'başarılı Teknoblog konusuna benzeyen haber daha güçlü Discover sinyali almalı');
 assert.ok(similar.traffic > unrelated.traffic, 'yüksek hitli konu benzerliği trafik sinyaline yansımalı');
+assert.deepEqual(
+  performanceAffinity({ title: 'Garmin yeni spor saati ortaya çıktı', summary: 'Akıllı saat yeni özelliklerle geliyor.' }, [...profiles]),
+  similar,
+  'performans profili kelime indeksi tam taramayla aynı sonucu vermeli'
+);
 
 const sorted = [
   { title: 'Düşük', discover_score: 61, published_at: '2026-07-29T08:00:00Z' },
