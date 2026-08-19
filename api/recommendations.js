@@ -646,6 +646,7 @@ export default async function handler(req, res) {
 
     let enriched = dedupeItems([...candidateItems, ...rawFallback]).map((item) => withRadarScores(item, learnedTerms, performanceProfiles, intelligenceModel));
     enriched = calibrateDiscoverScores(enriched);
+    const preparedItems = enriched;
 
     if (discoverMode) {
       enriched = enriched.filter((item) => ageHours(item) <= 24);
@@ -684,7 +685,38 @@ export default async function handler(req, res) {
         cache: 'miss'
       }
     };
-    responseCache.set(activeCacheKey, { payload, createdAt: Date.now() });
+    const cacheCreatedAt = Date.now();
+    responseCache.set(activeCacheKey, { payload, createdAt: cacheCreatedAt });
+
+    // The expensive part is gathering and scoring the dataset. Pre-warm every
+    // toolbar ordering from that same dataset so changing the sort never repeats
+    // the database and intelligence work.
+    const variants = allowedSorts.flatMap((alternateSort) => alternateSort === 'discover_score'
+      ? [{ sort: alternateSort, diversify: true }, { sort: alternateSort, diversify: false }]
+      : [{ sort: alternateSort, diversify: false }]);
+    for (const variant of variants) {
+      const variantKey = responseCacheKey(req, variant.sort, variant.diversify);
+      if (variantKey === activeCacheKey) continue;
+      let variantItems = preparedItems.slice();
+      if (variant.sort === 'discover_score') variantItems = variantItems.filter((item) => ageHours(item) <= 24);
+      variantItems.sort((a, b) => compareItems(a, b, variant.sort));
+      if (variant.diversify) variantItems = diversifyItems(variantItems, variant.sort);
+      responseCache.set(variantKey, {
+        createdAt: cacheCreatedAt,
+        payload: {
+          items: variantItems.slice(0, limit),
+          filters: {
+            ...payload.filters,
+            sort: variant.sort,
+            returned_count: Math.min(variantItems.length, limit),
+            available_count: variantItems.length,
+            diversity_applied: variant.diversify,
+            diversity_mode: variant.diversify ? 'source_topic_brand_balanced' : 'strict_score',
+            cache: 'prewarmed'
+          }
+        }
+      });
+    }
     if (responseCache.size > 32) {
       const oldest = [...responseCache.entries()].sort((a, b) => a[1].createdAt - b[1].createdAt).slice(0, responseCache.size - 24);
       oldest.forEach(([key]) => responseCache.delete(key));
