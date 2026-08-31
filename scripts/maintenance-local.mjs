@@ -2,35 +2,57 @@ const baseUrl = process.env.RADAR_BASE_URL || 'http://127.0.0.1:3000';
 const token = process.env.CRON_TOKEN || '';
 if (!token) throw new Error('CRON_TOKEN tanımlı değil.');
 
-for (const action of ['maintenance', 'check_images']) {
-  const response = await fetch(`${baseUrl}/api/intelligence?token=${encodeURIComponent(token)}`, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action }), signal: AbortSignal.timeout(180000)
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `${action} HTTP ${response.status}`);
-  console.log(JSON.stringify({ action, ...data }));
+async function postIntelligence(action, options = {}) {
+  const critical = options.critical !== false;
+  const timeoutMs = Number(options.timeoutMs || 180000);
+  const useHeaderToken = options.headerToken === true;
+  const url = useHeaderToken
+    ? `${baseUrl}/api/intelligence`
+    : `${baseUrl}/api/intelligence?token=${encodeURIComponent(token)}`;
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: useHeaderToken
+        ? { 'content-type': 'application/json', 'x-cron-token': token }
+        : { 'content-type': 'application/json' },
+      body: JSON.stringify({ action }),
+      signal: AbortSignal.timeout(timeoutMs)
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `${action} HTTP ${response.status}`);
+    console.log(JSON.stringify({ action, ...data }));
+    return data;
+  } catch (error) {
+    const payload = {
+      action,
+      ok: false,
+      skipped: !critical,
+      error: error?.name === 'TimeoutError' ? `${action} zaman aşımına uğradı` : (error?.message || String(error))
+    };
+    console.log(JSON.stringify(payload));
+    if (critical) throw error;
+    return payload;
+  }
 }
 
-const authResponse = await fetch(`${baseUrl}/api/google-auth`, { signal: AbortSignal.timeout(15000) });
-const auth = await authResponse.json().catch(() => ({}));
-if (authResponse.ok && auth.connected) {
-  const response = await fetch(`${baseUrl}/api/intelligence`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-cron-token': token },
-    body: JSON.stringify({ action: 'sync_gsc' }),
-    signal: AbortSignal.timeout(180000)
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `sync_gsc HTTP ${response.status}`);
-  console.log(JSON.stringify({ action: 'sync_gsc', ...data }));
-  if (auth.analytics_configured) {
-    const ga4Response = await fetch(`${baseUrl}/api/intelligence`, {
-      method: 'POST', headers: { 'content-type': 'application/json', 'x-cron-token': token }, body: JSON.stringify({ action: 'sync_ga4' }), signal: AbortSignal.timeout(180000)
-    });
-    const ga4 = await ga4Response.json().catch(() => ({}));
-    if (!ga4Response.ok) throw new Error(ga4.error || `sync_ga4 HTTP ${ga4Response.status}`);
-    console.log(JSON.stringify({ action: 'sync_ga4', ...ga4 }));
+await postIntelligence('maintenance', { critical: true, timeoutMs: 180000 });
+await postIntelligence('check_images', { critical: true, timeoutMs: 180000 });
+
+let auth = null;
+try {
+  const authResponse = await fetch(`${baseUrl}/api/google-auth`, { signal: AbortSignal.timeout(15000) });
+  auth = await authResponse.json().catch(() => ({}));
+  if (!authResponse.ok || !auth.connected) {
+    console.log(JSON.stringify({ action: 'sync_gsc', skipped: true, reason: 'Google Search Console bağlı değil.' }));
   }
-} else {
-  console.log(JSON.stringify({ action: 'sync_gsc', skipped: true, reason: 'Google Search Console bağlı değil.' }));
+} catch (error) {
+  console.log(JSON.stringify({ action: 'sync_gsc', skipped: true, error: error?.message || String(error) }));
+}
+
+if (auth?.connected) {
+  await postIntelligence('sync_gsc', { critical: false, timeoutMs: 120000, headerToken: true });
+  if (auth.analytics_configured) {
+    await postIntelligence('sync_ga4', { critical: false, timeoutMs: 120000, headerToken: true });
+  }
 }
