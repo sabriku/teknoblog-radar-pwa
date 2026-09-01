@@ -48,40 +48,61 @@
     }
   }
 
+  async function rebuildRecommendationCache() {
+    status('Haber listesi yeniden oluşturuluyor...');
+    await Promise.allSettled([
+      fetchJson(`/api/recommendations?sort=discover_score&refresh=1&limit=160&t=${Date.now()}`, 90000),
+      fetchJson(`/api/recommendations?sort=published_at&refresh=1&limit=160&t=${Date.now()}`, 90000),
+      fetchJson(`/api/recommendations?sort=total_score&refresh=1&limit=160&t=${Date.now()}`, 90000)
+    ]);
+  }
+
   async function softRefreshOnly() {
     await Promise.allSettled([
-      fetchJson(`/api/recommendations?sort=discover_score&t=${Date.now()}`, 30000),
+      fetchJson(`/api/recommendations?sort=discover_score&refresh=1&limit=160&t=${Date.now()}`, 60000),
+      fetchJson(`/api/recommendations?sort=published_at&refresh=1&limit=160&t=${Date.now()}`, 60000),
       fetchJson(`/api/sources?t=${Date.now()}`, 20000),
       fetchJson(`/api/trend-overview?google_news=1&limit=20&t=${Date.now()}`, 30000)
     ]);
   }
 
+  async function runFullRefresh(token) {
+    saveToken(token);
+    const encoded = encodeURIComponent(String(token || '').trim());
+
+    let sourceOffset = 0;
+    const sourceLimit = 4;
+    for (let batch = 0; batch < 16; batch += 1) {
+      status(`RSS kaynakları yenileniyor (${batch + 1})...`);
+      const result = await fetchJson(`/api/ingest?token=${encoded}&source_limit=${sourceLimit}&source_offset=${sourceOffset}&item_limit=20&t=${Date.now()}`, 90000);
+      if (!result?.has_more) break;
+      sourceOffset += sourceLimit;
+    }
+
+    let scoreOffset = 0;
+    const scoreLimit = 120;
+    for (let batch = 0; batch < 24; batch += 1) {
+      status(`Haberler puanlanıyor (${batch + 1})...`);
+      const result = await fetchJson(`/api/score-batch?token=${encoded}&offset=${scoreOffset}&limit=${scoreLimit}&t=${Date.now()}`, 90000);
+      if (!result?.has_more || result?.stopped_early) break;
+      scoreOffset += scoreLimit;
+    }
+
+    await rebuildRecommendationCache();
+    return { mode: 'full' };
+  }
+
   async function runWithToken(token) {
-    if (token) saveToken(token);
     const cleanToken = String(token || '').trim();
     if (!cleanToken) {
+      const entered = window.prompt('Tam yenileme için CRON_TOKEN girin', localStorage.getItem('tb_radar_cron_token') || '');
+      if (entered && entered.trim()) return runFullRefresh(entered.trim());
       await softRefreshOnly();
       return { mode: 'soft' };
     }
-    const encoded = encodeURIComponent(cleanToken);
-    try {
-      let sourceOffset = 0;
-      const sourceLimit = 4;
-      for (let batch = 0; batch < 12; batch += 1) {
-        status(`RSS kaynakları yenileniyor (${batch + 1})...`);
-        const result = await fetchJson(`/api/ingest?token=${encoded}&source_limit=${sourceLimit}&source_offset=${sourceOffset}&item_limit=20&t=${Date.now()}`, 90000);
-        if (!result?.has_more) break;
-        sourceOffset += sourceLimit;
-      }
 
-      let scoreOffset = 0;
-      const scoreLimit = 120;
-      for (let batch = 0; batch < 20; batch += 1) {
-        status(`Haberler puanlanıyor (${batch + 1})...`);
-        const result = await fetchJson(`/api/score-batch?token=${encoded}&offset=${scoreOffset}&limit=${scoreLimit}&t=${Date.now()}`, 90000);
-        if (!result?.has_more || result?.stopped_early) break;
-        scoreOffset += scoreLimit;
-      }
+    try {
+      return await runFullRefresh(cleanToken);
     } catch (error) {
       if (error?.status === 404) {
         await softRefreshOnly();
@@ -89,7 +110,6 @@
       }
       throw error;
     }
-    return { mode: 'full' };
   }
 
   async function guardedRefresh(event) {
@@ -107,15 +127,15 @@
 
     try {
       const result = await runWithToken(getStoredToken());
-      status(result?.mode === 'soft' ? 'Akış güncellendi. Sayfa yenileniyor...' : 'İçerikler güncellendi. Sayfa yenileniyor...');
+      status(result?.mode === 'soft' ? 'Akış önbelleği yenilendi. Sayfa yenileniyor...' : 'İçerikler güncellendi. Sayfa yenileniyor...');
       setTimeout(() => window.location.reload(), 600);
     } catch (error) {
       if (error?.status === 401 || /yetkisiz|unauthorized/i.test(String(error?.message || ''))) {
         const entered = window.prompt('CRON_TOKEN değeri değişmiş görünüyor. Yeni tokenı girin', localStorage.getItem('tb_radar_cron_token') || '');
         if (entered && entered.trim()) {
           try {
-            const result = await runWithToken(entered.trim());
-            status(result?.mode === 'soft' ? 'Akış güncellendi. Sayfa yenileniyor...' : 'İçerikler güncellendi. Sayfa yenileniyor...');
+            const result = await runFullRefresh(entered.trim());
+            status(result?.mode === 'soft' ? 'Akış önbelleği yenilendi. Sayfa yenileniyor...' : 'İçerikler güncellendi. Sayfa yenileniyor...');
             setTimeout(() => window.location.reload(), 600);
             return;
           } catch (retryError) {
