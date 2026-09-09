@@ -7,6 +7,9 @@ import { extractIntelligenceFeatures, loadIntelligenceModel, trainIntelligenceMo
 import { readSession } from '../lib/lock.js';
 
 const STOP = new Set('ve veya ile için bir bu şu daha yeni son ilk olan olarak göre sonra önce hakkında üzerinde geliyor geldi olacak oldu neden nasıl hangi ne zaman teknoloji tech says report reportedly could may its the and for from with that this have has will into over after before'.split(' '));
+const CLUSTER_CACHE_TTL_MS = Math.max(30_000, Number(process.env.INTELLIGENCE_CLUSTER_CACHE_MS) || 120_000);
+let clusterCache = { expiresAt: 0, items: null };
+let clusterBuildPromise = null;
 
 function bodyOf(req) {
   if (typeof req.body === 'string') return JSON.parse(req.body || '{}');
@@ -473,7 +476,7 @@ async function updateSourceLeadership(clusters = []) {
       stats.set(key, stat);
     }
   }
-  for (const stat of stats.values()) {
+  await Promise.all([...stats.values()].map(async (stat) => {
     const avgLead = stat.first ? Math.round(stat.lead_total / stat.first) : 0;
     const rawLeadership = (stat.first / Math.max(1, stat.samples)) * 65 + Math.min(35, avgLead / 3);
     const sampleConfidence = Math.min(1, stat.samples / 12);
@@ -486,10 +489,10 @@ async function updateSourceLeadership(clusters = []) {
       corroboration_count=EXCLUDED.corroboration_count,avg_lead_minutes=EXCLUDED.avg_lead_minutes,
       leadership_score=EXCLUDED.leadership_score,success_score=EXCLUDED.success_score,updated_at=NOW()`,
     [stat.source_id, stat.source_name, stat.beat, stat.samples, stat.first, stat.corroborations, avgLead, leadership, success]);
-  }
+  }));
 }
 
-async function clustersSection() {
+async function rebuildClustersSection() {
   const [candidates, sources, owned, previous, queue, watchlists] = await Promise.all([
     recentCandidates(),
     queryLocal(`SELECT id,source_type,trust_score,priority_weight,market_relevance FROM sources`),
@@ -502,7 +505,7 @@ async function clustersSection() {
   const previousMap = new Map(previous.rows.map((item) => [item.cluster_key, item]));
   const queueUrls = new Set(queue.rows.map((item) => String(item.url || '').replace(/\/+$/, '')));
   const clusters = buildClusters(candidates, sourceMeta, owned.rows, { previousClusters: previous.rows, queueUrls, watchlists: watchlists.rows });
-  for (const cluster of clusters.slice(0, 80)) {
+  await Promise.all(clusters.slice(0, 80).map(async (cluster) => {
     await queryLocal(`INSERT INTO content_clusters(cluster_key,cluster_name,source_count,item_count,momentum_score,confidence_score,first_seen_at,last_seen_at,payload,
       early_signal_score,first_mover_score,breakout_probability,competitor_count,official_source_count,owned_coverage,lead_window_minutes,signal_stage,first_source_name,
       lifecycle_stage,novelty_score,spread_score,opportunity_minutes,opportunity_expires_at,story_type,beat,country_count,countries,source_timeline,editorial_package,updated_at)
@@ -532,9 +535,22 @@ async function clustersSection() {
       ON CONFLICT(cluster_key,capture_bucket) DO UPDATE SET early_signal_score=EXCLUDED.early_signal_score,first_mover_score=EXCLUDED.first_mover_score,
       breakout_probability=EXCLUDED.breakout_probability,source_count=EXCLUDED.source_count,competitor_count=EXCLUDED.competitor_count,payload=EXCLUDED.payload`,
     [cluster.cluster_key, cluster.early_signal_score, cluster.first_mover_score, cluster.breakout_probability, cluster.source_count, cluster.competitor_count, JSON.stringify({ stage: cluster.signal_stage, title: cluster.cluster_name })]);
-  }
+  }));
   await updateSourceLeadership(clusters.slice(0, 80));
   return clusters.slice(0, 60);
+}
+
+async function clustersSection() {
+  const now = Date.now();
+  if (clusterCache.items && clusterCache.expiresAt > now) return clusterCache.items;
+  if (clusterBuildPromise) return clusterBuildPromise;
+  clusterBuildPromise = rebuildClustersSection()
+    .then((items) => {
+      clusterCache = { items, expiresAt: Date.now() + CLUSTER_CACHE_TTL_MS };
+      return items;
+    })
+    .finally(() => { clusterBuildPromise = null; });
+  return clusterBuildPromise;
 }
 
 function isEarlySignal(item) {
@@ -570,7 +586,7 @@ async function lifecycleSection() {
   return {
     generated_at: nowIso(), counts, events,
     urgent: clusters.filter((item) => item.opportunity_minutes > 0 && item.opportunity_minutes <= 60 && !item.owned_coverage).sort((a, b) => a.opportunity_minutes - b.opportunity_minutes).slice(0, 20),
-    items: clusters.sort((a, b) => b.opportunity_minutes - a.opportunity_minutes || b.first_mover_score - a.first_mover_score).slice(0, 60)
+    items: [...clusters].sort((a, b) => b.opportunity_minutes - a.opportunity_minutes || b.first_mover_score - a.first_mover_score).slice(0, 60)
   };
 }
 

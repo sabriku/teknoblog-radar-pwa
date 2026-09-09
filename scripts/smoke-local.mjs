@@ -1,5 +1,6 @@
 const baseUrl = process.env.RADAR_BASE_URL || 'http://127.0.0.1:3000';
 const token = process.env.CRON_TOKEN || '';
+const requestTimeoutMs = Math.max(5_000, Number(process.env.RADAR_SMOKE_TIMEOUT_MS) || 45_000);
 
 const checks = [
   ['/api/health', 200],
@@ -34,7 +35,10 @@ let failed = 0;
 for (const [pathname, expected] of checks) {
   const displayPath = pathname.replace(/([?&]token=)[^&]+/i, '$1[redacted]');
   try {
-    const response = await fetch(`${baseUrl}${pathname}`, { headers: { accept: 'application/json' } });
+    const response = await fetch(`${baseUrl}${pathname}`, {
+      headers: { accept: 'application/json' },
+      signal: AbortSignal.timeout(requestTimeoutMs)
+    });
     const text = await response.text();
     const ok = response.status === expected;
     console.log(`${ok ? 'OK' : 'FAIL'} ${response.status} ${displayPath} ${text.slice(0, 180).replace(/\s+/g, ' ')}`);
