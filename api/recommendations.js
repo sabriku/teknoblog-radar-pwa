@@ -2,8 +2,11 @@ import { getSupabaseAdmin, json, queryLocal } from './_lib.js';
 import opportunityRadar from './opportunity-radar.js';
 import { loadIntelligenceModel, modelInfluence, predictWithModel, primaryTopicKey, savePredictions } from './_intelligence-model.js';
 
-const RESPONSE_CACHE_TTL_MS = 45 * 1000;
-const RESPONSE_CACHE_STALE_MS = 10 * 60 * 1000;
+// Scoring several thousand candidates is intentionally richer than a plain DB
+// sort. Keep the computed feed briefly so tab/sort changes do not repeat that
+// work, while the explicit refresh action can still bypass the cache.
+const RESPONSE_CACHE_TTL_MS = 3 * 60 * 1000;
+const RESPONSE_CACHE_STALE_MS = 20 * 60 * 1000;
 const PREDICTION_WRITE_INTERVAL_MS = 5 * 60 * 1000;
 const responseCache = new Map();
 let predictionWritePromise = null;
