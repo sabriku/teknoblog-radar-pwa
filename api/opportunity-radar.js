@@ -366,9 +366,11 @@ export default async function handler(req, res) {
   try {
     const limit = Math.min(60, Math.max(6, Number(req.query?.limit || 36)));
     const force = String(req.query?.refresh || '') === '1';
-    const scan = await maybeScan(force);
+    let scan = null;
+    if (force) scan = await maybeScan(true);
+    else maybeScan(false).catch(() => {});
     const data = await responseData(limit);
-    return json(res, 200, { ...data, scan: scan ? { found: scan.found, checked_at: scan.checked_at } : null });
+    return json(res, 200, { ...data, refreshing: !force && Boolean(scanPromise), scan: scan ? { found: scan.found, checked_at: scan.checked_at } : null });
   } catch (error) {
     return json(res, 500, { error: error?.message || String(error), items: [], store_summary: TARGET_STORES.map((store) => ({ store, product_count: 0, status: 'Kullanılamıyor' })) });
   }

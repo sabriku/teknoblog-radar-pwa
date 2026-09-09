@@ -2,6 +2,7 @@ import { chooseFeedUrl, hashValue, json, parseFeedItems, queryLocal, safeText } 
 import { readSession } from '../lib/lock.js';
 
 const CACHE_MINUTES = 20;
+let syncPromise = null;
 const FETCH_TIMEOUT = 12000;
 const MAX_ARTICLES = 80;
 const ALGORITHM_VERSION = 'product-radar-v3-wide-momentum';
@@ -239,6 +240,12 @@ async function syncRadar() {
   return { sources: sources.length, candidates: unique.length, stored, assets, brands_monitored: BRAND_REGISTRY.length, discovery_groups: OFFICIAL_DISCOVERY_GROUPS.length };
 }
 
+function synchronizedRadarSync() {
+  if (syncPromise) return syncPromise;
+  syncPromise = syncRadar().finally(() => { syncPromise = null; });
+  return syncPromise;
+}
+
 async function itemsFor(req) {
   const hours = Math.min(168, Math.max(6, Number(req.query?.hours || 72)));
   const type = ['product','service'].includes(String(req.query?.type || '')) ? String(req.query.type) : '';
@@ -263,8 +270,9 @@ export default async function handler(req, res) {
     const force = String(req.query?.refresh || '') === '1';
     if (force && !authorizedProductRefresh(req)) return json(res, 401, { error: 'Yetkisiz istek' });
     let sync = null;
-    if (stale || force) sync = await syncRadar();
+    if (force) sync = await synchronizedRadarSync();
+    else if (stale) synchronizedRadarSync().catch(() => {});
     const result = await itemsFor(req);
-    return json(res, 200, { ok: true, source: 'Resmî üretici haber odaları, resmî alan adı keşfi ve doğrulanmış sosyal bağlantılar', coverage: { brands_monitored: BRAND_REGISTRY.length, discovery_groups: OFFICIAL_DISCOVERY_GROUPS.length }, refreshed_at: new Date().toISOString(), sync, count: result.items.length, hours: result.hours, brands: result.brands, items: result.items });
+    return json(res, 200, { ok: true, source: 'Resmî üretici haber odaları, resmî alan adı keşfi ve doğrulanmış sosyal bağlantılar', coverage: { brands_monitored: BRAND_REGISTRY.length, discovery_groups: OFFICIAL_DISCOVERY_GROUPS.length }, refreshed_at: last?.synced_at || null, refreshing: Boolean(stale && !force), sync, count: result.items.length, hours: result.hours, brands: result.brands, items: result.items });
   } catch (error) { return json(res, 500, { error: error?.message || String(error) }); }
 }
