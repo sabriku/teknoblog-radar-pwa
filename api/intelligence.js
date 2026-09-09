@@ -1291,6 +1291,8 @@ async function runAlerts() {
 
 async function maintenance() {
   const result = {};
+  result.stale_pipeline_runs = (await queryLocal(`UPDATE pipeline_runs SET status='failed',finished_at=COALESCE(finished_at,NOW()),
+    notes=COALESCE(notes,'interrupted_or_timed_out') WHERE status='running' AND started_at<NOW()-INTERVAL '30 minutes' RETURNING id`)).rowCount;
   result.raw = (await queryLocal(`DELETE FROM raw_feed_items WHERE created_at<NOW()-INTERVAL '45 days' RETURNING id`)).rowCount;
   result.candidates = (await queryLocal(`DELETE FROM topic_candidates WHERE created_at<NOW()-INTERVAL '45 days' RETURNING id`)).rowCount;
   result.pipeline_runs = (await queryLocal(`DELETE FROM pipeline_runs WHERE created_at<NOW()-INTERVAL '30 days' AND status<>'running' RETURNING id`)).rowCount;
