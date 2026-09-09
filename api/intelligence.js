@@ -789,9 +789,8 @@ async function performanceSection() {
 }
 
 async function accuracySection() {
-  // Accuracy reads must stay interactive. Outcome reconciliation is maintained
-  // by scheduled jobs; a page view may refresh it in the background.
-  reconcilePredictionOutcomes().catch(() => {});
+  // Read only: reconciliation is handled by performance syncs and publication
+  // events. Opening this tab must never start a CPU-heavy maintenance pass.
   const [summary, discoverBuckets, newsBuckets, recent, model, feedback] = await Promise.all([
     queryLocal(`SELECT COUNT(*)::int AS matched,
       COUNT(*) FILTER(WHERE observed_at IS NOT NULL)::int AS observed,
