@@ -271,8 +271,7 @@ export default async function handler(req, res) {
     if (force && !authorizedProductRefresh(req)) return json(res, 401, { error: 'Yetkisiz istek' });
     let sync = null;
     if (force) sync = await synchronizedRadarSync();
-    else if (stale) synchronizedRadarSync().catch(() => {});
     const result = await itemsFor(req);
-    return json(res, 200, { ok: true, source: 'Resmî üretici haber odaları, resmî alan adı keşfi ve doğrulanmış sosyal bağlantılar', coverage: { brands_monitored: BRAND_REGISTRY.length, discovery_groups: OFFICIAL_DISCOVERY_GROUPS.length }, refreshed_at: last?.synced_at || null, refreshing: Boolean(stale && !force), sync, count: result.items.length, hours: result.hours, brands: result.brands, items: result.items });
+    return json(res, 200, { ok: true, source: 'Resmî üretici haber odaları, resmî alan adı keşfi ve doğrulanmış sosyal bağlantılar', coverage: { brands_monitored: BRAND_REGISTRY.length, discovery_groups: OFFICIAL_DISCOVERY_GROUPS.length }, refreshed_at: last?.synced_at || null, stale, refreshing: false, sync, count: result.items.length, hours: result.hours, brands: result.brands, items: result.items });
   } catch (error) { return json(res, 500, { error: error?.message || String(error) }); }
 }

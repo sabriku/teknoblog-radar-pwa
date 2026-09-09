@@ -368,9 +368,9 @@ export default async function handler(req, res) {
     const force = String(req.query?.refresh || '') === '1';
     let scan = null;
     if (force) scan = await maybeScan(true);
-    else maybeScan(false).catch(() => {});
     const data = await responseData(limit);
-    return json(res, 200, { ...data, refreshing: !force && Boolean(scanPromise), scan: scan ? { found: scan.found, checked_at: scan.checked_at } : null });
+    const stale = !data.refreshed_at || Date.now() - new Date(data.refreshed_at).getTime() > CACHE_MINUTES * 60 * 1000;
+    return json(res, 200, { ...data, stale, refreshing: false, scan: scan ? { found: scan.found, checked_at: scan.checked_at } : null });
   } catch (error) {
     return json(res, 500, { error: error?.message || String(error), items: [], store_summary: TARGET_STORES.map((store) => ({ store, product_count: 0, status: 'Kullanılamıyor' })) });
   }
