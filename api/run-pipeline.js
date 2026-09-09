@@ -23,7 +23,9 @@ async function runIngestBatches(baseUrl, token) {
   let totalUpdated = 0;
   let batches = 0;
 
-  while (batches < 12) {
+  // Keep the batch small so a slow feed cannot hold the whole refresh, but do
+  // not silently leave the lowest-priority source out as the catalogue grows.
+  while (batches < 24) {
     const ingestResp = await fetch(`${baseUrl}/api/ingest?token=${encodeURIComponent(token)}&source_limit=${sourceLimit}&source_offset=${offset}&item_limit=20`);
     const ingestParsed = await parseResponseSafe(ingestResp);
 

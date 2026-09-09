@@ -77,6 +77,14 @@
       reasons.push('haberleştirilebilir açı var');
     }
 
+    const storyCount = Math.max(1, Number(item.story_count || 1));
+    const newsRank = Math.max(1, Number(item.google_news_rank || 999));
+    if (storyCount >= 4) { score += 16; reasons.push(`${storyCount} kaynakla doğrulanıyor`); }
+    else if (storyCount >= 2) { score += 9; reasons.push('birden fazla kaynak doğruluyor'); }
+    if (newsRank <= 5) { score += 10; reasons.push('Google Haberler bölümünde üst sırada'); }
+    else if (newsRank <= 12) score += 5;
+    if (item.image_url) score += 4;
+
     if (/türkiye|tr\b|tl|turkcell|vodafone|türk telekom|bṫk|btk|rekabet kurumu/.test(text)) {
       score += 16;
       reasons.push('Türkiye ilgisi var');
@@ -93,7 +101,9 @@
   }
 
   function sortItems(items = []) {
-    return [...items].sort((a, b) => Number(a.google_news_rank || 9999) - Number(b.google_news_rank || 9999) || new Date(b.published_at || 0) - new Date(a.published_at || 0));
+    return [...items].sort((a, b) => guidanceFor(b).score - guidanceFor(a).score
+      || Number(a.google_news_rank || 9999) - Number(b.google_news_rank || 9999)
+      || new Date(b.published_at || 0) - new Date(a.published_at || 0));
   }
 
   function ensureStyle() {

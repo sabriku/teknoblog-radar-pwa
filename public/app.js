@@ -1,7 +1,7 @@
 (() => {
   const VIEW_KEY = 'tb_news_card_view';
   const SORT_KEY = 'tb_news_sort';
-  const BRAND_DIVERSITY_KEY = 'tb_news_brand_diversity_v3';
+  const BRAND_DIVERSITY_KEY = 'tb_news_brand_diversity_v4';
   const VALID_SORTS = new Set(['discover_score', 'traffic_score', 'published_at', 'total_score', 'conversion_score', 'social_score', 'editorial_score']);
   const VALID_VIEWS = new Set(['cards-2', 'cards-3', 'cards-4', 'stack', 'compact', 'list']);
   const VIEW_LABELS = {
@@ -27,7 +27,9 @@
     loading: false,
     lastError: '',
     requestSequence: 0,
-    brandDiversity: localStorage.getItem(BRAND_DIVERSITY_KEY) !== '0'
+    // Discover means strict score order by default. Brand balancing remains an
+    // explicit editorial view so the visible scores and their order never conflict.
+    brandDiversity: localStorage.getItem(BRAND_DIVERSITY_KEY) === '1'
   };
 
   const esc = (value) => String(value ?? '')
@@ -223,6 +225,7 @@
     const titleSize = settings.compact ? '18px' : '22px';
     const padding = settings.compact ? '12px' : '14px';
     const topBorder = stale ? '#f59e0b' : '#f04a0a';
+    const alternatives = Array.isArray(item.alternative_sources) ? item.alternative_sources.filter((entry) => entry?.url) : [];
     const imageBlock = settings.image ? `<div style="position:relative;background:#f3f6fa;aspect-ratio:16/9">
         ${itemImage ? `<img src="${esc(itemImage)}" alt="${esc(title(item))}" loading="lazy" style="width:100%;height:100%;object-fit:cover" onerror="this.style.display='none'">` : `<div style="display:flex;width:100%;height:100%;align-items:center;justify-content:center;color:#64748b;font-weight:800;background:linear-gradient(135deg,#fff7ed,#eff6ff)">📰 Görsel yok</div>`}
         <label style="position:absolute;top:10px;left:10px;background:rgba(255,255,255,.95);border-radius:999px;padding:6px 10px;display:flex;gap:6px;font-size:12px;font-weight:800"><input type="checkbox" data-select-url="${esc(itemUrl)}" ${checked}> Seç</label>
@@ -239,6 +242,7 @@
         ${stale ? `<div style="font-size:12px;color:#b45309;font-weight:800">⚠ 24 saatten eski, Discover için kullanılmamalı</div>` : ''}
         <p style="margin:0;font-size:14px;line-height:1.55;color:#475569;display:-webkit-box;-webkit-line-clamp:${settings.clamp};-webkit-box-orient:vertical;overflow:hidden">${esc(summary(item))}</p>
         ${Array.isArray(item.score_reasons) && item.score_reasons.length ? `<details style="font-size:12px;color:#475569"><summary style="cursor:pointer;font-weight:800">Puan neden böyle?</summary><ul style="padding-left:18px">${item.score_reasons.map((reason) => `<li>${reason.impact > 0 ? '+' : ''}${Number(reason.impact || 0)} ${esc(reason.label || '')}</li>`).join('')}</ul></details>` : ''}
+        ${alternatives.length ? `<details style="font-size:12px;color:#475569"><summary style="cursor:pointer;font-weight:800">${Number(item.corroborating_source_count || alternatives.length + 1)} kaynak doğruluyor</summary><ul style="padding-left:18px;margin-bottom:0">${alternatives.map((entry) => `<li><a href="${esc(entry.url)}" target="_blank" rel="noopener noreferrer">${esc(entry.source_name || entry.title || 'Alternatif kaynak')}</a></li>`).join('')}</ul></details>` : ''}
         <div style="display:flex;gap:8px;flex-wrap:wrap"><a href="${esc(itemUrl || '#')}" target="_blank" rel="noopener noreferrer" style="padding:10px 12px;border-radius:10px;background:#f04a0a;color:#fff;text-decoration:none;font-size:14px;font-weight:800;${itemUrl ? '' : 'pointer-events:none;opacity:.5'}">Haberi Aç</a><button type="button" data-copy-url="${esc(itemUrl)}" class="tb-small-btn">URL kopyala</button><button type="button" data-add-queue='${esc(JSON.stringify({ candidate_id: item.id, title: title(item), url: itemUrl, source_name: sourceName(item), image_url: itemImage, status: 'new', priority: score(item, 'discover_score') }))}' class="tb-small-btn">Yazılacaklara ekle</button></div>
       </div>
     </article>`;

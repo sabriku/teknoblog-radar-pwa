@@ -14,7 +14,7 @@ function requestedLimit(req) {
 }
 
 function responseCacheKey(req, sortKey, diversityApplied) {
-  return `${sortKey}:${diversityApplied ? 1 : 0}:${requestedLimit(req)}`;
+  return `${sortKey}:${diversityApplied ? 1 : 0}:${String(req.query?.include_published || '') === '1' ? 1 : 0}:${requestedLimit(req)}`;
 }
 
 function cachedPayload(entry, state) {
@@ -104,6 +104,10 @@ const BRAND_PATTERNS = [
 ];
 
 const PERFORMANCE_STOP_WORDS = new Set('haber haberi yeni son için ile bir bu şu daha olan olarak teknoloji teknolojik özellik özellikleri modeli model update güncelleme duyurdu tanıttı çıktı yayınlandı geliyor başladı şimdi today latest launch launches launched announces announced gets getting will from with that this the and'.split(' '));
+const STORY_STOP_WORDS = new Set([
+  ...PERFORMANCE_STOP_WORDS,
+  ...'apple samsung google galaxy iphone android xiaomi huawei honor microsoft openai meta nvidia amd intel cihaz cihazlar seri series model models resmi official users kullanıcı marka ürün product products özellik features tanıtıldı announced release released geliyor arrives duyuru announcement'.split(' ')
+]);
 
 function scoreValue(item, key) {
   const value = Number(item?.[key]);
@@ -217,7 +221,14 @@ export function calibrateDiscoverScores(items = []) {
   const calibration = new Map();
   ranked.forEach((item, index) => {
     const percentile = (index + .5) / ranked.length;
-    calibration.set(item, { score: percentileDiscoverScore(percentile), percentile });
+    // Percentile is useful for ordering, but it must not turn the strongest item
+    // in a weak pool into an artificial 96. Keep the intelligence score as the
+    // anchor and allow ranking to move it by at most four points.
+    const original = scoreValue(item, 'discover_score');
+    const rankTarget = percentileDiscoverScore(percentile);
+    const confidence = Math.max(0, Math.min(1, scoreValue(item, 'score_confidence') / 100 || .65));
+    const adjustment = Math.max(-4, Math.min(4, (rankTarget - original) * .18 * confidence));
+    calibration.set(item, { score: clampScore(original + adjustment), percentile });
   });
   return items.map((item) => {
     const calibrated = calibration.get(item);
@@ -243,6 +254,82 @@ function brandName(item = {}) {
   for (const [name, pattern] of BRAND_PATTERNS) if (pattern.test(title)) return name;
   for (const [name, pattern] of BRAND_PATTERNS) if (pattern.test(context)) return name;
   return 'Diğer teknoloji';
+}
+
+function isOwnedPublishedItem(item = {}) {
+  const source = String(item.source_name || '').toLocaleLowerCase('tr-TR');
+  const url = String(item.url || item.canonical_url || item.link || '').toLocaleLowerCase('tr-TR');
+  return /(^|\s)teknoblog(?:\.com)?($|\s)/i.test(source) || /https?:\/\/(?:www\.)?teknoblog\.com\//i.test(url);
+}
+
+function sourceQuality(item = {}) {
+  const trust = Number(item.source_trust_score);
+  const priority = Number(item.source_priority_weight);
+  const trustScore = Number.isFinite(trust) ? trust : 72;
+  const priorityScore = Number.isFinite(priority) ? priority : 60;
+  return clampScore(trustScore * .68 + priorityScore * .32);
+}
+
+function storyTokens(item = {}) {
+  return new Set(String(item.title || '').toLocaleLowerCase('tr-TR')
+    .replace(/[^a-z0-9çğıöşü\s]/gi, ' ').split(/\s+/)
+    .filter((word) => word.length >= 4 && !STORY_STOP_WORDS.has(word)));
+}
+
+function storySimilarity(left, right) {
+  if (!left.size || !right.size) return { common: 0, score: 0 };
+  let common = 0;
+  for (const word of left) if (right.has(word)) common += 1;
+  return { common, score: common / Math.max(2, Math.min(left.size, right.size)) };
+}
+
+function itemCompleteness(item = {}) {
+  return (item.from_raw_feed_fallback ? 0 : 12) + (item.image_url ? 7 : 0) + (item.summary ? 4 : 0)
+    + sourceQuality(item) * .25 + freshnessScore(item) * .12;
+}
+
+// Collapse only strong near-duplicates. Alternative sources remain attached to
+// the card, so corroboration improves confidence without flooding the feed.
+export function collapseStoryDuplicates(items = []) {
+  const clusters = [];
+  const tokenIndex = new Map();
+  for (const item of items) {
+    const words = storyTokens(item);
+    const candidates = new Set();
+    for (const word of words) for (const index of tokenIndex.get(word) || []) candidates.add(index);
+    let bestIndex = -1; let bestScore = 0;
+    for (const index of candidates) {
+      const similarity = storySimilarity(words, clusters[index].words);
+      if (similarity.common >= 3 && similarity.score >= .62 && similarity.score > bestScore) {
+        bestIndex = index; bestScore = similarity.score;
+      }
+    }
+    if (bestIndex < 0) {
+      const index = clusters.length;
+      clusters.push({ lead: item, rows: [item], words });
+      for (const word of words) {
+        const bucket = tokenIndex.get(word) || [];
+        bucket.push(index); tokenIndex.set(word, bucket);
+      }
+      continue;
+    }
+    const cluster = clusters[bestIndex];
+    cluster.rows.push(item);
+    if (itemCompleteness(item) > itemCompleteness(cluster.lead)) cluster.lead = item;
+  }
+  return clusters.map((cluster) => {
+    const sources = [...new Map(cluster.rows.map((row) => [String(row.source_name || row.url), {
+      source_name: row.source_name || '', title: row.title || '', url: row.url || '', published_at: row.published_at || null
+    }])).values()];
+    const sourceCount = new Set(sources.map((row) => row.source_name).filter(Boolean)).size;
+    return {
+      ...cluster.lead,
+      corroborating_source_count: sourceCount,
+      alternative_sources: sources.filter((row) => row.url !== cluster.lead.url).slice(0, 6),
+      story_cluster_size: cluster.rows.length,
+      story_velocity_score: clampScore(18 + Math.min(42, Math.max(0, sourceCount - 1) * 14) + freshnessScore(cluster.lead) * .4)
+    };
+  });
 }
 
 function hasTechSignal(item = {}) {
@@ -318,12 +405,16 @@ function computedDiscoverScore(item = {}) {
   const titleQuality = normalizedTitleQuality(item);
   const discoverIntent = binarySignal(item, DISCOVER_PATTERNS, 22);
   const techRelevance = hasTechSignal(item) ? 88 : 32;
+  const source = sourceQuality(item);
+  const velocity = Number(item.story_velocity_score || 0);
   return clampScore(
-    raw * 0.38 +
-    freshness * 0.24 +
-    titleQuality * 0.18 +
-    discoverIntent * 0.12 +
-    techRelevance * 0.08
+    raw * 0.31 +
+    freshness * 0.23 +
+    titleQuality * 0.15 +
+    discoverIntent * 0.11 +
+    techRelevance * 0.07 +
+    source * 0.08 +
+    velocity * 0.05
   );
 }
 
@@ -445,6 +536,8 @@ function withRadarScores(item = {}, learnedTerms = new Map(), performanceProfile
   if (DISCOVER_PATTERNS.some((pattern) => pattern.test(textOf(item)))) reasons.push({ signal: 'discover_intent', impact: 12, label: 'Discover ilgisi taşıyan konu veya marka sinyali' });
   if (TRAFFIC_PATTERNS.some((pattern) => pattern.test(textOf(item)))) reasons.push({ signal: 'search_intent', impact: 10, label: 'Arama ve trafik niyeti mevcut' });
   if (item.image_url || item.image || item.thumbnail) reasons.push({ signal: 'image', impact: 6, label: 'Haber görseli mevcut' });
+  if (sourceQuality(item) >= 82) reasons.push({ signal: 'source_quality', impact: 7, label: 'Kaynak güveni ve editoryal önceliği yüksek' });
+  if (Number(item.corroborating_source_count || 0) >= 2) reasons.push({ signal: 'multi_source_velocity', impact: Math.min(12, Number(item.corroborating_source_count) * 3), label: `${Number(item.corroborating_source_count)} bağımsız kaynak aynı gelişmeyi aktarıyor` });
   if (learningBoost > 0) reasons.push({ signal: 'performance_learning', impact: learningBoost, label: 'Geçmiş Teknoblog Discover performansından öğrenilen konu sinyali' });
   if (affinity.discover >= 35) reasons.push({ signal: 'published_discover_affinity', impact: Math.round(affinity.discover * .16), label: `Teknoblog’da iyi Discover performansı gösteren benzer konu: ${affinity.match}` });
   if (affinity.traffic >= 35) reasons.push({ signal: 'published_traffic_affinity', impact: Math.round(affinity.traffic * .12), label: 'Teknoblog’da yüksek trafik alan konu geçmişiyle uyumlu' });
@@ -476,6 +569,7 @@ function withRadarScores(item = {}, learnedTerms = new Map(), performanceProfile
     intelligence_reasons: prediction.reasons,
     intelligence_features: prediction.features,
     intelligence_weights: { discover: discoverWeight, news: newsWeight, editorial: editorialWeight },
+    source_quality_score: sourceQuality(item),
     discover_score: discover,
     traffic_score: traffic,
     editorial_score: editorial,
@@ -485,26 +579,38 @@ function withRadarScores(item = {}, learnedTerms = new Map(), performanceProfile
   };
 }
 
+function sourceMeta(sourceMap, id) {
+  return sourceMap.get(String(id || '')) || {};
+}
+
 function normalizeCandidate(item = {}, sourceMap = new Map(), rawMap = new Map()) {
   const raw = rawMap.get(String(item.raw_feed_item_id || '')) || null;
+  const source = sourceMeta(sourceMap, item.source_id || raw?.source_id);
   return {
     ...item,
     title: item.title || item.item_title || item.feed_title || raw?.title || raw?.item_title || raw?.feed_title || '',
     summary: item.summary || item.description || item.excerpt || raw?.summary || raw?.description || raw?.excerpt || '',
     url: item.url || item.canonical_url || item.link || raw?.url || raw?.link || item.source_url || '',
-    source_name: item.source_name || sourceMap.get(String(item.source_id)) || sourceMap.get(String(raw?.source_id || '')) || raw?.source_name || '',
+    source_name: item.source_name || source.name || raw?.source_name || '',
+    source_priority_weight: source.priority_weight,
+    source_trust_score: source.trust_score,
+    source_is_active: source.is_active,
     published_at: item.published_at || raw?.published_at || item.created_at || item.updated_at || null,
     image_url: item.image_url || raw?.image_url || raw?.thumbnail || raw?.image || null
   };
 }
 
 function normalizeRawItem(item = {}, sourceMap = new Map()) {
+  const source = sourceMeta(sourceMap, item.source_id);
   return {
     ...item,
     title: item.title || item.item_title || item.feed_title || item.name || '',
     summary: item.summary || item.description || item.excerpt || '',
     url: item.url || item.link || item.canonical_url || item.guid || '',
-    source_name: item.source_name || sourceMap.get(String(item.source_id)) || '',
+    source_name: item.source_name || source.name || '',
+    source_priority_weight: source.priority_weight,
+    source_trust_score: source.trust_score,
+    source_is_active: source.is_active,
     published_at: item.published_at || item.created_at || item.updated_at || null,
     image_url: item.image_url || item.thumbnail || item.image || null,
     from_raw_feed_fallback: true
@@ -616,14 +722,14 @@ export default async function handler(req, res) {
 
     const [{ data: candidates, error: candidateError }, { data: sources, error: sourcesError }, { data: rawItems, error: rawError }] = await Promise.all([
       safeSelect(supabase.from('topic_candidates').select(candidateColumns).eq('status', 'active').gte('created_at', candidateCutoff).order('created_at', { ascending: false }).limit(1600)),
-      safeSelect(supabase.from('sources').select('id,name')),
+      safeSelect(supabase.from('sources').select('id,name,priority_weight,trust_score,is_active')),
       safeSelect(supabase.from('raw_feed_items').select(rawColumns).gte('created_at', rawCutoff).order('created_at', { ascending: false }).limit(5000))
     ]);
 
     if (sourcesError) return json(res, 500, { error: sourcesError.message });
     if (rawError) return json(res, 500, { error: rawError.message });
 
-    const sourceMap = new Map((sources || []).map((source) => [String(source.id), source.name || '']));
+    const sourceMap = new Map((sources || []).map((source) => [String(source.id), source]));
     const rawMap = new Map((rawItems || []).map((item) => [String(item.id), item]));
     const learnedTerms = new Map();
     let performanceProfiles = [];
@@ -648,17 +754,23 @@ export default async function handler(req, res) {
     const candidateItems = (candidates || [])
       .map((item) => normalizeCandidate(item, sourceMap, rawMap))
       .filter((item) => item.title && item.url)
+      .filter((item) => item.source_is_active !== false)
       .filter((item) => !isHardNoise(item))
       .filter((item) => !isTrendFeedItem(item));
 
     const rawFallback = (rawItems || [])
       .map((item) => normalizeRawItem(item, sourceMap))
       .filter((item) => item.title && item.url)
+      .filter((item) => item.source_is_active !== false)
       .filter((item) => !isHardNoise(item))
       .filter((item) => !isTrendFeedItem(item))
       .filter((item) => hasTechSignal(item) || ageHours(item) <= 48);
 
-    let enriched = dedupeItems([...candidateItems, ...rawFallback]).map((item) => withRadarScores(item, learnedTerms, performanceProfiles, intelligenceModel));
+    const includePublished = String(req.query?.include_published || '') === '1';
+    const actionableItems = dedupeItems([...candidateItems, ...rawFallback])
+      .filter((item) => includePublished || !isOwnedPublishedItem(item));
+    const clusteredItems = collapseStoryDuplicates(actionableItems);
+    let enriched = clusteredItems.map((item) => withRadarScores(item, learnedTerms, performanceProfiles, intelligenceModel));
     enriched = calibrateDiscoverScores(enriched);
     const preparedItems = enriched;
 
@@ -679,6 +791,8 @@ export default async function handler(req, res) {
         candidate_error: candidateError?.message || null,
         candidate_count: candidateItems.length,
         raw_fallback_count: rawFallback.length,
+        excluded_published_count: includePublished ? 0 : candidateItems.concat(rawFallback).filter(isOwnedPublishedItem).length,
+        story_cluster_count: clusteredItems.length,
         returned_count: Math.min(enriched.length, limit),
         available_count: enriched.length,
         query_candidate_limit: 1600,
