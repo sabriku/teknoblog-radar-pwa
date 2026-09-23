@@ -303,7 +303,11 @@ function withPublicationState(item = {}, lookup, checkedAt) {
   for (const [index] of candidates) {
     const post = lookup.posts[index];
     const match = publicationMatch(item.title, post.title, item.url || item.canonical_url || item.link, post.url);
-    if (match.accepted && (!best || match.score > best.match.score)) best = { post, match };
+    // A broad brand plus a generic verb (for example "Oppo" + "tanıtıldı")
+    // is not enough to declare that Teknoblog already covered the same story.
+    // Direct URL matches remain exact; title matches need a minimum confidence.
+    const reliable = match.reason === 'url' || match.score >= .34;
+    if (match.accepted && reliable && (!best || match.score > best.match.score)) best = { post, match };
   }
   return {
     ...item,
