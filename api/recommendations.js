@@ -1,6 +1,7 @@
 import { getSupabaseAdmin, json, queryLocal } from './_lib.js';
 import opportunityRadar from './opportunity-radar.js';
 import { loadIntelligenceModel, modelInfluence, predictWithModel, primaryTopicKey, savePredictions } from './_intelligence-model.js';
+import { publicationMatch } from './intelligence.js';
 
 // Scoring several thousand candidates is intentionally richer than a plain DB
 // sort. Keep the computed feed briefly so tab/sort changes do not repeat that
@@ -263,6 +264,60 @@ function isOwnedPublishedItem(item = {}) {
   const source = String(item.source_name || '').toLocaleLowerCase('tr-TR');
   const url = String(item.url || item.canonical_url || item.link || '').toLocaleLowerCase('tr-TR');
   return /(^|\s)teknoblog(?:\.com)?($|\s)/i.test(source) || /https?:\/\/(?:www\.)?teknoblog\.com\//i.test(url);
+}
+
+function publicationLookup(posts = []) {
+  const byToken = new Map();
+  posts.forEach((post, index) => {
+    for (const token of storyTokens({ title: post.title })) {
+      if (!byToken.has(token)) byToken.set(token, new Set());
+      byToken.get(token).add(index);
+    }
+  });
+  return { posts, byToken };
+}
+
+function withPublicationState(item = {}, lookup, checkedAt) {
+  if (isOwnedPublishedItem(item)) {
+    return {
+      ...item,
+      publication_checked: true,
+      publication_checked_at: checkedAt,
+      teknoblog_published: true,
+      publication_match: {
+        title: item.title,
+        url: item.url || item.canonical_url || item.link,
+        published_at: item.published_at || item.created_at || null,
+        confidence: 1,
+        reason: 'owned_source'
+      }
+    };
+  }
+
+  const votes = new Map();
+  for (const token of storyTokens(item)) {
+    for (const index of lookup.byToken.get(token) || []) votes.set(index, (votes.get(index) || 0) + 1);
+  }
+  const candidates = [...votes.entries()].sort((a, b) => b[1] - a[1]).slice(0, 24);
+  let best = null;
+  for (const [index] of candidates) {
+    const post = lookup.posts[index];
+    const match = publicationMatch(item.title, post.title, item.url || item.canonical_url || item.link, post.url);
+    if (match.accepted && (!best || match.score > best.match.score)) best = { post, match };
+  }
+  return {
+    ...item,
+    publication_checked: true,
+    publication_checked_at: checkedAt,
+    teknoblog_published: Boolean(best),
+    publication_match: best ? {
+      title: best.post.title,
+      url: best.post.url,
+      published_at: best.post.published_at || null,
+      confidence: Number(best.match.score.toFixed(3)),
+      reason: best.match.reason
+    } : null
+  };
 }
 
 function sourceQuality(item = {}) {
@@ -737,6 +792,7 @@ export default async function handler(req, res) {
     const learnedTerms = new Map();
     let performanceProfiles = [];
     let intelligenceModel = null;
+    let publishedPosts = [];
     try {
       const learned = await queryLocal(`SELECT title,discover_clicks,discover_impressions,discover_ctr,ga4_views,ga4_active_users,ga4_engagement_seconds,ga4_engagement_rate FROM published_performance
         WHERE title IS NOT NULL AND title<>'' AND published_at>=NOW()-INTERVAL '365 days' AND (discover_impressions>0 OR ga4_views>0)
@@ -753,6 +809,12 @@ export default async function handler(req, res) {
       }
     } catch {}
     try { intelligenceModel = await loadIntelligenceModel(); } catch {}
+    try {
+      const published = await queryLocal(`SELECT title,url,published_at FROM teknoblog_content
+        WHERE title IS NOT NULL AND title<>'' AND published_at>=NOW()-INTERVAL '45 days'
+        ORDER BY published_at DESC LIMIT 4000`);
+      publishedPosts = published.rows || [];
+    } catch {}
 
     const candidateItems = (candidates || [])
       .map((item) => normalizeCandidate(item, sourceMap, rawMap))
@@ -770,8 +832,13 @@ export default async function handler(req, res) {
       .filter((item) => hasTechSignal(item) || ageHours(item) <= 48);
 
     const includePublished = String(req.query?.include_published || '') === '1';
-    const actionableItems = dedupeItems([...candidateItems, ...rawFallback])
-      .filter((item) => includePublished || !isOwnedPublishedItem(item));
+    const checkedAt = new Date().toISOString();
+    const lookup = publicationLookup(publishedPosts);
+    const publicationCheckedItems = dedupeItems([...candidateItems, ...rawFallback])
+      .map((item) => withPublicationState(item, lookup, checkedAt));
+    const matchedPublishedCount = publicationCheckedItems.filter((item) => item.teknoblog_published).length;
+    const actionableItems = publicationCheckedItems
+      .filter((item) => includePublished || !item.teknoblog_published);
     const clusteredItems = collapseStoryDuplicates(actionableItems);
     let enriched = clusteredItems.map((item) => withRadarScores(item, learnedTerms, performanceProfiles, intelligenceModel));
     enriched = calibrateDiscoverScores(enriched);
@@ -794,7 +861,10 @@ export default async function handler(req, res) {
         candidate_error: candidateError?.message || null,
         candidate_count: candidateItems.length,
         raw_fallback_count: rawFallback.length,
-        excluded_published_count: includePublished ? 0 : candidateItems.concat(rawFallback).filter(isOwnedPublishedItem).length,
+        publication_checked_count: publicationCheckedItems.length,
+        publication_reference_count: publishedPosts.length,
+        matched_published_count: matchedPublishedCount,
+        excluded_published_count: includePublished ? 0 : matchedPublishedCount,
         story_cluster_count: clusteredItems.length,
         returned_count: Math.min(enriched.length, limit),
         available_count: enriched.length,
