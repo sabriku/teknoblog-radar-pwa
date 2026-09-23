@@ -226,6 +226,12 @@
     const padding = settings.compact ? '12px' : '14px';
     const topBorder = stale ? '#f59e0b' : '#f04a0a';
     const alternatives = Array.isArray(item.alternative_sources) ? item.alternative_sources.filter((entry) => entry?.url) : [];
+    const publicationMatch = item.publication_match || null;
+    const publicationStatus = item.publication_checked
+      ? item.teknoblog_published
+        ? `<a href="${esc(publicationMatch?.url || '#')}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;width:max-content;padding:6px 9px;border-radius:999px;background:#dcfce7;color:#166534;font-size:11px;font-weight:900;text-decoration:none">✓ Teknoblog’da yayımlandı</a>`
+        : '<span style="display:inline-flex;align-items:center;width:max-content;padding:6px 9px;border-radius:999px;background:#eef2ff;color:#3730a3;font-size:11px;font-weight:900">○ Teknoblog’da henüz yok</span>'
+      : '';
     const imageBlock = settings.image ? `<div style="position:relative;background:#f3f6fa;aspect-ratio:16/9">
         ${itemImage ? `<img src="${esc(itemImage)}" alt="${esc(title(item))}" loading="lazy" style="width:100%;height:100%;object-fit:cover" onerror="this.style.display='none'">` : `<div style="display:flex;width:100%;height:100%;align-items:center;justify-content:center;color:#64748b;font-weight:800;background:linear-gradient(135deg,#fff7ed,#eff6ff)">📰 Görsel yok</div>`}
         <label style="position:absolute;top:10px;left:10px;background:rgba(255,255,255,.95);border-radius:999px;padding:6px 10px;display:flex;gap:6px;font-size:12px;font-weight:800"><input type="checkbox" data-select-url="${esc(itemUrl)}" ${checked}> Seç</label>
@@ -238,6 +244,7 @@
         <div style="display:flex;gap:6px;flex-wrap:wrap">${scoreBadge('Genel', score(item, 'total_score'), '#c2410c', '★')}${scoreBadge('Discover', score(item, 'discover_score'), '#2563eb', 'G')}${scoreBadge('Trafik', score(item, 'traffic_score'), '#15803d', '↗')}${scoreBadge('Güven', score(item, 'score_confidence'), '#6d28d9', '✓')}<span style="display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;background:#f1f5f9;color:#475569;font-size:11px;font-weight:800">◈ ${esc(brandName(item))}</span></div>
         ${item.discover_probability != null ? `<div style="display:flex;gap:6px;flex-wrap:wrap;background:#f8fafc;border:1px solid #e2e8f0;border-radius:11px;padding:8px;font-size:11px;font-weight:900;color:#334155"><span>✨ Discover olasılığı %${Number(item.discover_probability)}</span><span>📰 News %${Number(item.news_probability||0)}</span>${item.editorial_probability != null ? `<span>✍️ Editoryal tercih %${Number(item.editorial_probability)}</span>` : ''}<span>🎯 Model güveni %${Number(item.intelligence_confidence||0)}</span><span>Beklenen tıklama ${Number(item.expected_clicks_low||0)}–${Number(item.expected_clicks_high||0)}</span></div>` : ''}
         <h3 style="margin:0;font:700 ${titleSize}/1.25 'Fira Sans Condensed',sans-serif;color:#111827">${esc(title(item))}</h3>
+        ${publicationStatus}
         <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:12px;color:#64748b;font-weight:800"><span>🕒 ${esc(date)}</span><span>🏷 ${esc(sourceName(item))}</span></div>
         ${stale ? `<div style="font-size:12px;color:#b45309;font-weight:800">⚠ 24 saatten eski, Discover için kullanılmamalı</div>` : ''}
         <p style="margin:0;font-size:14px;line-height:1.55;color:#475569;display:-webkit-box;-webkit-line-clamp:${settings.clamp};-webkit-box-orient:vertical;overflow:hidden">${esc(summary(item))}</p>
