@@ -3,6 +3,7 @@ import { readSession } from '../lib/lock.js';
 import { generateAiDraft } from '../lib/editorial-ai.js';
 
 const cache = new Map();
+const generationTimes = [];
 
 export default async function handler(req, res) {
   try {
@@ -17,11 +18,16 @@ export default async function handler(req, res) {
     const result = await queryLocal('SELECT id,title,payload FROM editorial_story_clusters WHERE id=$1', [storyId]);
     const row = result.rows[0];
     if (!row) return json(res, 404, { error: 'Konu henüz kayıtlı değil; bir sonraki Radar taramasından sonra tekrar dene' });
-    const sourceHash = JSON.stringify((row.payload?.research?.sources || []).map((source) => [source.url, source.title]));
+    const sourceHash = JSON.stringify({ summary: row.payload?.summary,
+      sources: (row.payload?.research?.sources || []).map((source) => [source.url, source.title]),
+      published_match: row.payload?.published_match?.url || null });
     const cached = cache.get(storyId);
     if (cached && cached.sourceHash === sourceHash && cached.expiresAt > Date.now()) {
       return json(res, 200, { ...cached.result, cache: 'fresh' });
     }
+    while (generationTimes.length && generationTimes[0] < Date.now() - 3600000) generationTimes.shift();
+    if (generationTimes.length >= 20) return json(res, 429, { error: 'Saatlik taslak sınırına ulaşıldı' });
+    generationTimes.push(Date.now());
     const model = process.env.RADAR_OPENAI_MODEL || 'gpt-6-astra';
     const draft = await generateAiDraft({ title: row.title, summary: row.payload?.summary,
       research: row.payload?.research, published_match: row.payload?.published_match },
