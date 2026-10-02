@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { evaluateEditorialDecisions } from '../lib/editorial-evaluation.js';
+import { evaluateEditorialDecisions, summarizeReviewTimings } from '../lib/editorial-evaluation.js';
 import insightsHandler from '../api/editorial-insights.js';
 
 const now = Date.parse('2026-10-20T00:00:00Z');
@@ -23,6 +23,13 @@ assert.equal(result.high_priority.publication_rate, 60);
 assert.equal(result.other.publication_rate, 20);
 assert.equal(result.high_priority.median_discover_clicks, 100);
 assert.equal(evaluateEditorialDecisions([], now).status, 'collecting');
+const timing = summarizeReviewTimings([
+  { story_id: 'a', to_status: 'ready', changed_at: '2026-10-03T12:00:00Z' },
+  { story_id: 'a', to_status: 'researching', changed_at: '2026-10-03T09:00:00Z' },
+  { story_id: 'b', to_status: 'researching', changed_at: '2026-10-03T10:00:00Z' }
+]);
+assert.equal(timing.sample_count, 1);
+assert.equal(timing.median_hours_to_ready, 3);
 
 const res = { status(code) { this.statusCode = code; return this; }, setHeader() { return this; }, end(body) { this.body = JSON.parse(body); } };
 await insightsHandler({ method: 'GET', headers: {} }, res);

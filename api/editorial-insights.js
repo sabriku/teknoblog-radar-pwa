@@ -1,6 +1,6 @@
 import { json, queryLocal } from './_lib.js';
 import { readSession } from '../lib/lock.js';
-import { evaluateEditorialDecisions } from '../lib/editorial-evaluation.js';
+import { evaluateEditorialDecisions, summarizeReviewTimings } from '../lib/editorial-evaluation.js';
 import { timingSafeEqual } from 'node:crypto';
 
 function validCronToken(req) {
@@ -10,7 +10,7 @@ function validCronToken(req) {
 }
 
 export async function loadEditorialInsights() {
-  const [events, reviews] = await Promise.all([
+  const [events, reviews, reviewEvents] = await Promise.all([
     queryLocal(`SELECT e.occurred_at AS detected_at,e.payload->>'score' AS score,
           (e.payload->>'published_at_detection')::boolean AS published_at_detection,
           p.published_at,p.observed_at,p.discover_clicks,p.ga4_views
@@ -19,10 +19,13 @@ export async function loadEditorialInsights() {
         LEFT JOIN published_performance p ON p.url=(c.payload->'published_match'->>'url')
         WHERE e.event_type='detected' AND e.occurred_at>=NOW()-INTERVAL '90 days'
           AND e.payload ? 'score' ORDER BY e.occurred_at DESC LIMIT 3000`),
-    queryLocal(`SELECT status,COUNT(*)::int AS count FROM editorial_story_reviews GROUP BY status`)
+    queryLocal(`SELECT status,COUNT(*)::int AS count FROM editorial_story_reviews GROUP BY status`),
+    queryLocal(`SELECT story_id,to_status,changed_at FROM editorial_review_events
+      WHERE changed_at>=NOW()-INTERVAL '90 days' ORDER BY changed_at DESC LIMIT 3000`)
   ]);
   return { evaluation: evaluateEditorialDecisions(events.rows),
     review_counts: Object.fromEntries(reviews.rows.map((row) => [row.status, Number(row.count)])),
+    review_timing: summarizeReviewTimings(reviewEvents.rows),
     generated_at: new Date().toISOString() };
 }
 

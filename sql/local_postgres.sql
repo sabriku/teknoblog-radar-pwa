@@ -530,6 +530,14 @@ CREATE TABLE IF NOT EXISTS editorial_story_reviews (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS editorial_review_events (
+  id BIGSERIAL PRIMARY KEY,
+  story_id TEXT NOT NULL,
+  from_status TEXT NOT NULL,
+  to_status TEXT NOT NULL,
+  changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS source_leadership_stats (
   source_id TEXT NOT NULL,
   source_name TEXT NOT NULL,
@@ -681,6 +689,7 @@ CREATE INDEX IF NOT EXISTS idx_editorial_stories_recorded ON editorial_story_clu
 CREATE INDEX IF NOT EXISTS idx_editorial_stories_lane ON editorial_story_clusters(lane,score DESC,last_seen_at DESC);
 CREATE INDEX IF NOT EXISTS idx_editorial_events_story_time ON editorial_story_events(story_id,occurred_at DESC);
 CREATE INDEX IF NOT EXISTS idx_editorial_reviews_status ON editorial_story_reviews(status,updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_editorial_review_events_story ON editorial_review_events(story_id,changed_at DESC);
 CREATE INDEX IF NOT EXISTS idx_source_leadership_score ON source_leadership_stats(leadership_score DESC,updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_watchlists_active ON radar_watchlists(is_active,updated_at DESC);
 
