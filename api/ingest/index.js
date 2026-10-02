@@ -1,4 +1,4 @@
-import { json, getSupabaseAdmin, parseFeedItems, hashValue, chooseFeedUrl, safeText, nowIso, queryLocal } from '../_lib.js';
+import { json, getSupabaseAdmin, parseFeedItems, hashValue, chooseFeedUrl, canonicalArticleUrl, safeText, nowIso, queryLocal } from '../_lib.js';
 
 const PRIORITY_BOOSTS = {
   'engadget': 35,
@@ -43,12 +43,11 @@ function firstMatch(pattern, text) {
 function normalizeImageUrl(url = '', baseUrl = '') {
   const clean = String(url || '').trim();
   if (!clean) return '';
-  if (/^https?:\/\//i.test(clean)) return clean;
-  if (/^\/\//.test(clean)) return `https:${clean}`;
   try {
-    return new URL(clean, baseUrl).toString();
+    const parsed = new URL(clean, baseUrl || undefined);
+    return ['http:', 'https:'].includes(parsed.protocol) ? parsed.toString() : '';
   } catch {
-    return clean;
+    return '';
   }
 }
 
@@ -168,12 +167,12 @@ export default async function handler(req, res) {
         }
 
         const xml = await response.text();
-        const parsedItems = parseFeedItems(xml).slice(0, itemLimit);
+        const parsedItems = parseFeedItems(xml, feedUrl).slice(0, itemLimit);
         const seenFeedUrls = new Set();
         const items = parsedItems.filter((item) => {
           const url = safeText(item.url || item.link);
           if (!url) return false;
-          const key = hashValue(url);
+          const key = hashValue(canonicalArticleUrl(url) || url);
           if (seenFeedUrls.has(key)) return false;
           seenFeedUrls.add(key);
           return true;
@@ -194,11 +193,12 @@ export default async function handler(req, res) {
         for (const item of items) {
           const title = safeText(item.title);
           const url = safeText(item.url || item.link);
+          const canonicalUrl = canonicalArticleUrl(url);
           const summary = safeText(item.summary || item.description);
           const published_at = safeText(item.published_at || '') || null;
           let image_url = safeText(item.image_url || item.image || '');
-          const content_hash = hashValue(`${title}|${url}`);
-          const url_hash = hashValue(url);
+          const content_hash = hashValue(`${title}|${canonicalUrl || url}`);
+          const url_hash = hashValue(canonicalUrl || url);
 
           if (!title || !url) continue;
 
@@ -206,8 +206,8 @@ export default async function handler(req, res) {
           let existingError = null;
           try {
             existing = (await queryLocal(`SELECT id,image_url,summary,published_at FROM raw_feed_items
-              WHERE content_hash=$1 OR url_hash=$2 OR id=$3 ORDER BY created_at DESC LIMIT 1`,
-              [content_hash, url_hash, hashValue(`raw_feed_items:${content_hash}`)])).rows;
+              WHERE content_hash=$1 OR url_hash=$2 OR id=$3 OR canonical_url=$4 ORDER BY created_at DESC LIMIT 1`,
+              [content_hash, url_hash, hashValue(`raw_feed_items:${content_hash}`), canonicalUrl])).rows;
           } catch (error) {
             existingError = error;
           }
@@ -253,7 +253,7 @@ export default async function handler(req, res) {
             source_url: source.site_url || source.rss_url || source.feed_url || url,
             title,
             url,
-            canonical_url: url,
+            canonical_url: canonicalUrl || url,
             summary,
             image_url: image_url || null,
             published_at,

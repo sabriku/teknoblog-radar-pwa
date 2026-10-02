@@ -495,48 +495,72 @@ export function safeText(value) {
 
 export function chooseFeedUrl(source = {}) { return normalizeOptionalUrl(source.rss_url || source.feed_url || ''); }
 
+export function canonicalArticleUrl(value = '') {
+  const normalized = absoluteHttpUrl(value);
+  if (!normalized) return '';
+  const url = new URL(normalized);
+  url.hash = '';
+  for (const key of [...url.searchParams.keys()]) {
+    if (/^(utm_|fbclid$|gclid$|mc_cid$|mc_eid$|ref$|source$)/i.test(key)) url.searchParams.delete(key);
+  }
+  url.searchParams.sort();
+  return url.toString();
+}
+
 function firstMatch(pattern, text = '') { const match = String(text || '').match(pattern); return match ? (match[1] || '').trim() : ''; }
 function firstSrcFromSrcset(value = '') { const first = String(value).split(',')[0] || ''; return (first.trim().split(/\s+/)[0] || '').trim(); }
-function normalizeImageUrl(url = '') { const clean = decodeHtml(url).trim(); if (!clean) return ''; if (/^https?:\/\//i.test(clean)) return clean; if (/^\/\//.test(clean)) return `https:${clean}`; return clean; }
-function extractImage(block = '') {
+function absoluteHttpUrl(value = '', baseUrl = '') {
+  if (!String(value || '').trim()) return '';
+  try {
+    const url = new URL(decodeHtml(value).trim(), baseUrl || undefined);
+    return ['http:', 'https:'].includes(url.protocol) ? url.toString() : '';
+  } catch { return ''; }
+}
+function normalizeImageUrl(url = '', baseUrl = '') { return absoluteHttpUrl(url, baseUrl); }
+function extractImage(block = '', baseUrl = '') {
   const candidates = [firstMatch(/<media:content[^>]*url=["']([^"']+)["']/i, block), firstMatch(/<media:thumbnail[^>]*url=["']([^"']+)["']/i, block), firstMatch(/<enclosure[^>]*url=["']([^"']+)["'][^>]*type=["']image\/[^"']*["']/i, block), firstMatch(/<enclosure[^>]*url=["']([^"']+)["'][^>]*medium=["']image["']/i, block), firstMatch(/<itunes:image[^>]*href=["']([^"']+)["']/i, block), firstMatch(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i, block), firstMatch(/<meta[^>]*name=["']twitter:image["'][^>]*content=["']([^"']+)["']/i, block), firstMatch(/<img[^>]*data-lazy-src=["']([^"']+)["']/i, block), firstMatch(/<img[^>]*data-src=["']([^"']+)["']/i, block), firstSrcFromSrcset(firstMatch(/<img[^>]*srcset=["']([^"']+)["']/i, block)), firstMatch(/<img[^>]*src=["']([^"']+)["']/i, block)];
-  for (const candidate of candidates) { const normalized = normalizeImageUrl(candidate); if (normalized) return normalized; }
+  for (const candidate of candidates) { const normalized = normalizeImageUrl(candidate, baseUrl); if (normalized) return normalized; }
   return '';
 }
 
-function parseRssItems(xml = '') {
+function parseRssItems(xml = '', feedUrl = '') {
   const items = [];
   const matches = xml.match(/<item\b[\s\S]*?<\/item>/gi) || [];
   for (const block of matches) {
     const title = safeText(firstMatch(/<title>([\s\S]*?)<\/title>/i, block));
-    const url = decodeHtml(firstMatch(/<link>([\s\S]*?)<\/link>/i, block) || firstMatch(/<guid[^>]*>([\s\S]*?)<\/guid>/i, block));
+    const url = absoluteHttpUrl(firstMatch(/<link>([\s\S]*?)<\/link>/i, block) || firstMatch(/<guid[^>]*>([\s\S]*?)<\/guid>/i, block), feedUrl);
     const summaryRaw = firstMatch(/<description>([\s\S]*?)<\/description>/i, block) || firstMatch(/<content:encoded>([\s\S]*?)<\/content:encoded>/i, block);
     const published_at = firstMatch(/<pubDate>([\s\S]*?)<\/pubDate>/i, block) || firstMatch(/<dc:date>([\s\S]*?)<\/dc:date>/i, block);
-    const image_url = extractImage(block) || extractImage(summaryRaw);
+    const image_url = extractImage(block, url || feedUrl) || extractImage(summaryRaw, url || feedUrl);
     const summary = safeText(summaryRaw);
     if (title && url) items.push({ title, url, summary, published_at, image_url });
   }
   return items;
 }
 
-function parseAtomEntries(xml = '') {
+function parseAtomEntries(xml = '', feedUrl = '') {
   const items = [];
   const matches = xml.match(/<entry\b[\s\S]*?<\/entry>/gi) || [];
   for (const block of matches) {
     const title = safeText(firstMatch(/<title[^>]*>([\s\S]*?)<\/title>/i, block));
-    const url = decodeHtml(firstMatch(/<link[^>]*rel=["']alternate["'][^>]*href=["']([^"']+)["'][^>]*\/?>/i, block) || firstMatch(/<link[^>]*href=["']([^"']+)["'][^>]*\/?>/i, block) || firstMatch(/<id>([\s\S]*?)<\/id>/i, block));
+    const links = [...block.matchAll(/<link\b[^>]*>/gi)].map(([tag]) => ({
+      href: firstMatch(/\bhref=["']([^"']+)["']/i, tag),
+      rel: firstMatch(/\brel=["']([^"']+)["']/i, tag).toLowerCase()
+    }));
+    const preferred = links.find((link) => link.rel === 'alternate') || links.find((link) => !link.rel || link.rel !== 'self');
+    const url = absoluteHttpUrl(preferred?.href || firstMatch(/<id>([\s\S]*?)<\/id>/i, block), feedUrl);
     const summaryRaw = firstMatch(/<summary[^>]*>([\s\S]*?)<\/summary>/i, block) || firstMatch(/<content[^>]*>([\s\S]*?)<\/content>/i, block);
     const published_at = firstMatch(/<updated>([\s\S]*?)<\/updated>/i, block) || firstMatch(/<published>([\s\S]*?)<\/published>/i, block);
-    const image_url = extractImage(block) || extractImage(summaryRaw);
+    const image_url = extractImage(block, url || feedUrl) || extractImage(summaryRaw, url || feedUrl);
     const summary = safeText(summaryRaw);
     if (title && url) items.push({ title, url, summary, published_at, image_url });
   }
   return items;
 }
 
-export function parseFeedItems(xml) {
+export function parseFeedItems(xml, feedUrl = '') {
   if (!xml || typeof xml !== 'string') return [];
-  if (/<rss[\s>]/i.test(xml) || /<channel[\s>]/i.test(xml)) return parseRssItems(xml);
-  if (/<feed[\s>]/i.test(xml)) return parseAtomEntries(xml);
-  return parseRssItems(xml);
+  if (/<rss[\s>]/i.test(xml) || /<channel[\s>]/i.test(xml)) return parseRssItems(xml, feedUrl);
+  if (/<feed[\s>]/i.test(xml)) return parseAtomEntries(xml, feedUrl);
+  return parseRssItems(xml, feedUrl);
 }

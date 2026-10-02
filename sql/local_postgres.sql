@@ -607,6 +607,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_trend_signal_hash ON trend_signals(signal_
 CREATE INDEX IF NOT EXISTS idx_sources_active_priority ON sources(is_active, priority_weight DESC);
 CREATE INDEX IF NOT EXISTS idx_raw_items_created ON raw_feed_items(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_raw_items_published ON raw_feed_items(published_at DESC NULLS LAST);
+CREATE INDEX IF NOT EXISTS idx_raw_items_canonical ON raw_feed_items(canonical_url);
 CREATE INDEX IF NOT EXISTS idx_candidates_raw_updated ON topic_candidates(raw_feed_item_id,updated_at DESC) WHERE status='active';
 CREATE INDEX IF NOT EXISTS idx_candidates_status_created ON topic_candidates(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_candidates_status_published ON topic_candidates(status, published_at DESC NULLS LAST);
