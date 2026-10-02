@@ -22,6 +22,10 @@ assert.equal(result.sample_count, 20);
 assert.equal(result.high_priority.publication_rate, 60);
 assert.equal(result.other.publication_rate, 20);
 assert.equal(result.high_priority.median_discover_clicks, 100);
+const zeroTraffic = evaluateEditorialDecisions([{ score: 75, detected_at: detectedAt,
+  published_at: publishedAt, observed_at: observedAt, discover_clicks: 0, ga4_views: 0 }], now);
+assert.equal(zeroTraffic.high_priority.performance_samples, 1);
+assert.equal(zeroTraffic.high_priority.median_discover_clicks, 0);
 assert.equal(evaluateEditorialDecisions([], now).status, 'collecting');
 const timing = summarizeReviewTimings([
   { story_id: 'a', to_status: 'ready', changed_at: '2026-10-03T12:00:00Z' },
