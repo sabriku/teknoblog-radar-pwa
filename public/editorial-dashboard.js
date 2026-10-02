@@ -6,6 +6,7 @@
   const eventLabels = { detected: 'İlk kez görüldü', corroborated: 'İkinci kaynak doğruladı', lane_changed: 'Karar kuyruğu değişti' };
   const researchLabels = { official_source_seen: 'Akışta resmî kaynak var', multiple_sources: 'Birden fazla akış kaynağı var', single_source: 'Tek akış kaynağı var' };
   const reviewLabels = { unreviewed: 'İncelenmedi', researching: 'Araştırılıyor', ready: 'Yayına hazır', hold: 'Beklet' };
+  const saturationLabels = { low: 'düşük', medium: 'orta', high: 'yüksek' };
   const escape = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
   const safeUrl = (value) => /^https?:\/\//i.test(String(value || '')) ? escape(value) : '#';
   const date = (value) => value ? new Intl.DateTimeFormat('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' }).format(new Date(value)) : '—';
@@ -22,6 +23,7 @@
   function briefFor(item) {
     return [`Konu: ${item.title}`, `Kaynak: ${item.url}`, `Karar puanı: ${item.score}`,
       `Kaynak durumu: ${researchLabels[item.research?.status] || 'Kaynaklar incelenmeli'}`,
+      `İzlenen rakip yayılımı: ${saturationLabels[item.market_context?.monitored_saturation] || 'bilinmiyor'} (${item.market_context?.monitored_competitor_count || 0} kaynak)`,
       `Önerilen içerik zinciri: ${(item.content_opportunities || []).map((format) => format.label).join(' → ')}`,
       '', 'Format gerekçeleri:', ...(item.content_opportunities || []).map((format) => `- ${format.label}: ${format.reason}`),
       '', 'Doğrulanacaklar:', ...(item.research?.checks || []).map((check) => `- ${check}`),
@@ -42,10 +44,11 @@
   function card(item) {
     const signals = Object.entries(item.signals || {}).map(([key, value]) => `<span>${escape(signalLabels[key] || key)} <b>${escape(value)}</b></span>`).join('');
     const review = reviewsById.get(item.id)?.status || 'unreviewed';
+    const market = item.market_context;
     return `<article class="tb-ed-card"><div class="tb-ed-top"><b>${escape(item.score)}</b><span>${escape(item.source_count)} kaynak · ${date(item.last_seen_at)}</span></div>
       <h3><a href="${safeUrl(item.url)}" target="_blank" rel="noopener noreferrer">${escape(item.title)}</a></h3>
       ${item.published_match ? `<p>Teknoblog: <a href="${safeUrl(item.published_match.url)}" target="_blank" rel="noopener noreferrer">${escape(item.published_match.title)}</a></p>` : ''}
-      <div class="tb-ed-signals">${signals}</div><label class="tb-ed-review">Editör kararı <select data-review-id="${escape(item.id)}">${Object.entries(reviewLabels).map(([key, label]) => `<option value="${key}"${review === key ? ' selected' : ''}>${label}</option>`).join('')}</select></label><span class="tb-ed-review-message" aria-live="polite"></span>${item.calibration?.adjustment ? `<p>Benzer yayın performansı: ${item.calibration.adjustment > 0 ? '+' : ''}${escape(item.calibration.adjustment)} uyum puanı · ${escape(item.calibration.matched_samples)} örnek</p>` : ''}${opportunityDetails(item)}${researchDetails(item)}${item.history?.length ? `<details><summary>Konu geçmişi</summary><ul>${item.history.map((event) => `<li>${date(event.occurred_at)} · ${escape(eventLabels[event.event_type] || event.event_type)}${event.event_type === 'lane_changed' ? `: ${escape(labels[event.from_lane] || 'İzle')} → ${escape(labels[event.to_lane] || 'İzle')}` : ''}</li>`).join('')}</ul></details>` : ''}</article>`;
+      <div class="tb-ed-signals">${signals}</div>${market ? `<p class="tb-ed-market">İzlenen rakip yayılımı: <b>${escape(saturationLabels[market.monitored_saturation] || 'bilinmiyor')}</b> · ${escape(market.monitored_competitor_count)} rakip kaynak${market.monitored_competitor_gap ? ' · <b>İzlenen rakiplerde henüz görünmedi</b>' : ''}<br><small>${escape(market.scope_note)}</small></p>` : ''}<label class="tb-ed-review">Editör kararı <select data-review-id="${escape(item.id)}">${Object.entries(reviewLabels).map(([key, label]) => `<option value="${key}"${review === key ? ' selected' : ''}>${label}</option>`).join('')}</select></label><span class="tb-ed-review-message" aria-live="polite"></span>${item.calibration?.adjustment ? `<p>Benzer yayın performansı: ${item.calibration.adjustment > 0 ? '+' : ''}${escape(item.calibration.adjustment)} uyum puanı · ${escape(item.calibration.matched_samples)} örnek</p>` : ''}${opportunityDetails(item)}${researchDetails(item)}${item.history?.length ? `<details><summary>Konu geçmişi</summary><ul>${item.history.map((event) => `<li>${date(event.occurred_at)} · ${escape(eventLabels[event.event_type] || event.event_type)}${event.event_type === 'lane_changed' ? `: ${escape(labels[event.from_lane] || 'İzle')} → ${escape(labels[event.to_lane] || 'İzle')}` : ''}</li>`).join('')}</ul></details>` : ''}</article>`;
   }
 
   async function load(force = false) {
@@ -108,6 +111,7 @@
   const style = document.createElement('style');
   style.textContent = `.tb-ed-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:18px}.tb-ed-head h2{margin:0 0 6px}.tb-ed-head p{margin:0;color:#64748b}.tb-ed-grid{display:grid;grid-template-columns:repeat(4,minmax(220px,1fr));gap:14px;align-items:start}.tb-ed-lane{background:#f4f7fb;border:1px solid #dbe3ef;border-radius:16px;padding:12px;min-height:180px}.tb-ed-lane>h3{margin:2px 2px 14px;display:flex;justify-content:space-between}.tb-ed-lane small{background:#dce8f8;padding:2px 8px;border-radius:20px}.tb-ed-card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:12px;margin-bottom:10px;box-shadow:0 2px 8px #0f172a0a}.tb-ed-card h3{font-size:15px;line-height:1.35;margin:10px 0}.tb-ed-card a{color:#173c72}.tb-ed-card p{font-size:12px}.tb-ed-top{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:#64748b}.tb-ed-top b{font-size:18px;color:#0f766e}.tb-ed-signals{display:flex;flex-wrap:wrap;gap:5px;margin:10px 0}.tb-ed-signals span{font-size:11px;background:#edf2f7;border-radius:6px;padding:3px 5px}.tb-ed-card details{font-size:12px}.tb-ed-card ul{padding-left:18px}.tb-ed-formats ol,.tb-ed-research ol{padding-left:19px}.tb-ed-formats li,.tb-ed-research li{margin:8px 0}.tb-ed-formats li p{margin:3px 0;color:#475569}.tb-ed-formats small{color:#0f766e}.tb-ed-research span{color:#64748b}@media(max-width:1200px){.tb-ed-grid{grid-template-columns:repeat(2,minmax(220px,1fr))}}@media(max-width:650px){.tb-ed-grid{grid-template-columns:1fr}}`;
   style.textContent += '.tb-ed-review{display:flex;align-items:center;justify-content:space-between;font-size:12px;gap:6px;margin:8px 0}.tb-ed-review select{max-width:140px;padding:4px;border:1px solid #cbd5e1;border-radius:7px;background:#fff}.tb-ed-review-message{font-size:11px;color:#0f766e}';
+  style.textContent += '.tb-ed-market{background:#f0fdfa;border-radius:8px;padding:6px;color:#115e59}.tb-ed-market small{color:#64748b}';
   document.head.appendChild(style);
   window.addEventListener('tb-spa-tab-change', (event) => {
     if (event.detail?.tab === 'editorial-dashboard' && !loaded) load();
