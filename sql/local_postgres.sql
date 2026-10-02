@@ -524,6 +524,12 @@ CREATE TABLE IF NOT EXISTS editorial_story_events (
   payload JSONB NOT NULL DEFAULT '{}'::jsonb
 );
 
+CREATE TABLE IF NOT EXISTS editorial_story_reviews (
+  story_id TEXT PRIMARY KEY,
+  status TEXT NOT NULL CHECK (status IN ('researching','ready','hold')),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS source_leadership_stats (
   source_id TEXT NOT NULL,
   source_name TEXT NOT NULL,
@@ -674,6 +680,7 @@ CREATE INDEX IF NOT EXISTS idx_cluster_events_type ON cluster_lifecycle_events(e
 CREATE INDEX IF NOT EXISTS idx_editorial_stories_recorded ON editorial_story_clusters(last_recorded_at DESC);
 CREATE INDEX IF NOT EXISTS idx_editorial_stories_lane ON editorial_story_clusters(lane,score DESC,last_seen_at DESC);
 CREATE INDEX IF NOT EXISTS idx_editorial_events_story_time ON editorial_story_events(story_id,occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_editorial_reviews_status ON editorial_story_reviews(status,updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_source_leadership_score ON source_leadership_stats(leadership_score DESC,updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_watchlists_active ON radar_watchlists(is_active,updated_at DESC);
 
