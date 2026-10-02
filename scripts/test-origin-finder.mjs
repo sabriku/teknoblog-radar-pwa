@@ -8,7 +8,7 @@ const official = [{ name: 'Apple Newsroom', site_url: 'https://www.apple.com/new
 assert.equal(isAllowedArticleUrl(article, source.site_url), true);
 assert.equal(isAllowedArticleUrl('http://127.0.0.1/admin', source.site_url), false);
 assert.equal(isAllowedArticleUrl('https://evil.test/story', source.site_url), false);
-const html = '<a href="https://www.apple.com/newsroom/2026/10/update/">Apple açıklaması</a><a href="https://other.test/x">Diğer</a>';
+const html = '<a href="https://podcasts.apple.com/show"><svg></svg></a><a href="https://www.apple.com/newsroom/2026/10/update/">Apple açıklaması</a><a href="https://other.test/x">Diğer</a>';
 const links = officialLinksInHtml(html, article, official);
 assert.equal(links.length, 1);
 assert.equal(links[0].official_name, 'Apple Newsroom');
