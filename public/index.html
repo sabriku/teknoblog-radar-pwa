@@ -31,6 +31,7 @@
 
     <nav class="tb-spa-tabs" role="tablist" aria-label="Radar bölümleri">
       <button class="tb-spa-tab" type="button" role="tab" data-spa-tab="news">📰 Haberler</button>
+      <button class="tb-spa-tab" type="button" role="tab" data-spa-tab="editorial-dashboard">⚡ Editoryal Akış</button>
       <button class="tb-spa-tab" type="button" role="tab" data-spa-tab="early-signals">🚨 Öncü Radar</button>
       <button class="tb-spa-tab" type="button" role="tab" data-spa-tab="competitor-radar">🕵️ Rakip Fırsatları</button>
       <button class="tb-spa-tab" type="button" role="tab" data-spa-tab="search">🔎 Arama</button>
@@ -78,6 +79,7 @@
       </div>
     </section>
 
+    <section class="tb-panel" data-spa-panel="editorial-dashboard" role="tabpanel"><main class="tb-panel-card" id="tb-editorial-dashboard-root"><p>Öneriler hazırlanıyor…</p></main></section>
     <section class="tb-panel" data-spa-panel="search" role="tabpanel"><main class="tb-panel-card" id="tb-search-root"><div class="tb-legacy-note">Arama motoru yükleniyor…</div></main></section>
 
     <section class="tb-panel" data-spa-panel="early-signals" role="tabpanel"><main class="tb-panel-card" id="tb-early-signal-root"><div class="tb-legacy-note">Erken sinyaller hesaplanıyor…</div></main></section>
@@ -106,6 +108,7 @@
   <script src="/auth-gate.js?v=20260423-1" defer></script>
   <script src="/radar-token-reset.js?v=20260523-1" defer></script>
   <script src="/radar-spa.js?v=20260729-1" defer></script>
+  <script src="/editorial-dashboard.js?v=20261003-1" defer></script>
   <script src="/search-panel.js?v=20260719-1" defer></script>
   <script src="/early-signal-panel.js?v=20260723-1" defer></script>
   <script src="/competitor-radar-panel.js?v=20260731-1" defer></script>

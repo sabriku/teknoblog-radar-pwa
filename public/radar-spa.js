@@ -2,6 +2,7 @@
   const TAB_KEY = 'tb_spa_active_tab';
   const VALID_TABS = new Set([
     'news',
+    'editorial-dashboard',
     'early-signals',
     'competitor-radar',
     'search',
@@ -18,6 +19,7 @@
 
   const LABELS = {
     news: 'Haberler',
+    'editorial-dashboard': 'Editoryal Akış',
     'early-signals': 'Öncü Radar',
     'competitor-radar': 'Rakip Fırsatları',
     search: 'Arama',
@@ -32,6 +34,7 @@
 
   const ICONS = {
     news: '📰',
+    'editorial-dashboard': '⚡',
     'early-signals': '🚨',
     'competitor-radar': '🕵️',
     search: '🔎',
@@ -88,6 +91,7 @@
   function descriptionFor(tab) {
     const map = {
       news: 'Ana haber akışı, kaynak filtresi ve görünüm seçenekleri.',
+      'editorial-dashboard': 'Şimdi Yaz, Yükseliyor, Güncelle ve Üret karar kuyrukları.',
       'early-signals': 'Trend olmadan önce yakalanan ve ilk yayın avantajı sağlayan gelişmeler.',
       'competitor-radar': 'Rakip yayınlardaki haberleri Discover ve Google News fırsatına dönüştüren çalışma alanı.',
       search: 'Haberler, Teknoblog arşivi, trend kümeleri ve kaynaklarda birleşik arama.',

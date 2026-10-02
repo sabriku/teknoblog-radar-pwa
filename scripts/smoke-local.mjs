@@ -6,6 +6,7 @@ const checks = [
   ['/api/health', 200],
   ['/api/sources', 200],
   ['/api/recommendations?sort=discover_score', 200],
+  ['/api/editorial-dashboard', 200],
   ['/api/search?q=Samsung&period=30d&limit=6', 200],
   ['/api/intelligence?section=summary', 200],
   ['/api/intelligence?section=early-signals', 200],
