@@ -4,6 +4,8 @@ import dashboardHandler from '../api/editorial-dashboard.js';
 
 const card = { id: 'story-1', lane: 'rising', source_count: 2 };
 assert.deepEqual(deriveStoryEvents([card], new Map()).map((event) => event.event_type), ['detected', 'corroborated']);
+assert.equal(deriveStoryEvents([{ ...card, score: 73 }], new Map())[0].payload.score, 73,
+  'ilk karar puanı sonraki ölçüm için olayda korunmalı');
 assert.deepEqual(deriveStoryEvents([card], new Map([['story-1', { lane: 'rising', source_count: 2 }]])), [], 'aynı gözlem tekrar olay üretmemeli');
 const changed = deriveStoryEvents([{ ...card, lane: 'write_now', source_count: 3 }], new Map([['story-1', { lane: 'rising', source_count: 2 }]]));
 assert.deepEqual(changed.map((event) => event.event_type), ['lane_changed']);
