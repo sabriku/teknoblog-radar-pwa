@@ -12,6 +12,12 @@ assert.ok(guide.find((format) => format.key === 'guide').checks.length > 0, 'reh
 const misleadingSummary = contentOpportunitiesFor({ title: 'Telefon fiyatı yükseldi', summary: 'Uygulama özellikleri ve kamera görselleri önceki haberlerde yer alıyor.',
   image_url: 'https://example.com/image.jpg', score: 63, source_count: 2, signals });
 assert.ok(!misleadingSummary.some((format) => ['guide', 'short_video'].includes(format.key)), 'yalnızca özetteki genel kelimeler format önerisi doğurmamalı');
+const businessDeal = contentOpportunitiesFor({ title: 'Amazon and Synopsys sign chip design agreement',
+  image_url: 'https://example.com/image.jpg', score: 63, source_count: 2, signals });
+assert.ok(!businessDeal.some((format) => format.key === 'short_video'), 'iş anlaşmasındaki design sözcüğü görsel anlatım sayılmamalı');
+const keynote = contentOpportunitiesFor({ title: 'Microsoft Windows keynote: how to tune in',
+  score: 63, source_count: 2, signals });
+assert.ok(!keynote.some((format) => format.key === 'guide'), 'etkinlik izleme haberi ürün rehberi sayılmamalı');
 
 const product = contentOpportunitiesFor({ title: 'Samsung yeni telefonun kamera ve ekran tasarımını gösterdi', image_url: 'https://example.com/image.jpg', score: 62, source_count: 2, signals });
 assert.ok(product.some((format) => format.key === 'short_video'));
