@@ -22,6 +22,8 @@ export default async function handler(req, res) {
           WHERE raw_feed_item_id=r.id AND status='active' ORDER BY updated_at DESC LIMIT 1
         ) c ON TRUE
         WHERE COALESCE(r.published_at,r.created_at)>=NOW()-INTERVAL '72 hours'
+          AND COALESCE(s.source_type,'')<>'owned'
+          AND COALESCE(r.source_name,'') NOT ILIKE 'Teknoblog%'
         ORDER BY r.created_at DESC LIMIT 1200`),
       queryLocal(`SELECT title,url,published_at FROM teknoblog_content
         WHERE published_at>=NOW()-INTERVAL '45 days' ORDER BY published_at DESC LIMIT 1000`)

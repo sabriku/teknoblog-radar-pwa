@@ -20,5 +20,6 @@ assert.ok(multiSource.signals.spread_velocity > singleSource.signals.spread_velo
 const published = buildEditorialDashboard(items, [{ title: 'Samsung Galaxy S27 kamera sensörünü tanıttı', url: 'https://teknoblog.com/s27' }], now);
 assert.equal(published.lanes.update.length, 1, 'yayınlanmış konu Güncelle kuyruğuna gitmeli');
 const old = buildEditorialDashboard([{ ...items[0], published_at: '2026-09-30T09:00:00Z', created_at: '2026-09-30T09:00:00Z' }], [], now);
-assert.ok(Object.values(old.lanes).flat()[0].signals.freshness < multiSource.signals.freshness, 'eski haberin güncelliği düşmeli');
+assert.equal(old.total, 0, 'eski ve yayılmayan haber karar kuyruğunu doldurmamalı');
+assert.equal(old.scanned_count, 1, 'elenen haber tarama sayısında görünmeli');
 console.log('editorial decision tests passed');
