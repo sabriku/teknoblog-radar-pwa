@@ -13,7 +13,7 @@
     return `<article class="tb-ed-card"><div class="tb-ed-top"><b>${escape(item.score)}</b><span>${escape(item.source_count)} kaynak · ${date(item.last_seen_at)}</span></div>
       <h3><a href="${safeUrl(item.url)}" target="_blank" rel="noopener noreferrer">${escape(item.title)}</a></h3>
       ${item.published_match ? `<p>Teknoblog: <a href="${safeUrl(item.published_match.url)}" target="_blank" rel="noopener noreferrer">${escape(item.published_match.title)}</a></p>` : ''}
-      <div class="tb-ed-signals">${signals}</div><details><summary>Kaynakları gör</summary><ul>${(item.sources || []).map((source) => `<li><a href="${safeUrl(source.url)}" target="_blank" rel="noopener noreferrer">${escape(source.name || 'Kaynak')}</a> · ${date(source.published_at)}</li>`).join('')}</ul></details></article>`;
+      <div class="tb-ed-signals">${signals}</div>${item.calibration?.adjustment ? `<p>Benzer yayın performansı: ${item.calibration.adjustment > 0 ? '+' : ''}${escape(item.calibration.adjustment)} uyum puanı · ${escape(item.calibration.matched_samples)} örnek</p>` : ''}<details><summary>Kaynakları gör</summary><ul>${(item.sources || []).map((source) => `<li><a href="${safeUrl(source.url)}" target="_blank" rel="noopener noreferrer">${escape(source.name || 'Kaynak')}</a> · ${date(source.published_at)}</li>`).join('')}</ul></details></article>`;
   }
 
   async function load(force = false) {
@@ -22,7 +22,7 @@
       const response = await fetch(`/api/editorial-dashboard${force ? '?refresh=1' : ''}`, { cache: 'no-store' });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-      root.innerHTML = `<div class="tb-ed-head"><div><h2>Editoryal Akış</h2><p>Son 72 saatin haberleri; altı sinyalle puanlanır. Karar önerileri editör kontrolü gerektirir.</p></div><button type="button" id="tb-ed-reload" class="tb-small-btn">Yenile</button></div>
+      root.innerHTML = `<div class="tb-ed-head"><div><h2>Editoryal Akış</h2><p>Son 72 saatin haberleri; altı sinyalle puanlanır. ${data.model?.performance_status === 'active' ? `${escape(data.model.performance_samples)} geçmiş yayın örneği uyum puanına sınırlı katkı verir.` : 'Geçmiş performans için yeterli örnek bulunmadığında temel puan kullanılır.'} Karar önerileri editör kontrolü gerektirir.</p></div><button type="button" id="tb-ed-reload" class="tb-small-btn">Yenile</button></div>
         ${data.warning ? `<p role="status">${escape(data.warning)}</p>` : ''}
         <div class="tb-ed-grid">${Object.entries(labels).map(([key, label]) => `<section class="tb-ed-lane"><h3>${label} <small>${escape(data.counts?.[key] || 0)}</small></h3>${(data.lanes?.[key] || []).slice(0, 20).map(card).join('') || '<p>Şu anda öneri yok.</p>'}</section>`).join('')}</div>`;
       root.querySelector('#tb-ed-reload')?.addEventListener('click', () => load(true));
