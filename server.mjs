@@ -19,6 +19,7 @@ const API_ROUTES = {
   '/api/auth': './api/auth.js',
   '/api/competitor-radar': './api/competitor-radar.js',
   '/api/editorial-dashboard': './api/editorial-dashboard.js',
+  '/api/editorial-ai': './api/editorial-ai.js',
   '/api/editorial-insights': './api/editorial-insights.js',
   '/api/editorial-review': './api/editorial-review.js',
   '/api/google-news-tech': './api/google-news-tech.js',

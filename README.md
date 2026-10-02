@@ -15,6 +15,10 @@ Yerel PostgreSQL ve Node.js üzerinde çalışan editör odaklı PWA.
 
 Supabase kullanılmaz. Eski API dosyalarının sorgu sözleşmesi `api/_lib.js` içindeki PostgreSQL adaptörüyle korunur. Şema ve seed uygulama başlangıcında idempotent biçimde hazırlanır.
 
+## Editoryal taslaklar
+
+Editoryal Akış her konu için kaynaklı araştırma ve kopyalanabilir yayın hazırlığı paketi sunar. İsteğe bağlı Türkçe AI taslak düğmesi yalnızca sunucuda `OPENAI_API_KEY` tanımlıysa görünür; model `RADAR_OPENAI_MODEL` ile değiştirilebilir (varsayılan `gpt-6-astra`). Anahtar tarayıcıya gönderilmez. Model yalnızca kayıtlı kaynak başlıkları ve özetini kullanır; çıktılar editör doğrulaması gerektirir ve otomatik yayımlanmaz.
+
 ## Kontrol
 
 ```bash
