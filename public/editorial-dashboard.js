@@ -5,11 +5,13 @@
   const signalLabels = { freshness: 'Güncellik', discover: 'Discover', turkey_interest: 'Türkiye', source_quality: 'Kaynak', spread_velocity: 'Yayılma', teknoblog_fit: 'Uyum' };
   const eventLabels = { detected: 'İlk kez görüldü', corroborated: 'İkinci kaynak doğruladı', lane_changed: 'Karar kuyruğu değişti' };
   const researchLabels = { official_source_seen: 'Akışta resmî kaynak var', multiple_sources: 'Birden fazla akış kaynağı var', single_source: 'Tek akış kaynağı var' };
+  const reviewLabels = { unreviewed: 'İncelenmedi', researching: 'Araştırılıyor', ready: 'Yayına hazır', hold: 'Beklet' };
   const escape = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
   const safeUrl = (value) => /^https?:\/\//i.test(String(value || '')) ? escape(value) : '#';
   const date = (value) => value ? new Intl.DateTimeFormat('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' }).format(new Date(value)) : '—';
   let loaded = false;
   let cardsById = new Map();
+  let reviewsById = new Map();
 
   function opportunityDetails(item) {
     const formats = item.content_opportunities || [];
@@ -33,23 +35,30 @@
     return `<details class="tb-ed-research"><summary>Araştırma dosyası · ${escape(researchLabels[research.status] || 'Kaynaklar incelenmeli')}</summary>
       <p>Listelenen ${escape(research.source_count)} kaynak; ${escape(research.official_source_count)} resmî kaynak kaydı. Başlıklar kaynakların iddiasını gösterir.</p>
       <ol>${research.sources.map((source) => `<li><span>${date(source.published_at)} · ${escape(source.name)}${source.type === 'official' ? ' · resmî kaynak' : ''}</span><br><a href="${safeUrl(source.url)}" target="_blank" rel="noopener noreferrer">${escape(source.title)}</a></li>`).join('')}</ol>
+      ${(research.possible_discrepancies || []).map((difference) => `<p><strong>Rakam kontrolü (${escape(difference.unit)}):</strong> ${difference.mentions.map((mention) => `${escape(mention.source_name)} ${escape(mention.value)}`).join(' · ')}. Farklı model veya sürüm olabilir.</p>`).join('')}
       <strong>Doğrulanacaklar</strong><ul>${research.checks.map((check) => `<li>${escape(check)}</li>`).join('')}</ul></details>`;
   }
 
   function card(item) {
     const signals = Object.entries(item.signals || {}).map(([key, value]) => `<span>${escape(signalLabels[key] || key)} <b>${escape(value)}</b></span>`).join('');
+    const review = reviewsById.get(item.id)?.status || 'unreviewed';
     return `<article class="tb-ed-card"><div class="tb-ed-top"><b>${escape(item.score)}</b><span>${escape(item.source_count)} kaynak · ${date(item.last_seen_at)}</span></div>
       <h3><a href="${safeUrl(item.url)}" target="_blank" rel="noopener noreferrer">${escape(item.title)}</a></h3>
       ${item.published_match ? `<p>Teknoblog: <a href="${safeUrl(item.published_match.url)}" target="_blank" rel="noopener noreferrer">${escape(item.published_match.title)}</a></p>` : ''}
-      <div class="tb-ed-signals">${signals}</div>${item.calibration?.adjustment ? `<p>Benzer yayın performansı: ${item.calibration.adjustment > 0 ? '+' : ''}${escape(item.calibration.adjustment)} uyum puanı · ${escape(item.calibration.matched_samples)} örnek</p>` : ''}${opportunityDetails(item)}${researchDetails(item)}${item.history?.length ? `<details><summary>Konu geçmişi</summary><ul>${item.history.map((event) => `<li>${date(event.occurred_at)} · ${escape(eventLabels[event.event_type] || event.event_type)}${event.event_type === 'lane_changed' ? `: ${escape(labels[event.from_lane] || 'İzle')} → ${escape(labels[event.to_lane] || 'İzle')}` : ''}</li>`).join('')}</ul></details>` : ''}</article>`;
+      <div class="tb-ed-signals">${signals}</div><label class="tb-ed-review">Editör kararı <select data-review-id="${escape(item.id)}">${Object.entries(reviewLabels).map(([key, label]) => `<option value="${key}"${review === key ? ' selected' : ''}>${label}</option>`).join('')}</select></label><span class="tb-ed-review-message" aria-live="polite"></span>${item.calibration?.adjustment ? `<p>Benzer yayın performansı: ${item.calibration.adjustment > 0 ? '+' : ''}${escape(item.calibration.adjustment)} uyum puanı · ${escape(item.calibration.matched_samples)} örnek</p>` : ''}${opportunityDetails(item)}${researchDetails(item)}${item.history?.length ? `<details><summary>Konu geçmişi</summary><ul>${item.history.map((event) => `<li>${date(event.occurred_at)} · ${escape(eventLabels[event.event_type] || event.event_type)}${event.event_type === 'lane_changed' ? `: ${escape(labels[event.from_lane] || 'İzle')} → ${escape(labels[event.to_lane] || 'İzle')}` : ''}</li>`).join('')}</ul></details>` : ''}</article>`;
   }
 
   async function load(force = false) {
     root.innerHTML = '<p>Güncel karar kuyrukları yükleniyor…</p>';
     try {
-      const response = await fetch(`/api/editorial-dashboard${force ? '?refresh=1' : ''}`, { cache: 'no-store' });
+      const [response, reviewResponse] = await Promise.all([
+        fetch(`/api/editorial-dashboard${force ? '?refresh=1' : ''}`, { cache: 'no-store' }),
+        fetch('/api/editorial-review', { cache: 'no-store', credentials: 'same-origin' }).catch(() => null)
+      ]);
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      const reviewData = reviewResponse?.ok ? await reviewResponse.json() : {};
+      reviewsById = new Map((reviewData.reviews || []).map((review) => [review.story_id, review]));
       cardsById = new Map(Object.values(data.lanes || {}).flat().map((item) => [item.id, item]));
       root.innerHTML = `<div class="tb-ed-head"><div><h2>Editoryal Akış</h2><p>Son 72 saatin haberleri; altı sinyalle puanlanır. ${data.model?.performance_status === 'active' ? `${escape(data.model.performance_samples)} geçmiş yayın örneği uyum puanına sınırlı katkı verir.` : 'Geçmiş performans için yeterli örnek bulunmadığında temel puan kullanılır.'} Karar önerileri editör kontrolü gerektirir.</p></div><button type="button" id="tb-ed-reload" class="tb-small-btn">Yenile</button></div>
         ${data.warning ? `<p role="status">${escape(data.warning)}</p>` : ''}
@@ -74,8 +83,31 @@
     } catch { button.textContent = 'Kopyalanamadı'; }
   });
 
+  root.addEventListener('change', async (event) => {
+    const select = event.target.closest('[data-review-id]');
+    if (!select) return;
+    const storyId = select.getAttribute('data-review-id');
+    const previous = reviewsById.get(storyId)?.status || 'unreviewed';
+    const message = select.closest('.tb-ed-card')?.querySelector('.tb-ed-review-message');
+    select.disabled = true;
+    if (message) message.textContent = 'Kaydediliyor…';
+    try {
+      const response = await fetch('/api/editorial-review', { method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ story_id: storyId, status: select.value }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      if (data.status === 'unreviewed') reviewsById.delete(storyId);
+      else reviewsById.set(storyId, data);
+      if (message) message.textContent = 'Kaydedildi';
+    } catch (error) {
+      select.value = previous;
+      if (message) message.textContent = `Kaydedilemedi: ${error.message || error}`;
+    } finally { select.disabled = false; }
+  });
+
   const style = document.createElement('style');
   style.textContent = `.tb-ed-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:18px}.tb-ed-head h2{margin:0 0 6px}.tb-ed-head p{margin:0;color:#64748b}.tb-ed-grid{display:grid;grid-template-columns:repeat(4,minmax(220px,1fr));gap:14px;align-items:start}.tb-ed-lane{background:#f4f7fb;border:1px solid #dbe3ef;border-radius:16px;padding:12px;min-height:180px}.tb-ed-lane>h3{margin:2px 2px 14px;display:flex;justify-content:space-between}.tb-ed-lane small{background:#dce8f8;padding:2px 8px;border-radius:20px}.tb-ed-card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:12px;margin-bottom:10px;box-shadow:0 2px 8px #0f172a0a}.tb-ed-card h3{font-size:15px;line-height:1.35;margin:10px 0}.tb-ed-card a{color:#173c72}.tb-ed-card p{font-size:12px}.tb-ed-top{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:#64748b}.tb-ed-top b{font-size:18px;color:#0f766e}.tb-ed-signals{display:flex;flex-wrap:wrap;gap:5px;margin:10px 0}.tb-ed-signals span{font-size:11px;background:#edf2f7;border-radius:6px;padding:3px 5px}.tb-ed-card details{font-size:12px}.tb-ed-card ul{padding-left:18px}.tb-ed-formats ol,.tb-ed-research ol{padding-left:19px}.tb-ed-formats li,.tb-ed-research li{margin:8px 0}.tb-ed-formats li p{margin:3px 0;color:#475569}.tb-ed-formats small{color:#0f766e}.tb-ed-research span{color:#64748b}@media(max-width:1200px){.tb-ed-grid{grid-template-columns:repeat(2,minmax(220px,1fr))}}@media(max-width:650px){.tb-ed-grid{grid-template-columns:1fr}}`;
+  style.textContent += '.tb-ed-review{display:flex;align-items:center;justify-content:space-between;font-size:12px;gap:6px;margin:8px 0}.tb-ed-review select{max-width:140px;padding:4px;border:1px solid #cbd5e1;border-radius:7px;background:#fff}.tb-ed-review-message{font-size:11px;color:#0f766e}';
   document.head.appendChild(style);
   window.addEventListener('tb-spa-tab-change', (event) => {
     if (event.detail?.tab === 'editorial-dashboard' && !loaded) load();
