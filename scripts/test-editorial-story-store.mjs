@@ -10,6 +10,11 @@ assert.deepEqual(changed.map((event) => event.event_type), ['lane_changed']);
 assert.equal(changed[0].from_lane, 'rising');
 const corroborated = deriveStoryEvents([card], new Map([['story-1', { lane: 'watch', source_count: 1 }]]));
 assert.deepEqual(corroborated.map((event) => event.event_type), ['lane_changed', 'corroborated']);
+const oldState = { lane: 'rising', source_count: 1, last_seen_at: '2026-10-02T08:00:00Z', payload: { research: { official_source_count: 0 } } };
+const newWave = deriveStoryEvents([{ ...card, research: { official_source_count: 1 }, last_seen_at: '2026-10-02T12:00:00Z' }], new Map([['story-1', oldState]]));
+assert.deepEqual(newWave.map((event) => event.event_type), ['corroborated', 'official_source_seen', 'second_wave']);
+assert.deepEqual(deriveStoryEvents([{ ...card, last_seen_at: '2026-10-02T12:00:00Z' }], new Map([['story-1', { ...oldState, source_count: 2 }]])), [],
+  'yeni kaynak veya resmî geçiş yoksa zaman tek başına ikinci dalga sayılmamalı');
 
 const original = process.env.CRON_TOKEN;
 process.env.CRON_TOKEN = 'test-only-token';
