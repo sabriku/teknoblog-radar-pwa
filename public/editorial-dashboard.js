@@ -41,6 +41,30 @@
       <strong>Doğrulanacaklar</strong><ul>${research.checks.map((check) => `<li>${escape(check)}</li>`).join('')}</ul></details>`;
   }
 
+  function packageText(item) {
+    const packet = item.production_package;
+    if (!packet) return '';
+    return [`Konu: ${item.title}`, `Durum: Editör doğrulaması gerekli`, `Dayanak: ${packet.basis}`,
+      '', 'Başlık taslakları:', ...packet.headline_drafts.map((draft) => `- ${draft.angle}: ${draft.text}`),
+      '', `SEO başlığı taslağı: ${packet.seo_title_draft}`, `Slug taslağı: ${packet.slug_draft}`,
+      `Meta açıklama taslağı: ${packet.meta_description_draft}`, `Sosyal metin taslağı: ${packet.social_draft}`,
+      `Görsel: ${packet.image?.url || 'Kaynak görseli yok'} (kullanım hakkı doğrulanmadı)`,
+      '', 'Yayın öncesi:', ...packet.before_publish.map((check) => `- ${check}`),
+      '', 'Kaynaklar:', ...(item.research?.sources || []).map((source) => `- ${source.name}: ${source.url}`)].join('\n');
+  }
+
+  function productionDetails(item) {
+    const packet = item.production_package;
+    if (!packet) return '';
+    return `<details class="tb-ed-package"><summary>Yayın hazırlığı · editör kontrolü gerekli</summary><p>${escape(packet.basis)} Taslaklar doğrudan yayımlanmamalı.</p>
+      <strong>Başlık taslakları</strong><ol>${packet.headline_drafts.map((draft) => `<li><span>${escape(draft.angle)}</span><br>${escape(draft.text)}</li>`).join('')}</ol>
+      <p><strong>SEO:</strong> ${escape(packet.seo_title_draft)}${packet.seo_title_length > 70 ? ' · uzunluk kontrolü gerekli' : ''}</p>
+      <p><strong>Slug:</strong> ${escape(packet.slug_draft)}</p><p><strong>Meta:</strong> ${escape(packet.meta_description_draft)}</p>
+      <p><strong>Sosyal:</strong> ${escape(packet.social_draft)}</p>
+      <p><strong>Görsel:</strong> ${packet.image ? `<a href="${safeUrl(packet.image.url)}" target="_blank" rel="noopener noreferrer">Kaynağı aç</a> · kullanım hakkı doğrulanmadı` : 'Kaynak görseli yok'}</p>
+      <button type="button" class="tb-small-btn" data-package-id="${escape(item.id)}">Paketi kopyala</button></details>`;
+  }
+
   function card(item) {
     const signals = Object.entries(item.signals || {}).map(([key, value]) => `<span>${escape(signalLabels[key] || key)} <b>${escape(value)}</b></span>`).join('');
     const review = reviewsById.get(item.id)?.status || 'unreviewed';
@@ -48,7 +72,7 @@
     return `<article class="tb-ed-card"><div class="tb-ed-top"><b>${escape(item.score)}</b><span>${escape(item.source_count)} kaynak · ${date(item.last_seen_at)}</span></div>
       <h3><a href="${safeUrl(item.url)}" target="_blank" rel="noopener noreferrer">${escape(item.title)}</a></h3>
       ${item.published_match ? `<p>Teknoblog: <a href="${safeUrl(item.published_match.url)}" target="_blank" rel="noopener noreferrer">${escape(item.published_match.title)}</a></p>` : ''}
-      <div class="tb-ed-signals">${signals}</div>${market ? `<p class="tb-ed-market">İzlenen rakip yayılımı: <b>${escape(saturationLabels[market.monitored_saturation] || 'bilinmiyor')}</b> · ${escape(market.monitored_competitor_count)} rakip kaynak${market.monitored_competitor_gap ? ' · <b>İzlenen rakiplerde henüz görünmedi</b>' : ''}<br><small>${escape(market.scope_note)}</small></p>` : ''}<label class="tb-ed-review">Editör kararı <select data-review-id="${escape(item.id)}">${Object.entries(reviewLabels).map(([key, label]) => `<option value="${key}"${review === key ? ' selected' : ''}>${label}</option>`).join('')}</select></label><span class="tb-ed-review-message" aria-live="polite"></span>${item.calibration?.adjustment ? `<p>Benzer yayın performansı: ${item.calibration.adjustment > 0 ? '+' : ''}${escape(item.calibration.adjustment)} uyum puanı · ${escape(item.calibration.matched_samples)} örnek</p>` : ''}${opportunityDetails(item)}${researchDetails(item)}${item.history?.length ? `<details><summary>Konu geçmişi</summary><ul>${item.history.map((event) => `<li>${date(event.occurred_at)} · ${escape(eventLabels[event.event_type] || event.event_type)}${event.event_type === 'lane_changed' ? `: ${escape(labels[event.from_lane] || 'İzle')} → ${escape(labels[event.to_lane] || 'İzle')}` : ''}</li>`).join('')}</ul></details>` : ''}</article>`;
+      <div class="tb-ed-signals">${signals}</div>${market ? `<p class="tb-ed-market">İzlenen rakip yayılımı: <b>${escape(saturationLabels[market.monitored_saturation] || 'bilinmiyor')}</b> · ${escape(market.monitored_competitor_count)} rakip kaynak${market.monitored_competitor_gap ? ' · <b>İzlenen rakiplerde henüz görünmedi</b>' : ''}<br><small>${escape(market.scope_note)}</small></p>` : ''}<label class="tb-ed-review">Editör kararı <select data-review-id="${escape(item.id)}">${Object.entries(reviewLabels).map(([key, label]) => `<option value="${key}"${review === key ? ' selected' : ''}>${label}</option>`).join('')}</select></label><span class="tb-ed-review-message" aria-live="polite"></span>${item.calibration?.adjustment ? `<p>Benzer yayın performansı: ${item.calibration.adjustment > 0 ? '+' : ''}${escape(item.calibration.adjustment)} uyum puanı · ${escape(item.calibration.matched_samples)} örnek</p>` : ''}${opportunityDetails(item)}${researchDetails(item)}${productionDetails(item)}${item.history?.length ? `<details><summary>Konu geçmişi</summary><ul>${item.history.map((event) => `<li>${date(event.occurred_at)} · ${escape(eventLabels[event.event_type] || event.event_type)}${event.event_type === 'lane_changed' ? `: ${escape(labels[event.from_lane] || 'İzle')} → ${escape(labels[event.to_lane] || 'İzle')}` : ''}</li>`).join('')}</ul></details>` : ''}</article>`;
   }
 
   async function load(force = false) {
@@ -75,6 +99,17 @@
   }
 
   root.addEventListener('click', async (event) => {
+    const packageButton = event.target.closest('[data-package-id]');
+    if (packageButton) {
+      const item = cardsById.get(packageButton.getAttribute('data-package-id'));
+      if (!item) return;
+      try {
+        await navigator.clipboard.writeText(packageText(item));
+        packageButton.textContent = 'Kopyalandı';
+        setTimeout(() => { packageButton.textContent = 'Paketi kopyala'; }, 2000);
+      } catch { packageButton.textContent = 'Kopyalanamadı'; }
+      return;
+    }
     const button = event.target.closest('[data-brief-id]');
     if (!button) return;
     const item = cardsById.get(button.getAttribute('data-brief-id'));
@@ -112,6 +147,7 @@
   style.textContent = `.tb-ed-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:18px}.tb-ed-head h2{margin:0 0 6px}.tb-ed-head p{margin:0;color:#64748b}.tb-ed-grid{display:grid;grid-template-columns:repeat(4,minmax(220px,1fr));gap:14px;align-items:start}.tb-ed-lane{background:#f4f7fb;border:1px solid #dbe3ef;border-radius:16px;padding:12px;min-height:180px}.tb-ed-lane>h3{margin:2px 2px 14px;display:flex;justify-content:space-between}.tb-ed-lane small{background:#dce8f8;padding:2px 8px;border-radius:20px}.tb-ed-card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:12px;margin-bottom:10px;box-shadow:0 2px 8px #0f172a0a}.tb-ed-card h3{font-size:15px;line-height:1.35;margin:10px 0}.tb-ed-card a{color:#173c72}.tb-ed-card p{font-size:12px}.tb-ed-top{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:#64748b}.tb-ed-top b{font-size:18px;color:#0f766e}.tb-ed-signals{display:flex;flex-wrap:wrap;gap:5px;margin:10px 0}.tb-ed-signals span{font-size:11px;background:#edf2f7;border-radius:6px;padding:3px 5px}.tb-ed-card details{font-size:12px}.tb-ed-card ul{padding-left:18px}.tb-ed-formats ol,.tb-ed-research ol{padding-left:19px}.tb-ed-formats li,.tb-ed-research li{margin:8px 0}.tb-ed-formats li p{margin:3px 0;color:#475569}.tb-ed-formats small{color:#0f766e}.tb-ed-research span{color:#64748b}@media(max-width:1200px){.tb-ed-grid{grid-template-columns:repeat(2,minmax(220px,1fr))}}@media(max-width:650px){.tb-ed-grid{grid-template-columns:1fr}}`;
   style.textContent += '.tb-ed-review{display:flex;align-items:center;justify-content:space-between;font-size:12px;gap:6px;margin:8px 0}.tb-ed-review select{max-width:140px;padding:4px;border:1px solid #cbd5e1;border-radius:7px;background:#fff}.tb-ed-review-message{font-size:11px;color:#0f766e}';
   style.textContent += '.tb-ed-market{background:#f0fdfa;border-radius:8px;padding:6px;color:#115e59}.tb-ed-market small{color:#64748b}';
+  style.textContent += '.tb-ed-package ol{padding-left:19px}.tb-ed-package li{margin:8px 0}.tb-ed-package li span{color:#64748b}.tb-ed-package p{overflow-wrap:anywhere}';
   document.head.appendChild(style);
   window.addEventListener('tb-spa-tab-change', (event) => {
     if (event.detail?.tab === 'editorial-dashboard' && !loaded) load();
