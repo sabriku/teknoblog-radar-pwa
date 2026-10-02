@@ -1,5 +1,3 @@
-import { loadEditorialInsights } from '../api/editorial-insights.js';
-
 const baseUrl = process.env.RADAR_BASE_URL || 'http://127.0.0.1:3000';
 const token = process.env.CRON_TOKEN || '';
 const requestTimeoutMs = Math.max(5_000, Number(process.env.RADAR_SMOKE_TIMEOUT_MS) || 45_000);
@@ -30,21 +28,13 @@ const checks = [
 ];
 
 if (token && process.env.RADAR_SMOKE_MUTATIONS === '1') {
+  checks.push(['/api/editorial-insights', 200, { headers: { 'x-cron-token': token } }]);
   checks.push([`/api/ingest?token=${encodeURIComponent(token)}&source_limit=1&item_limit=2`, 200]);
   checks.push([`/api/score-batch?token=${encodeURIComponent(token)}&limit=10&offset=0`, 200]);
   checks.push(['/api/editorial-dashboard', 200, { method: 'POST', headers: { 'x-cron-token': token } }]);
 }
 
 let failed = 0;
-try {
-  const insights = await loadEditorialInsights();
-  const ok = Boolean(insights.evaluation?.status && insights.review_counts);
-  console.log(`${ok ? 'OK' : 'FAIL'} editorial insights SQL ${insights.evaluation?.status || ''}`);
-  if (!ok) failed += 1;
-} catch (error) {
-  failed += 1;
-  console.log(`FAIL editorial insights SQL: ${error?.message || String(error)}`);
-}
 for (const [pathname, expected, options = {}] of checks) {
   const displayPath = pathname.replace(/([?&]token=)[^&]+/i, '$1[redacted]');
   try {

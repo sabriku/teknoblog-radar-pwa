@@ -1,6 +1,13 @@
 import { json, queryLocal } from './_lib.js';
 import { readSession } from '../lib/lock.js';
 import { evaluateEditorialDecisions } from '../lib/editorial-evaluation.js';
+import { timingSafeEqual } from 'node:crypto';
+
+function validCronToken(req) {
+  const expected = Buffer.from(String(process.env.CRON_TOKEN || ''));
+  const supplied = Buffer.from(String(req.headers?.['x-cron-token'] || ''));
+  return expected.length > 0 && expected.length === supplied.length && timingSafeEqual(expected, supplied);
+}
 
 export async function loadEditorialInsights() {
   const [events, reviews] = await Promise.all([
@@ -22,7 +29,7 @@ export async function loadEditorialInsights() {
 export default async function handler(req, res) {
   try {
     if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
-    if (!readSession(req)) return json(res, 401, { error: 'Yetkisiz istek' });
+    if (!readSession(req) && !validCronToken(req)) return json(res, 401, { error: 'Yetkisiz istek' });
     return json(res, 200, await loadEditorialInsights());
   } catch (error) {
     return json(res, 500, { error: error?.message || String(error) });
