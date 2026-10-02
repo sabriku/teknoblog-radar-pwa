@@ -1,3 +1,5 @@
+import { loadEditorialInsights } from '../api/editorial-insights.js';
+
 const baseUrl = process.env.RADAR_BASE_URL || 'http://127.0.0.1:3000';
 const token = process.env.CRON_TOKEN || '';
 const requestTimeoutMs = Math.max(5_000, Number(process.env.RADAR_SMOKE_TIMEOUT_MS) || 45_000);
@@ -34,6 +36,15 @@ if (token && process.env.RADAR_SMOKE_MUTATIONS === '1') {
 }
 
 let failed = 0;
+try {
+  const insights = await loadEditorialInsights();
+  const ok = Boolean(insights.evaluation?.status && insights.review_counts);
+  console.log(`${ok ? 'OK' : 'FAIL'} editorial insights SQL ${insights.evaluation?.status || ''}`);
+  if (!ok) failed += 1;
+} catch (error) {
+  failed += 1;
+  console.log(`FAIL editorial insights SQL: ${error?.message || String(error)}`);
+}
 for (const [pathname, expected, options = {}] of checks) {
   const displayPath = pathname.replace(/([?&]token=)[^&]+/i, '$1[redacted]');
   try {
