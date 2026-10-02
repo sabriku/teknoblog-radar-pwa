@@ -78,16 +78,19 @@
   async function load(force = false) {
     root.innerHTML = '<p>Güncel karar kuyrukları yükleniyor…</p>';
     try {
-      const [response, reviewResponse] = await Promise.all([
+      const [response, reviewResponse, insightsResponse] = await Promise.all([
         fetch(`/api/editorial-dashboard${force ? '?refresh=1' : ''}`, { cache: 'no-store' }),
-        fetch('/api/editorial-review', { cache: 'no-store', credentials: 'same-origin' }).catch(() => null)
+        fetch('/api/editorial-review', { cache: 'no-store', credentials: 'same-origin' }).catch(() => null),
+        fetch('/api/editorial-insights', { cache: 'no-store', credentials: 'same-origin' }).catch(() => null)
       ]);
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
       const reviewData = reviewResponse?.ok ? await reviewResponse.json() : {};
+      const insightsData = insightsResponse?.ok ? await insightsResponse.json() : {};
       reviewsById = new Map((reviewData.reviews || []).map((review) => [review.story_id, review]));
       cardsById = new Map(Object.values(data.lanes || {}).flat().map((item) => [item.id, item]));
       root.innerHTML = `<div class="tb-ed-head"><div><h2>Editoryal Akış</h2><p>Son 72 saatin haberleri; altı sinyalle puanlanır. ${data.model?.performance_status === 'active' ? `${escape(data.model.performance_samples)} geçmiş yayın örneği uyum puanına sınırlı katkı verir.` : 'Geçmiş performans için yeterli örnek bulunmadığında temel puan kullanılır.'} Karar önerileri editör kontrolü gerektirir.</p></div><button type="button" id="tb-ed-reload" class="tb-small-btn">Yenile</button></div>
+        ${insightsData.evaluation ? `<p class="tb-ed-insights">Karar ölçümü: ${insightsData.evaluation.status === 'active' ? `Yüksek puanlı ${escape(insightsData.evaluation.high_priority.decisions)} konunun %${escape(insightsData.evaluation.high_priority.publication_rate)} kadarı yayımlandı; diğer ${escape(insightsData.evaluation.other.decisions)} konunun %${escape(insightsData.evaluation.other.publication_rate)} kadarı yayımlandı.` : `${escape(insightsData.evaluation.sample_count)} olgunlaşmış karar kaydı var; karşılaştırma için veri birikiyor.`} ${escape(insightsData.evaluation.note)}</p>` : ''}
         ${data.warning ? `<p role="status">${escape(data.warning)}</p>` : ''}
         <div class="tb-ed-grid">${Object.entries(labels).map(([key, label]) => `<section class="tb-ed-lane"><h3>${label} <small>${escape(data.counts?.[key] || 0)}</small></h3>${(data.lanes?.[key] || []).slice(0, 20).map(card).join('') || '<p>Şu anda öneri yok.</p>'}</section>`).join('')}</div>`;
       root.querySelector('#tb-ed-reload')?.addEventListener('click', () => load(true));
@@ -148,6 +151,7 @@
   style.textContent += '.tb-ed-review{display:flex;align-items:center;justify-content:space-between;font-size:12px;gap:6px;margin:8px 0}.tb-ed-review select{max-width:140px;padding:4px;border:1px solid #cbd5e1;border-radius:7px;background:#fff}.tb-ed-review-message{font-size:11px;color:#0f766e}';
   style.textContent += '.tb-ed-market{background:#f0fdfa;border-radius:8px;padding:6px;color:#115e59}.tb-ed-market small{color:#64748b}';
   style.textContent += '.tb-ed-package ol{padding-left:19px}.tb-ed-package li{margin:8px 0}.tb-ed-package li span{color:#64748b}.tb-ed-package p{overflow-wrap:anywhere}';
+  style.textContent += '.tb-ed-insights{font-size:12px;color:#475569;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:9px;margin:0 0 14px}';
   document.head.appendChild(style);
   window.addEventListener('tb-spa-tab-change', (event) => {
     if (event.detail?.tab === 'editorial-dashboard' && !loaded) load();
