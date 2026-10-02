@@ -14,6 +14,8 @@
   let loaded = false;
   let cardsById = new Map();
   let reviewsById = new Map();
+  let aiDraftsById = new Map();
+  let aiConfigured = false;
 
   function opportunityDetails(item) {
     const formats = item.content_opportunities || [];
@@ -63,7 +65,26 @@
       <p><strong>Slug:</strong> ${escape(packet.slug_draft)}</p><p><strong>Meta:</strong> ${escape(packet.meta_description_draft)}</p>
       <p><strong>Sosyal:</strong> ${escape(packet.social_draft)}</p>
       <p><strong>Görsel:</strong> ${packet.image ? `<a href="${safeUrl(packet.image.url)}" target="_blank" rel="noopener noreferrer">Kaynağı aç</a> · kullanım hakkı doğrulanmadı` : 'Kaynak görseli yok'}</p>
-      <button type="button" class="tb-small-btn" data-package-id="${escape(item.id)}">Paketi kopyala</button></details>`;
+      <button type="button" class="tb-small-btn" data-package-id="${escape(item.id)}">Paketi kopyala</button>${aiConfigured ? ` <button type="button" class="tb-small-btn" data-ai-id="${escape(item.id)}">Türkçe AI taslağı hazırla</button><div class="tb-ed-ai-result" aria-live="polite"></div>` : ''}</details>`;
+  }
+
+  function aiText(result) {
+    const draft = result.draft;
+    return [`Konu: ${cardsById.get(result.story_id)?.title || ''}`, 'Durum: Editör doğrulaması gerekli',
+      '', 'Discover başlıkları:', ...draft.discover_titles.map((title, index) => `${index + 1}. ${title}`),
+      '', `SEO başlığı: ${draft.seo_title}`, `Giriş taslağı: ${draft.intro_draft}`,
+      `Slug: ${draft.slug}`, `Meta açıklama: ${draft.meta_description}`, `Sosyal metin: ${draft.social_text}`,
+      `Doğrulama notu: ${draft.verification_note}`, '', 'Kaynaklar:',
+      ...(result.sources || []).map((source) => `- ${source.name}: ${source.url}`)].join('\n');
+  }
+
+  function aiResultHtml(result) {
+    const draft = result.draft;
+    return `<p><strong>AI taslağı · editör doğrulaması gerekli</strong></p><ol>${draft.discover_titles.map((title) => `<li>${escape(title)}</li>`).join('')}</ol>
+      <p><strong>SEO:</strong> ${escape(draft.seo_title)}</p><p><strong>Giriş:</strong> ${escape(draft.intro_draft)}</p>
+      <p><strong>Slug:</strong> ${escape(draft.slug)}</p><p><strong>Meta:</strong> ${escape(draft.meta_description)}</p>
+      <p><strong>Sosyal:</strong> ${escape(draft.social_text)}</p><p><strong>Doğrulama:</strong> ${escape(draft.verification_note)}</p>
+      <button type="button" class="tb-small-btn" data-ai-copy="${escape(result.story_id)}">AI taslağını kopyala</button>`;
   }
 
   function card(item) {
@@ -79,15 +100,17 @@
   async function load(force = false) {
     root.innerHTML = '<p>Güncel karar kuyrukları yükleniyor…</p>';
     try {
-      const [response, reviewResponse, insightsResponse] = await Promise.all([
+      const [response, reviewResponse, insightsResponse, aiResponse] = await Promise.all([
         fetch(`/api/editorial-dashboard${force ? '?refresh=1' : ''}`, { cache: 'no-store' }),
         fetch('/api/editorial-review', { cache: 'no-store', credentials: 'same-origin' }).catch(() => null),
-        fetch('/api/editorial-insights', { cache: 'no-store', credentials: 'same-origin' }).catch(() => null)
+        fetch('/api/editorial-insights', { cache: 'no-store', credentials: 'same-origin' }).catch(() => null),
+        fetch('/api/editorial-ai', { cache: 'no-store', credentials: 'same-origin' }).catch(() => null)
       ]);
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
       const reviewData = reviewResponse?.ok ? await reviewResponse.json() : {};
       const insightsData = insightsResponse?.ok ? await insightsResponse.json() : {};
+      aiConfigured = aiResponse?.ok ? Boolean((await aiResponse.json()).configured) : false;
       reviewsById = new Map((reviewData.reviews || []).map((review) => [review.story_id, review]));
       cardsById = new Map(Object.values(data.lanes || {}).flat().map((item) => [item.id, item]));
       root.innerHTML = `<div class="tb-ed-head"><div><h2>Editoryal Akış</h2><p>Son 72 saatin haberleri; altı sinyalle puanlanır. ${data.model?.performance_status === 'active' ? `${escape(data.model.performance_samples)} geçmiş yayın örneği uyum puanına sınırlı katkı verir.` : 'Geçmiş performans için yeterli örnek bulunmadığında temel puan kullanılır.'} Karar önerileri editör kontrolü gerektirir.</p></div><button type="button" id="tb-ed-reload" class="tb-small-btn">Yenile</button></div>
@@ -104,6 +127,31 @@
   }
 
   root.addEventListener('click', async (event) => {
+    const aiCopy = event.target.closest('[data-ai-copy]');
+    if (aiCopy) {
+      const result = aiDraftsById.get(aiCopy.getAttribute('data-ai-copy'));
+      if (!result) return;
+      try { await navigator.clipboard.writeText(aiText(result)); aiCopy.textContent = 'Kopyalandı'; }
+      catch { aiCopy.textContent = 'Kopyalanamadı'; }
+      return;
+    }
+    const aiButton = event.target.closest('[data-ai-id]');
+    if (aiButton) {
+      const storyId = aiButton.getAttribute('data-ai-id');
+      const target = aiButton.closest('.tb-ed-package')?.querySelector('.tb-ed-ai-result');
+      aiButton.disabled = true;
+      if (target) target.textContent = 'Türkçe taslak hazırlanıyor…';
+      try {
+        const response = await fetch('/api/editorial-ai', { method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ story_id: storyId }) });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+        aiDraftsById.set(storyId, result);
+        if (target) target.innerHTML = aiResultHtml(result);
+      } catch (error) { if (target) target.textContent = `Taslak hazırlanamadı: ${error.message || error}`; }
+      finally { aiButton.disabled = false; }
+      return;
+    }
     const packageButton = event.target.closest('[data-package-id]');
     if (packageButton) {
       const item = cardsById.get(packageButton.getAttribute('data-package-id'));
@@ -154,6 +202,7 @@
   style.textContent += '.tb-ed-market{background:#f0fdfa;border-radius:8px;padding:6px;color:#115e59}.tb-ed-market small{color:#64748b}';
   style.textContent += '.tb-ed-package ol{padding-left:19px}.tb-ed-package li{margin:8px 0}.tb-ed-package li span{color:#64748b}.tb-ed-package p{overflow-wrap:anywhere}';
   style.textContent += '.tb-ed-insights{font-size:12px;color:#475569;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:9px;margin:0 0 14px}';
+  style.textContent += '.tb-ed-ai-result{margin-top:10px;padding-top:8px;border-top:1px solid #cbd5e1}.tb-ed-ai-result p{overflow-wrap:anywhere}';
   document.head.appendChild(style);
   window.addEventListener('tb-spa-tab-change', (event) => {
     if (event.detail?.tab === 'editorial-dashboard' && !loaded) load();
