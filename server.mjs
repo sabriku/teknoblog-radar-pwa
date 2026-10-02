@@ -21,6 +21,7 @@ const API_ROUTES = {
   '/api/editorial-dashboard': './api/editorial-dashboard.js',
   '/api/editorial-ai': './api/editorial-ai.js',
   '/api/editorial-insights': './api/editorial-insights.js',
+  '/api/editorial-origin': './api/editorial-origin.js',
   '/api/editorial-review': './api/editorial-review.js',
   '/api/google-news-tech': './api/google-news-tech.js',
   '/api/google-auth': './api/google-auth.js',

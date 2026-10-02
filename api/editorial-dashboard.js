@@ -25,7 +25,7 @@ export default async function handler(req, res) {
     }
     const [items, publications, performance] = await Promise.all([
       queryLocal(`SELECT r.id,r.source_id,r.source_name,r.title,r.url,r.summary,r.image_url,r.published_at,r.created_at,
-          s.source_type,s.market_relevance,s.trust_score,h.quality_score AS health_quality_score,
+          s.source_type,s.site_url,s.market_relevance,s.trust_score,h.quality_score AS health_quality_score,
           c.discover_score,c.editorial_score,c.content_type_hint
         FROM raw_feed_items r
         LEFT JOIN sources s ON s.id=r.source_id
