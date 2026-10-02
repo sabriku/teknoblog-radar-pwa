@@ -41,7 +41,8 @@
       <p>Listelenen ${escape(research.source_count)} kaynak; ${escape(research.official_source_count)} resmî kaynak kaydı. Başlıklar kaynakların iddiasını gösterir.</p>
       <ol>${research.sources.map((source) => `<li><span>${date(source.published_at)} · ${escape(source.name)}${source.type === 'official' ? ' · resmî kaynak' : ''}</span><br><a href="${safeUrl(source.url)}" target="_blank" rel="noopener noreferrer">${escape(source.title)}</a></li>`).join('')}</ol>
       ${(research.possible_discrepancies || []).map((difference) => `<p><strong>Rakam kontrolü (${escape(difference.unit)}):</strong> ${difference.mentions.map((mention) => `${escape(mention.source_name)} ${escape(mention.value)}`).join(' · ')}. Farklı model veya sürüm olabilir.</p>`).join('')}
-      <strong>Doğrulanacaklar</strong><ul>${research.checks.map((check) => `<li>${escape(check)}</li>`).join('')}</ul></details>`;
+      <strong>Doğrulanacaklar</strong><ul>${research.checks.map((check) => `<li>${escape(check)}</li>`).join('')}</ul>
+      <button type="button" class="tb-small-btn" data-origin-id="${escape(item.id)}">İlk kaynak bağlantılarını ara</button><div class="tb-ed-origin-result" aria-live="polite"></div></details>`;
   }
 
   function packageText(item) {
@@ -127,6 +128,24 @@
   }
 
   root.addEventListener('click', async (event) => {
+    const originButton = event.target.closest('[data-origin-id]');
+    if (originButton) {
+      const storyId = originButton.getAttribute('data-origin-id');
+      const target = originButton.closest('.tb-ed-research')?.querySelector('.tb-ed-origin-result');
+      originButton.disabled = true;
+      if (target) target.textContent = 'Kaynak bağlantıları taranıyor…';
+      try {
+        const response = await fetch('/api/editorial-origin', { method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ story_id: storyId }) });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+        if (target) target.innerHTML = `<p>${escape(result.note)}</p>${result.candidates.length
+          ? `<ul>${result.candidates.map((candidate) => `<li><a href="${safeUrl(candidate.url)}" target="_blank" rel="noopener noreferrer">${escape(candidate.official_name)}</a> · ${escape(candidate.anchor_text || 'Bağlantı')}${candidate.status === 'monitored_official_source' ? ' · izlenen resmî kaynak' : ' · haber sayfasından bağlantı'}</li>`).join('')}</ul>`
+          : '<p>İzlenen resmî alan adlarına bağlantı bulunamadı.</p>'}`;
+      } catch (error) { if (target) target.textContent = `Kaynak taranamadı: ${error.message || error}`; }
+      finally { originButton.disabled = false; }
+      return;
+    }
     const aiCopy = event.target.closest('[data-ai-copy]');
     if (aiCopy) {
       const result = aiDraftsById.get(aiCopy.getAttribute('data-ai-copy'));
@@ -203,6 +222,7 @@
   style.textContent += '.tb-ed-package ol{padding-left:19px}.tb-ed-package li{margin:8px 0}.tb-ed-package li span{color:#64748b}.tb-ed-package p{overflow-wrap:anywhere}';
   style.textContent += '.tb-ed-insights{font-size:12px;color:#475569;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:9px;margin:0 0 14px}';
   style.textContent += '.tb-ed-ai-result{margin-top:10px;padding-top:8px;border-top:1px solid #cbd5e1}.tb-ed-ai-result p{overflow-wrap:anywhere}';
+  style.textContent += '.tb-ed-origin-result{margin-top:8px}.tb-ed-origin-result li{overflow-wrap:anywhere}';
   document.head.appendChild(style);
   window.addEventListener('tb-spa-tab-change', (event) => {
     if (event.detail?.tab === 'editorial-dashboard' && !loaded) load();
