@@ -497,6 +497,33 @@ CREATE TABLE IF NOT EXISTS cluster_lifecycle_events (
   UNIQUE(cluster_key,event_type,to_stage,occurred_at)
 );
 
+-- Editorial dashboard observations are separate from the existing intelligence
+-- clusters, so both models can evolve without changing each other's history.
+CREATE TABLE IF NOT EXISTS editorial_story_clusters (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  url TEXT NOT NULL,
+  first_seen_at TIMESTAMPTZ NOT NULL,
+  last_seen_at TIMESTAMPTZ NOT NULL,
+  first_recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  lane TEXT NOT NULL DEFAULT 'watch',
+  score INTEGER NOT NULL DEFAULT 0,
+  source_count INTEGER NOT NULL DEFAULT 1,
+  payload JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE TABLE IF NOT EXISTS editorial_story_events (
+  id BIGSERIAL PRIMARY KEY,
+  story_id TEXT NOT NULL REFERENCES editorial_story_clusters(id) ON DELETE CASCADE,
+  event_type TEXT NOT NULL,
+  from_lane TEXT,
+  to_lane TEXT NOT NULL,
+  source_count INTEGER NOT NULL,
+  occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  payload JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+
 CREATE TABLE IF NOT EXISTS source_leadership_stats (
   source_id TEXT NOT NULL,
   source_name TEXT NOT NULL,
@@ -644,6 +671,9 @@ CREATE INDEX IF NOT EXISTS idx_content_clusters_early ON content_clusters(owned_
 CREATE INDEX IF NOT EXISTS idx_content_clusters_lifecycle ON content_clusters(lifecycle_stage,opportunity_expires_at,first_mover_score DESC);
 CREATE INDEX IF NOT EXISTS idx_cluster_events_key ON cluster_lifecycle_events(cluster_key,occurred_at DESC);
 CREATE INDEX IF NOT EXISTS idx_cluster_events_type ON cluster_lifecycle_events(event_type,occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_editorial_stories_recorded ON editorial_story_clusters(last_recorded_at DESC);
+CREATE INDEX IF NOT EXISTS idx_editorial_stories_lane ON editorial_story_clusters(lane,score DESC,last_seen_at DESC);
+CREATE INDEX IF NOT EXISTS idx_editorial_events_story_time ON editorial_story_events(story_id,occurred_at DESC);
 CREATE INDEX IF NOT EXISTS idx_source_leadership_score ON source_leadership_stats(leadership_score DESC,updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_watchlists_active ON radar_watchlists(is_active,updated_at DESC);
 

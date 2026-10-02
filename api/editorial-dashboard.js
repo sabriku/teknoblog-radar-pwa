@@ -1,13 +1,26 @@
+import { timingSafeEqual } from 'node:crypto';
 import { json, queryLocal } from './_lib.js';
 import { buildEditorialDashboard } from '../lib/editorial-decision.js';
+import { attachStoryHistory, saveEditorialSnapshot } from '../lib/editorial-story-store.js';
 
 let cached = null;
 let cachedAt = 0;
 
 export default async function handler(req, res) {
   try {
-    if (req.method && req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
-    if (cached && Date.now() - cachedAt < 120000 && req.query?.refresh !== '1') {
+    const method = req.method || 'GET';
+    if (!['GET', 'POST'].includes(method)) return json(res, 405, { error: 'Method not allowed' });
+    const snapshot = method === 'POST';
+    if (snapshot) {
+      const expected = String(process.env.CRON_TOKEN || '');
+      const provided = String(req.headers?.['x-cron-token'] || req.query?.token || '');
+      const suppliedBytes = Buffer.from(provided);
+      const expectedBytes = Buffer.from(expected);
+      if (!expected || suppliedBytes.length !== expectedBytes.length || !timingSafeEqual(suppliedBytes, expectedBytes)) {
+        return json(res, 401, { error: 'Yetkisiz istek' });
+      }
+    }
+    if (!snapshot && cached && Date.now() - cachedAt < 120000 && req.query?.refresh !== '1') {
       return json(res, 200, { ...cached, cache: 'fresh' });
     }
     const [items, publications, performance] = await Promise.all([
@@ -32,12 +45,15 @@ export default async function handler(req, res) {
           AND (discover_clicks>0 OR ga4_views>0)
         ORDER BY published_at DESC LIMIT 800`)
     ]);
-    const result = buildEditorialDashboard(items.rows, publications.rows, Date.now(), performance.rows);
-    cached = { ...result, generated_at: new Date().toISOString(), data_window_hours: 72, cache: 'miss' };
+    const { observed_cards: observedCards, ...result } = buildEditorialDashboard(items.rows, publications.rows, Date.now(), performance.rows);
+    const storage = snapshot ? await saveEditorialSnapshot(observedCards) : null;
+    const history = await attachStoryHistory(result.lanes);
+    cached = { ...result, lanes: history.lanes, recorded_count: history.recorded_count,
+      ...(storage ? { snapshot: storage } : {}), generated_at: new Date().toISOString(), data_window_hours: 72, cache: 'miss' };
     cachedAt = Date.now();
     return json(res, 200, cached);
   } catch (error) {
-    if (cached && Date.now() - cachedAt < 20 * 60000) {
+    if (req.method !== 'POST' && cached && Date.now() - cachedAt < 20 * 60000) {
       return json(res, 200, { ...cached, cache: 'stale', warning: error?.message || String(error) });
     }
     return json(res, 500, { error: error?.message || String(error) });

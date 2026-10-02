@@ -114,6 +114,22 @@ export async function queryLocal(text, params = []) {
   return db().query(text, params);
 }
 
+export async function withLocalTransaction(work) {
+  await initializeDatabase();
+  const client = await db().connect();
+  try {
+    await client.query('BEGIN');
+    const result = await work((text, params = []) => client.query(text, params));
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export function databaseStatus() {
   return {
     configured: Boolean(databaseUrl()),

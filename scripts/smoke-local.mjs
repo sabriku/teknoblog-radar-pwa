@@ -30,14 +30,16 @@ const checks = [
 if (token && process.env.RADAR_SMOKE_MUTATIONS === '1') {
   checks.push([`/api/ingest?token=${encodeURIComponent(token)}&source_limit=1&item_limit=2`, 200]);
   checks.push([`/api/score-batch?token=${encodeURIComponent(token)}&limit=10&offset=0`, 200]);
+  checks.push(['/api/editorial-dashboard', 200, { method: 'POST', headers: { 'x-cron-token': token } }]);
 }
 
 let failed = 0;
-for (const [pathname, expected] of checks) {
+for (const [pathname, expected, options = {}] of checks) {
   const displayPath = pathname.replace(/([?&]token=)[^&]+/i, '$1[redacted]');
   try {
     const response = await fetch(`${baseUrl}${pathname}`, {
-      headers: { accept: 'application/json' },
+      ...options,
+      headers: { accept: 'application/json', ...(options.headers || {}) },
       signal: AbortSignal.timeout(requestTimeoutMs)
     });
     const text = await response.text();

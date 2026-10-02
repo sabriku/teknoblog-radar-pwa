@@ -60,9 +60,14 @@ try {
   try { scoreData = JSON.parse(scoreText); } catch {}
   if (!scoreResponse.ok) throw new Error(scoreData?.error || scoreText || `Score HTTP ${scoreResponse.status}`);
   if (scoreData.errors?.length || scoreData.stopped_early) throw new Error(`Score batch incomplete: ${(scoreData.errors || []).join('; ') || 'time budget reached'}`);
+  const snapshotResponse = await fetch(`${baseUrl}/api/editorial-dashboard`, {
+    method: 'POST', headers: { 'x-cron-token': token }, signal: controller.signal
+  });
+  const snapshotData = await snapshotResponse.json().catch(() => ({}));
+  if (!snapshotResponse.ok) throw new Error(snapshotData.error || `Editorial snapshot HTTP ${snapshotResponse.status}`);
   await queryLocal(`UPDATE pipeline_runs SET status='completed',finished_at=NOW(),ingested_count=$2,processed_count=$3,notes=$4 WHERE id=$1`,
-    [runId, ingest.reduce((sum, batch) => sum + batch.ingested, 0), Number(scoreData.processed || 0), JSON.stringify({ quarter_slot: quarterSlot, batches: ingest.length })]);
-  console.log(JSON.stringify({ mode: 'incremental', quarter_slot: quarterSlot, ingest, processed: Number(scoreData.processed || 0) }));
+    [runId, ingest.reduce((sum, batch) => sum + batch.ingested, 0), Number(scoreData.processed || 0), JSON.stringify({ quarter_slot: quarterSlot, batches: ingest.length, story_snapshot: snapshotData.snapshot })]);
+  console.log(JSON.stringify({ mode: 'incremental', quarter_slot: quarterSlot, ingest, processed: Number(scoreData.processed || 0), story_snapshot: snapshotData.snapshot }));
   const minute = new Date().getUTCMinutes();
   const followupActions = ['run_alerts', 'sync_teknoblog'];
   if (minute % 15 < 5) followupActions.push('reconcile_queue_publications');

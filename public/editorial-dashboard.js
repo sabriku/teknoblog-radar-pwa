@@ -3,6 +3,7 @@
   if (!root) return;
   const labels = { write_now: 'Şimdi Yaz', rising: 'Yükseliyor', update: 'Güncelle', produce: 'Üret' };
   const signalLabels = { freshness: 'Güncellik', discover: 'Discover', turkey_interest: 'Türkiye', source_quality: 'Kaynak', spread_velocity: 'Yayılma', teknoblog_fit: 'Uyum' };
+  const eventLabels = { detected: 'İlk kez görüldü', corroborated: 'İkinci kaynak doğruladı', lane_changed: 'Karar kuyruğu değişti' };
   const escape = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
   const safeUrl = (value) => /^https?:\/\//i.test(String(value || '')) ? escape(value) : '#';
   const date = (value) => value ? new Intl.DateTimeFormat('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' }).format(new Date(value)) : '—';
@@ -13,7 +14,7 @@
     return `<article class="tb-ed-card"><div class="tb-ed-top"><b>${escape(item.score)}</b><span>${escape(item.source_count)} kaynak · ${date(item.last_seen_at)}</span></div>
       <h3><a href="${safeUrl(item.url)}" target="_blank" rel="noopener noreferrer">${escape(item.title)}</a></h3>
       ${item.published_match ? `<p>Teknoblog: <a href="${safeUrl(item.published_match.url)}" target="_blank" rel="noopener noreferrer">${escape(item.published_match.title)}</a></p>` : ''}
-      <div class="tb-ed-signals">${signals}</div>${item.calibration?.adjustment ? `<p>Benzer yayın performansı: ${item.calibration.adjustment > 0 ? '+' : ''}${escape(item.calibration.adjustment)} uyum puanı · ${escape(item.calibration.matched_samples)} örnek</p>` : ''}<details><summary>Kaynakları gör</summary><ul>${(item.sources || []).map((source) => `<li><a href="${safeUrl(source.url)}" target="_blank" rel="noopener noreferrer">${escape(source.name || 'Kaynak')}</a> · ${date(source.published_at)}</li>`).join('')}</ul></details></article>`;
+      <div class="tb-ed-signals">${signals}</div>${item.calibration?.adjustment ? `<p>Benzer yayın performansı: ${item.calibration.adjustment > 0 ? '+' : ''}${escape(item.calibration.adjustment)} uyum puanı · ${escape(item.calibration.matched_samples)} örnek</p>` : ''}<details><summary>Kaynakları gör</summary><ul>${(item.sources || []).map((source) => `<li><a href="${safeUrl(source.url)}" target="_blank" rel="noopener noreferrer">${escape(source.name || 'Kaynak')}</a> · ${date(source.published_at)}</li>`).join('')}</ul></details>${item.history?.length ? `<details><summary>Konu geçmişi</summary><ul>${item.history.map((event) => `<li>${date(event.occurred_at)} · ${escape(eventLabels[event.event_type] || event.event_type)}${event.event_type === 'lane_changed' ? `: ${escape(labels[event.from_lane] || 'İzle')} → ${escape(labels[event.to_lane] || 'İzle')}` : ''}</li>`).join('')}</ul></details>` : ''}</article>`;
   }
 
   async function load(force = false) {
