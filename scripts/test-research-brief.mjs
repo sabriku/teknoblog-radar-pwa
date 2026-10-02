@@ -23,6 +23,17 @@ assert.ok(single.checks.some((check) => check.includes('resmî')));
 assert.ok(single.checks.some((check) => check.includes('ikinci')));
 assert.equal(buildResearchBrief({ sources: [first, { ...first, url: 'javascript:alert(1)' }] }).source_count, 1,
   'güvensiz URL araştırma bağlantısına girmemeli');
+const discrepant = buildResearchBrief({ sources: [
+  { ...first, title: 'Telefon 7000 mAh pil ile geliyor' },
+  { ...official, title: 'Telefon 6800 mAh pil ile geliyor' }
+] });
+assert.equal(discrepant.possible_discrepancies[0].unit, 'mah');
+assert.deepEqual(discrepant.possible_discrepancies[0].mentions.map((item) => item.value), [7000, 6800]);
+assert.ok(discrepant.checks.some((check) => check.includes('farklı rakamların')));
+assert.equal(buildResearchBrief({ sources: [
+  { ...first, title: 'Telefon 6 GB ve 8 GB seçenekleri' },
+  { ...official, title: 'Telefon 8 GB seçenekleri' }
+] }).possible_discrepancies.length, 0, 'tek başlıkta birden fazla konfigürasyon varsa uyarı verme');
 
 const now = Date.parse('2026-10-03T11:00:00Z');
 const row = { id: '1', source_id: 'official', source_name: 'Üretici', source_type: 'official',
