@@ -3,7 +3,7 @@
   if (!root) return;
   const labels = { write_now: 'Şimdi Yaz', rising: 'Yükseliyor', update: 'Güncelle', produce: 'Üret' };
   const signalLabels = { freshness: 'Güncellik', discover: 'Discover', turkey_interest: 'Türkiye', source_quality: 'Kaynak', spread_velocity: 'Yayılma', teknoblog_fit: 'Uyum' };
-  const eventLabels = { detected: 'İlk kez görüldü', corroborated: 'İkinci kaynak doğruladı', lane_changed: 'Karar kuyruğu değişti' };
+  const eventLabels = { detected: 'İlk kez görüldü', corroborated: 'İkinci akış kaynağı görüldü', lane_changed: 'Karar kuyruğu değişti', official_source_seen: 'Resmî kaynak akışa eklendi', second_wave: 'Yeni yayılma dalgası' };
   const researchLabels = { official_source_seen: 'Akışta resmî kaynak var', multiple_sources: 'Birden fazla akış kaynağı var', single_source: 'Tek akış kaynağı var' };
   const reviewLabels = { unreviewed: 'İncelenmedi', researching: 'Araştırılıyor', ready: 'Yayına hazır', hold: 'Beklet' };
   const saturationLabels = { low: 'düşük', medium: 'orta', high: 'yüksek' };
