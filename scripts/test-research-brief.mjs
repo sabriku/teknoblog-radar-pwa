@@ -41,7 +41,7 @@ const row = { id: '1', source_id: 'official', source_name: 'Üretici', source_ty
   created_at: official.published_at, trust_score: 80, health_quality_score: 80,
   market_relevance: 'mixed', discover_score: 75, editorial_score: 75 };
 const dashboard = buildEditorialDashboard([row], [], now);
-assert.equal(dashboard.model.version, 'editorial_v5');
+assert.equal(dashboard.model.version, 'editorial_v6');
 assert.equal(dashboard.observed_cards[0].research.status, 'official_source_seen');
 assert.equal(dashboard.observed_cards[0].research.sources[0].title, official.title);
 console.log('research brief tests passed');
