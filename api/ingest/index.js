@@ -102,7 +102,7 @@ export default async function handler(req, res) {
       return json(res, 401, { error: 'Yetkisiz istek' });
     }
 
-    const sourceLimit = Math.min(toPositiveInt(req.query?.source_limit, 4), 8);
+    const sourceLimit = Math.min(toPositiveInt(req.query?.source_limit, 4), 24);
     const sourceOffset = toPositiveInt(req.query?.source_offset, 0);
     const itemLimit = Math.min(toPositiveInt(req.query?.item_limit, 10), 20);
     const startedAt = Date.now();
@@ -127,6 +127,8 @@ export default async function handler(req, res) {
     let updated = 0;
     const debug = [];
     let processed_sources = 0;
+    let attempted_sources = 0;
+    let database_errors = 0;
 
     for (const source of sources || []) {
       const sourceStartedAt = Date.now();
@@ -134,6 +136,7 @@ export default async function handler(req, res) {
         debug.push({ source: source.name, status: 'stopped', reason: 'Time budget reached' });
         break;
       }
+      attempted_sources += 1;
 
       const feedUrl = chooseFeedUrl(source);
 
@@ -283,6 +286,7 @@ export default async function handler(req, res) {
           error: sampleError || ''
         });
         const databaseOk = insertErrors === 0 && updateErrors === 0 && selectErrors === 0;
+        database_errors += insertErrors + updateErrors + selectErrors;
         await recordSourceHealth(source, {
           ok: databaseOk,
           error: databaseOk ? '' : sampleError || 'database_error',
@@ -305,15 +309,18 @@ export default async function handler(req, res) {
       }
     }
 
-    return json(res, 200, {
-      ok: true,
+    return json(res, database_errors ? 500 : 200, {
+      ok: database_errors === 0,
       ingested,
       updated,
       processed_sources,
+      attempted_sources,
+      database_errors,
       source_limit: sourceLimit,
       source_offset: sourceOffset,
       source_type: competitorOnly ? 'competitor' : 'all',
-      has_more: sortedSources.length > sourceOffset + sourceLimit,
+      next_source_offset: sourceOffset + attempted_sources,
+      has_more: sortedSources.length > sourceOffset + attempted_sources,
       item_limit: itemLimit,
       debug,
       finished_at: nowIso()

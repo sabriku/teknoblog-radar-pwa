@@ -1,3 +1,6 @@
+import { randomUUID } from 'node:crypto';
+import { queryLocal } from '../api/_lib.js';
+
 const baseUrl = process.env.RADAR_BASE_URL || 'http://127.0.0.1:3000';
 const token = process.env.CRON_TOKEN || '';
 
@@ -5,8 +8,23 @@ if (!token) throw new Error('CRON_TOKEN tanımlı değil.');
 
 const controller = new AbortController();
 const timer = setTimeout(() => controller.abort(), 8 * 60 * 1000);
+const ownerId = randomUUID();
+let runId = null;
+let acquired = false;
 
 try {
+  const lease = await queryLocal(`INSERT INTO pipeline_job_leases(job_name,owner_id,expires_at)
+    VALUES('scheduled_refresh',$1,NOW()+INTERVAL '10 minutes')
+    ON CONFLICT(job_name) DO UPDATE SET owner_id=EXCLUDED.owner_id,acquired_at=NOW(),expires_at=EXCLUDED.expires_at
+    WHERE pipeline_job_leases.expires_at<NOW() RETURNING owner_id`, [ownerId]);
+  if (!lease.rowCount) {
+    console.log(JSON.stringify({ mode: 'incremental', skipped: 'refresh_already_running' }));
+    process.exitCode = 0;
+  } else {
+    acquired = true;
+    const run = await queryLocal(`INSERT INTO pipeline_runs(status,job_kind,run_key)
+      VALUES('running','scheduled_refresh',$1) RETURNING id`, [ownerId]);
+    runId = run.rows[0].id;
   // Keep high-priority sources fresh without rescanning the entire catalogue
   // every few minutes. The remaining sources rotate through four quarter-hour
   // slots, so all sources are covered within an hour.
@@ -17,14 +35,22 @@ try {
   ];
   const ingest = [];
   for (const window of ingestWindows) {
-    const response = await fetch(`${baseUrl}/api/ingest?token=${encodeURIComponent(token)}&source_limit=${window.source_limit}&source_offset=${window.source_offset}&item_limit=24`, {
-      cache: 'no-store', signal: controller.signal
-    });
-    const text = await response.text();
-    let data = {};
-    try { data = JSON.parse(text); } catch {}
-    if (!response.ok) throw new Error(data?.error || text || `Ingest HTTP ${response.status}`);
-    ingest.push({ ...window, ingested: Number(data.ingested || 0), updated: Number(data.updated || 0) });
+    let offset = window.source_offset;
+    const end = offset + window.source_limit;
+    while (offset < end) {
+      const response = await fetch(`${baseUrl}/api/ingest?token=${encodeURIComponent(token)}&source_limit=${end - offset}&source_offset=${offset}&item_limit=24`, {
+        cache: 'no-store', signal: controller.signal
+      });
+      const body = await response.text();
+      let data = {};
+      try { data = JSON.parse(body); } catch {}
+      if (!response.ok) throw new Error(data?.error || body.slice(0, 500) || `Ingest HTTP ${response.status}`);
+      ingest.push({ source_offset: offset, attempted: Number(data.attempted_sources || 0), ingested: Number(data.ingested || 0), updated: Number(data.updated || 0) });
+      if (!data.attempted_sources && !data.has_more) break;
+      const next = Number(data.next_source_offset);
+      if (!Number.isInteger(next) || next <= offset) throw new Error(`Ingest did not advance past source ${offset}`);
+      offset = next;
+    }
   }
   const scoreResponse = await fetch(`${baseUrl}/api/score-batch?token=${encodeURIComponent(token)}&offset=0&limit=400`, {
     cache: 'no-store', signal: controller.signal
@@ -33,6 +59,9 @@ try {
   let scoreData = {};
   try { scoreData = JSON.parse(scoreText); } catch {}
   if (!scoreResponse.ok) throw new Error(scoreData?.error || scoreText || `Score HTTP ${scoreResponse.status}`);
+  if (scoreData.errors?.length || scoreData.stopped_early) throw new Error(`Score batch incomplete: ${(scoreData.errors || []).join('; ') || 'time budget reached'}`);
+  await queryLocal(`UPDATE pipeline_runs SET status='completed',finished_at=NOW(),ingested_count=$2,processed_count=$3,notes=$4 WHERE id=$1`,
+    [runId, ingest.reduce((sum, batch) => sum + batch.ingested, 0), Number(scoreData.processed || 0), JSON.stringify({ quarter_slot: quarterSlot, batches: ingest.length })]);
   console.log(JSON.stringify({ mode: 'incremental', quarter_slot: quarterSlot, ingest, processed: Number(scoreData.processed || 0) }));
   const minute = new Date().getUTCMinutes();
   const followupActions = ['run_alerts', 'sync_teknoblog'];
@@ -84,6 +113,11 @@ try {
       console.log(JSON.stringify({ action: 'sync_product_radar', ok: false, error: error?.message || String(error) }));
     }
   }
+  }
+} catch (error) {
+  if (runId) await queryLocal(`UPDATE pipeline_runs SET status='failed',finished_at=NOW(),notes=$2 WHERE id=$1`, [runId, String(error?.message || error).slice(0, 2000)]).catch(() => {});
+  throw error;
 } finally {
+  if (acquired) await queryLocal(`DELETE FROM pipeline_job_leases WHERE job_name='scheduled_refresh' AND owner_id=$1`, [ownerId]).catch(() => {});
   clearTimeout(timer);
 }

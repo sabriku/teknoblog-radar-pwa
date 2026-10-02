@@ -78,6 +78,19 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- A lease prevents overlapping scheduled refreshes. Expiry lets a later run
+-- recover after a process crash without manual database intervention.
+CREATE TABLE IF NOT EXISTS pipeline_job_leases (
+  job_name TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL,
+  acquired_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ NOT NULL
+);
+
+ALTER TABLE pipeline_runs ADD COLUMN IF NOT EXISTS job_kind TEXT DEFAULT 'manual';
+ALTER TABLE pipeline_runs ADD COLUMN IF NOT EXISTS run_key TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pipeline_runs_run_key ON pipeline_runs(run_key) WHERE run_key IS NOT NULL;
+
 CREATE TABLE IF NOT EXISTS opportunity_offers (
   offer_key TEXT PRIMARY KEY,
   product_key TEXT NOT NULL,
