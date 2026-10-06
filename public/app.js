@@ -233,7 +233,7 @@
     const publicationMatch = item.publication_match || null;
     const publicationStatus = item.publication_checked
       ? item.teknoblog_published
-        ? `<div style="font-size:12px;color:#166534;font-weight:800">✓ Teknoblog’da yayımlandı: <a href="${esc(publicationMatch?.url || '#')}" target="_blank" rel="noopener noreferrer" style="color:#166534">${esc(publicationMatch?.title || 'Yazıyı aç')}</a></div>`
+        ? `<div style="font-size:12px;color:#166534;font-weight:800">✓ Teknoblog’da yayımlandı: <a href="${esc(publicationMatch?.url || '#')}" target="_blank" rel="noopener noreferrer" style="color:#166534">${esc(publicationMatch?.title || 'Yazıyı aç')}</a><div style="margin-top:3px;color:#475569;font-size:11px">Teknoblog yayım tarihi: ${publicationMatch?.published_at ? esc(formatDate(publicationMatch.published_at)) : 'Bilinmiyor'}</div></div>`
         : '<span style="font-size:11px;color:#3730a3;font-weight:800">Teknoblog arşivinde güçlü eşleşme bulunmadı</span>'
       : '<span style="font-size:11px;color:#92400e;font-weight:800">Teknoblog yayını kontrol edilemedi</span>';
     const imageBlock = settings.image ? `<div style="position:relative;background:#f3f6fa;aspect-ratio:16/9">
