@@ -39,7 +39,10 @@ for (const [source, published] of [
   ['RedMagic 12 Pro+ Test Sonuçları Ortaya Çıktı: Zirveyi Zorluyor', 'RedMagic 12 Pro+ tasarımı değişiyor, ilk detaylar ortaya çıktı'],
   ['Yazılım geliştirme ve bulut altyapısı girişimi Supabase, 150 milyon dolar yatırım aldı', 'Robotlara çip geliştiren SiMa.ai 150 milyon dolar aldı'],
   ['iOS 27.2 Beta 3 Yayınlandı', 'iOS 27 beta 7 çıktı, Apple Eylül sürümüne yaklaştı'],
-  ['GTA 6\'nın Yaş Sınırı Ortaya Çıktı', 'Vivo X Fold 6 için beklenen tarih ortaya çıktı']
+  ['GTA 6\'nın Yaş Sınırı Ortaya Çıktı', 'Vivo X Fold 6 için beklenen tarih ortaya çıktı'],
+  ['Honor’s Galaxy Z Fold 8 and iPhone Duo rival is reportedly launching in January', 'iPhone Duo tanıtıldıktan sonra Galaxy Z Fold 8 satışları hızlandı'],
+  ['Google’s Fitbit Edge Could Slot Between The Fitbit Air And The Pixel Watch 5', 'Google Pixel Watch Ultra fikri Fitbit Air’dan güç alıyor'],
+  ['Symmetry vs asymmetry: How the Galaxy Z Fold 8 beats the iPhone Duo', 'iPhone Duo tanıtıldıktan sonra Galaxy Z Fold 8 satışları hızlandı']
 ]) assert.equal(publicationMatch(source, published).accepted, false, `farklı olaylar karışmamalı: ${source}`);
 
 assert.equal(publicationMatch(
