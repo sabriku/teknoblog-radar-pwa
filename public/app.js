@@ -2,6 +2,7 @@
   const VIEW_KEY = 'tb_news_card_view';
   const SORT_KEY = 'tb_news_sort';
   const BRAND_DIVERSITY_KEY = 'tb_news_brand_diversity_v4';
+  const SHOW_PUBLISHED_KEY = 'tb_news_show_published';
   const VALID_SORTS = new Set(['discover_score', 'traffic_score', 'published_at', 'total_score', 'conversion_score', 'social_score', 'editorial_score']);
   const VALID_VIEWS = new Set(['cards-2', 'cards-3', 'cards-4', 'stack', 'compact', 'list']);
   const VIEW_LABELS = {
@@ -24,9 +25,11 @@
     page: 1,
     pageSize: 20,
     selected: new Set(),
-    loading: false,
+    loading: true,
     lastError: '',
     requestSequence: 0,
+    feedNote: '',
+    showPublished: localStorage.getItem(SHOW_PUBLISHED_KEY) !== '0',
     // Discover means strict score order by default. Brand balancing remains an
     // explicit editorial view so the visible scores and their order never conflict.
     brandDiversity: localStorage.getItem(BRAND_DIVERSITY_KEY) === '1'
@@ -88,6 +91,7 @@
     let list = [...state.items];
     if (state.sort === 'discover_score') list = list.filter(isLast24h);
     if (state.source !== 'all') list = list.filter((item) => sourceName(item) === state.source);
+    if (!state.showPublished) list = list.filter((item) => !item.teknoblog_published);
     return list;
   }
 
@@ -187,7 +191,7 @@
     if (!wrap) return;
     const names = ['all', ...new Set(state.items.map(sourceName).filter(Boolean))].sort((a, b) => a === 'all' ? -1 : b === 'all' ? 1 : a.localeCompare(b, 'tr'));
     if (!names.includes(state.source)) state.source = 'all';
-    wrap.innerHTML = `<label for="tb-source-select" style="font-size:13px;font-weight:800;color:#111827;white-space:nowrap">Kaynak</label><select id="tb-source-select" style="min-width:260px;max-width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:12px;background:#fff;font-weight:800;color:#374151">${names.map((name) => `<option value="${esc(name)}"${state.source === name ? ' selected' : ''}>${esc(name === 'all' ? 'Tüm kaynaklar' : name)}</option>`).join('')}</select>${state.sort === 'discover_score' ? `<button type="button" class="tb-view-btn" data-brand-diversity aria-pressed="${state.brandDiversity ? 'true' : 'false'}" title="Tek bir markanın Discover listesini kaplamasını önler; kapatıldığında ham puan sırası gösterilir"><span class="tb-view-icon">◈</span><span>Marka dengesi: ${state.brandDiversity ? 'Açık' : 'Kapalı'}</span></button>` : ''}`;
+    wrap.innerHTML = `<label for="tb-source-select" style="font-size:13px;font-weight:800;color:#111827;white-space:nowrap">Kaynak</label><select id="tb-source-select" style="min-width:260px;max-width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:12px;background:#fff;font-weight:800;color:#374151">${names.map((name) => `<option value="${esc(name)}"${state.source === name ? ' selected' : ''}>${esc(name === 'all' ? 'Tüm kaynaklar' : name)}</option>`).join('')}</select><button type="button" class="tb-view-btn" data-show-published aria-pressed="${state.showPublished ? 'true' : 'false'}">Yayımlananlar: ${state.showPublished ? 'Gösteriliyor' : 'Gizli'}</button>${state.sort === 'discover_score' ? `<button type="button" class="tb-view-btn" data-brand-diversity aria-pressed="${state.brandDiversity ? 'true' : 'false'}" title="Tek bir markanın Discover listesini kaplamasını önler; kapatıldığında ham puan sırası gösterilir"><span class="tb-view-icon">◈</span><span>Marka dengesi: ${state.brandDiversity ? 'Açık' : 'Kapalı'}</span></button>` : ''}`;
   }
 
   function renderViewBar() {
@@ -229,9 +233,9 @@
     const publicationMatch = item.publication_match || null;
     const publicationStatus = item.publication_checked
       ? item.teknoblog_published
-        ? `<a href="${esc(publicationMatch?.url || '#')}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;width:max-content;padding:6px 9px;border-radius:999px;background:#dcfce7;color:#166534;font-size:11px;font-weight:900;text-decoration:none">✓ Teknoblog’da yayımlandı</a>`
-        : '<span style="display:inline-flex;align-items:center;width:max-content;padding:6px 9px;border-radius:999px;background:#eef2ff;color:#3730a3;font-size:11px;font-weight:900">○ Teknoblog’da henüz yok</span>'
-      : '';
+        ? `<div style="font-size:12px;color:#166534;font-weight:800">✓ Teknoblog’da yayımlandı: <a href="${esc(publicationMatch?.url || '#')}" target="_blank" rel="noopener noreferrer" style="color:#166534">${esc(publicationMatch?.title || 'Yazıyı aç')}</a></div>`
+        : '<span style="font-size:11px;color:#3730a3;font-weight:800">Teknoblog arşivinde güçlü eşleşme bulunmadı</span>'
+      : '<span style="font-size:11px;color:#92400e;font-weight:800">Teknoblog yayını kontrol edilemedi</span>';
     const imageBlock = settings.image ? `<div style="position:relative;background:#f3f6fa;aspect-ratio:16/9">
         ${itemImage ? `<img src="${esc(itemImage)}" alt="${esc(title(item))}" loading="lazy" style="width:100%;height:100%;object-fit:cover" onerror="this.style.display='none'">` : `<div style="display:flex;width:100%;height:100%;align-items:center;justify-content:center;color:#64748b;font-weight:800;background:linear-gradient(135deg,#fff7ed,#eff6ff)">📰 Görsel yok</div>`}
         <label style="position:absolute;top:10px;left:10px;background:rgba(255,255,255,.95);border-radius:999px;padding:6px 10px;display:flex;gap:6px;font-size:12px;font-weight:800"><input type="checkbox" data-select-url="${esc(itemUrl)}" ${checked}> Seç</label>
@@ -265,16 +269,20 @@
     renderViewBar();
     const all = visibleItems();
     const items = pagedItems();
-    status.textContent = state.lastError
+    status.textContent = state.loading && !state.items.length
+      ? 'Haberler yükleniyor…'
+      : state.lastError
       ? `Hata: ${state.lastError}`
       : state.sort === 'discover_score'
         ? `${all.length} içerik listeleniyor, Discover için son 24 saat filtresi aktif${state.brandDiversity ? ` · İlk 20’de ${new Set(sortedItems().slice(0, 20).map(brandName)).size} marka/konu grubu` : ' · Ham puan sırası'}`
-        : `${all.length} içerik listeleniyor`;
+        : `${all.length} içerik listeleniyor${state.feedNote ? ` · ${state.feedNote}` : ''}`;
     grid.className = `tb-news-grid ${state.view}`;
     grid.style.display = 'grid';
     grid.style.gridTemplateColumns = gridColumnsForView();
     grid.style.gap = state.view === 'compact' ? '10px' : '14px';
-    grid.innerHTML = items.length ? items.map(renderCard).join('') : '<div style="padding:24px;border:1px solid #dbe3ef;border-radius:18px;background:#fff">Henüz içerik yok.</div>';
+    grid.innerHTML = items.length ? items.map(renderCard).join('') : state.loading
+      ? '<div style="padding:24px;border:1px solid #dbe3ef;border-radius:18px;background:#fff">Haberler yükleniyor…</div>'
+      : '<div style="padding:24px;border:1px solid #dbe3ef;border-radius:18px;background:#fff">Bu görünümde haber bulunamadı. Kaynak veya yayın durumu filtresini değiştirebilirsiniz. <button type="button" class="tb-small-btn" data-retry-news>Tekrar yükle</button></div>';
     renderPagination();
   }
 
@@ -309,17 +317,38 @@
   async function loadRecommendations() {
     const requestId = ++state.requestSequence;
     const requestedSort = state.sort;
+    state.loading = true;
+    const request = (sort) => fetchJson(`/api/recommendations?sort=${encodeURIComponent(sort)}&diversify=${sort === 'discover_score' && state.brandDiversity ? '1' : '0'}&include_published=1&limit=160&t=${Date.now()}`, { timeoutMs: 35000 });
     try {
       state.lastError = '';
-      const diversify = requestedSort === 'discover_score' && state.brandDiversity ? '1' : '0';
-      const data = await fetchJson(`/api/recommendations?sort=${encodeURIComponent(requestedSort)}&diversify=${diversify}&limit=160&t=${Date.now()}`, { timeoutMs: 35000 });
-      if (requestId !== state.requestSequence || requestedSort !== state.sort) return;
+      state.feedNote = '';
+      let data = await request(requestedSort);
+      if (requestedSort === 'discover_score' && (!data.items?.length || !data.items.some(isLast24h))) {
+        data = await request('published_at');
+        if (requestId === state.requestSequence && requestedSort === state.sort) {
+          state.sort = 'published_at';
+          localStorage.setItem(SORT_KEY, state.sort);
+          state.feedNote = 'Son 24 saatte Discover adayı yok; en yeni haberler gösteriliyor';
+        }
+      }
+      if (requestId !== state.requestSequence) return;
+      if (requestedSort !== state.sort && !state.feedNote) return;
       state.items = Array.isArray(data.items) ? data.items : [];
     } catch (error) {
       if (requestId !== state.requestSequence || requestedSort !== state.sort) return;
-      state.items = [];
-      state.lastError = error?.message || String(error);
+      try {
+        const fallback = await request('published_at');
+        if (requestId !== state.requestSequence || requestedSort !== state.sort) return;
+        state.items = Array.isArray(fallback.items) ? fallback.items : [];
+        state.sort = 'published_at';
+        localStorage.setItem(SORT_KEY, state.sort);
+        state.feedNote = 'Ana görünüm yüklenemedi; en yeni haberler gösteriliyor';
+      } catch {
+        if (requestId !== state.requestSequence || requestedSort !== state.sort) return;
+        state.lastError = error?.message || String(error);
+      }
     }
+    state.loading = false;
     state.page = 1;
     renderItems();
   }
@@ -377,6 +406,14 @@
       }
     });
     document.addEventListener('click', async (event) => {
+      if (event.target.closest('[data-retry-news]')) { loadRecommendations(); return; }
+      if (event.target.closest('[data-show-published]')) {
+        state.showPublished = !state.showPublished;
+        localStorage.setItem(SHOW_PUBLISHED_KEY, state.showPublished ? '1' : '0');
+        state.page = 1;
+        renderItems();
+        return;
+      }
       if (event.target.closest('[data-brand-diversity]')) {
         state.brandDiversity = !state.brandDiversity;
         localStorage.setItem(BRAND_DIVERSITY_KEY, state.brandDiversity ? '1' : '0');
@@ -422,6 +459,9 @@
     renderItems();
     renderSources();
     await Promise.allSettled([loadRecommendations(), loadSources()]);
+    window.addEventListener('tb-spa-tab-change', (event) => {
+      if (event.detail?.tab === 'news' && !state.items.length && !state.loading) loadRecommendations();
+    });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
