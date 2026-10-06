@@ -32,6 +32,16 @@ assert.equal(publicationMatch(
   'Google Pixel 10 için yeni kamera güncellemesi'
 ).accepted, false, 'farklı model sürümleri aynı haber sayılmamalı');
 
+for (const [source, published] of [
+  ['Huawei FreeBuds Neo inceleme: Bu fiyata efsane gürültü engelleme ve ses', 'Huawei FreeBuds Neo Türkiye fiyatıyla satışa çıktı: Pil ve gürültü engelleme ayrıntıları'],
+  ['Galaxy S27 Ultra, S26 Ultra\'daki En Büyük Sorunlardan Birini Çözecek', 'Galaxy S27 Ultra, S26 Ultra’nın boyutlarını büyük ölçüde koruyabilir'],
+  ['Huawei Mate 90 Pro Max Sınıfta Kaldı: Performansı Yetersiz Kaldı', 'Huawei Mate 90 Pro Max 1 inç kamera modülüyle fark yaratıyor'],
+  ['RedMagic 12 Pro+ Test Sonuçları Ortaya Çıktı: Zirveyi Zorluyor', 'RedMagic 12 Pro+ tasarımı değişiyor, ilk detaylar ortaya çıktı'],
+  ['Yazılım geliştirme ve bulut altyapısı girişimi Supabase, 150 milyon dolar yatırım aldı', 'Robotlara çip geliştiren SiMa.ai 150 milyon dolar aldı'],
+  ['iOS 27.2 Beta 3 Yayınlandı', 'iOS 27 beta 7 çıktı, Apple Eylül sürümüne yaklaştı'],
+  ['GTA 6\'nın Yaş Sınırı Ortaya Çıktı', 'Vivo X Fold 6 için beklenen tarih ortaya çıktı']
+]) assert.equal(publicationMatch(source, published).accepted, false, `farklı olaylar karışmamalı: ${source}`);
+
 assert.equal(publicationMatch(
   'Başlık tamamen farklı',
   'Teknoblog yayını',

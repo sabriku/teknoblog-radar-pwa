@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { queryLocal } from '../api/_lib.js';
 
 const baseUrl = process.env.RADAR_BASE_URL || 'http://127.0.0.1:3000';
 const token = process.env.CRON_TOKEN || '';
@@ -12,19 +11,24 @@ const ownerId = randomUUID();
 let runId = null;
 let acquired = false;
 
+async function jobAction(action, payload = {}) {
+  const response = await fetch(`${baseUrl}/api/refresh-job`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-cron-token': token },
+    body: JSON.stringify({ action, owner_id: ownerId, ...payload }), signal: AbortSignal.timeout(15000)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `Refresh job ${action} HTTP ${response.status}`);
+  return data;
+}
+
 try {
-  const lease = await queryLocal(`INSERT INTO pipeline_job_leases(job_name,owner_id,expires_at)
-    VALUES('scheduled_refresh',$1,NOW()+INTERVAL '10 minutes')
-    ON CONFLICT(job_name) DO UPDATE SET owner_id=EXCLUDED.owner_id,acquired_at=NOW(),expires_at=EXCLUDED.expires_at
-    WHERE pipeline_job_leases.expires_at<NOW() RETURNING owner_id`, [ownerId]);
-  if (!lease.rowCount) {
+  const lease = await jobAction('begin');
+  if (!lease.acquired) {
     console.log(JSON.stringify({ mode: 'incremental', skipped: 'refresh_already_running' }));
     process.exitCode = 0;
   } else {
     acquired = true;
-    const run = await queryLocal(`INSERT INTO pipeline_runs(status,job_kind,run_key)
-      VALUES('running','scheduled_refresh',$1) RETURNING id`, [ownerId]);
-    runId = run.rows[0].id;
+    runId = lease.run_id;
   // Keep high-priority sources fresh without rescanning the entire catalogue
   // every few minutes. The remaining sources rotate through four quarter-hour
   // slots, so all sources are covered within an hour.
@@ -65,8 +69,9 @@ try {
   });
   const snapshotData = await snapshotResponse.json().catch(() => ({}));
   if (!snapshotResponse.ok) throw new Error(snapshotData.error || `Editorial snapshot HTTP ${snapshotResponse.status}`);
-  await queryLocal(`UPDATE pipeline_runs SET status='completed',finished_at=NOW(),ingested_count=$2,processed_count=$3,notes=$4 WHERE id=$1`,
-    [runId, ingest.reduce((sum, batch) => sum + batch.ingested, 0), Number(scoreData.processed || 0), JSON.stringify({ quarter_slot: quarterSlot, batches: ingest.length, story_snapshot: snapshotData.snapshot })]);
+  await jobAction('complete', { run_id: runId, ingested_count: ingest.reduce((sum, batch) => sum + batch.ingested, 0),
+    processed_count: Number(scoreData.processed || 0), notes: { quarter_slot: quarterSlot, batches: ingest.length, story_snapshot: snapshotData.snapshot } });
+  acquired = false;
   console.log(JSON.stringify({ mode: 'incremental', quarter_slot: quarterSlot, ingest, processed: Number(scoreData.processed || 0), story_snapshot: snapshotData.snapshot }));
   const minute = new Date().getUTCMinutes();
   const followupActions = ['run_alerts', 'sync_teknoblog'];
@@ -120,9 +125,8 @@ try {
   }
   }
 } catch (error) {
-  if (runId) await queryLocal(`UPDATE pipeline_runs SET status='failed',finished_at=NOW(),notes=$2 WHERE id=$1`, [runId, String(error?.message || error).slice(0, 2000)]).catch(() => {});
+  if (runId && acquired) await jobAction('fail', { run_id: runId, error: String(error?.message || error) }).catch(() => {});
   throw error;
 } finally {
-  if (acquired) await queryLocal(`DELETE FROM pipeline_job_leases WHERE job_name='scheduled_refresh' AND owner_id=$1`, [ownerId]).catch(() => {});
   clearTimeout(timer);
 }

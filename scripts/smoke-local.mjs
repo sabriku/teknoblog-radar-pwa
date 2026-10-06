@@ -28,6 +28,8 @@ const checks = [
 ];
 
 if (token && process.env.RADAR_SMOKE_MUTATIONS === '1') {
+  checks.push(['/api/refresh-job', 200, { method: 'POST', headers: { 'x-cron-token': token, 'content-type': 'application/json' },
+    body: JSON.stringify({ action: 'status', owner_id: '00000000-0000-4000-8000-000000000000' }) }]);
   checks.push(['/api/editorial-insights', 200, { headers: { 'x-cron-token': token } }]);
   checks.push([`/api/ingest?token=${encodeURIComponent(token)}&source_limit=1&item_limit=2`, 200]);
   checks.push([`/api/score-batch?token=${encodeURIComponent(token)}&limit=10&offset=0`, 200]);

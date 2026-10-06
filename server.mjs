@@ -37,6 +37,7 @@ const API_ROUTES = {
   '/api/product-radar': './api/product-radar.js',
   '/api/push-to-slack': './api/push-to-slack.js',
   '/api/recommendations': './api/recommendations.js',
+  '/api/refresh-job': './api/refresh-job.js',
   '/api/run-pipeline': './api/run-pipeline.js',
   '/api/search': './api/search.js',
   '/api/score': './api/score/index.js',
