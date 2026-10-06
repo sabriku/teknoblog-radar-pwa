@@ -5,6 +5,8 @@ import { getGoogleConfig, googleAccessToken } from './_google-auth.js';
 import { getAppSecret, saveAppSecret } from './_app-secrets.js';
 import { extractIntelligenceFeatures, loadIntelligenceModel, trainIntelligenceModel } from './_intelligence-model.js';
 import { readSession } from '../lib/lock.js';
+import { publicationMatch } from '../lib/publication-match.js';
+export { publicationMatch } from '../lib/publication-match.js';
 
 const STOP = new Set('ve veya ile için bir bu şu daha yeni son ilk olan olarak göre sonra önce hakkında üzerinde geliyor geldi olacak oldu neden nasıl hangi ne zaman teknoloji tech says report reportedly could may its the and for from with that this have has will into over after before'.split(' '));
 const CLUSTER_CACHE_TTL_MS = Math.max(30_000, Number(process.env.INTELLIGENCE_CLUSTER_CACHE_MS) || 120_000);
@@ -44,42 +46,6 @@ function canonicalUrl(value = '') {
     url.search = '';
     return `${url.hostname.replace(/^www\./, '').toLowerCase()}${url.pathname.replace(/\/+$/, '') || '/'}`;
   } catch { return ''; }
-}
-
-function publicationTokens(value = '') {
-  return [...new Set(String(value).toLocaleLowerCase('tr-TR')
-    .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9çğıöşü\s]/gi, ' ').split(/\s+/)
-    .filter((word) => (word.length >= 3 || /^\d{1,4}$/.test(word)) && !STOP.has(word)))];
-}
-
-export function publicationMatch(leftTitle = '', rightTitle = '', leftUrl = '', rightUrl = '') {
-  const direct = canonicalUrl(leftUrl) && canonicalUrl(leftUrl) === canonicalUrl(rightUrl);
-  if (direct) return { accepted: true, score: 1, common: 99, reason: 'url' };
-  const left = publicationTokens(leftTitle);
-  const right = publicationTokens(rightTitle);
-  if (!left.length || !right.length) return { accepted: false, score: 0, common: 0, reason: 'empty' };
-  const rightSet = new Set(right);
-  const commonTokens = left.filter((word) => rightSet.has(word));
-  const common = commonTokens.length;
-  const containment = common / Math.max(1, Math.min(left.length, right.length));
-  const jaccard = common / Math.max(1, new Set([...left, ...right]).size);
-  let score = containment * .72 + jaccard * .28;
-  const modelLike = (word) => /\d/.test(word);
-  const leftModels = left.filter(modelLike);
-  const rightModels = right.filter(modelLike);
-  if (leftModels.length && rightModels.length && !leftModels.some((word) => rightModels.includes(word))) {
-    return { accepted: false, score: score * .2, common, reason: 'model_mismatch' };
-  }
-  const sharedModel = leftModels.some((word) => rightModels.includes(word));
-  if ((leftModels.length || rightModels.length) && !sharedModel) score *= .78;
-  const exactTitle = left.join(' ') === right.join(' ');
-  const shortStrong = Math.min(left.length, right.length) <= 4 && common >= 2 && score >= .86;
-  const translatedModelMatch = sharedModel && common >= 3 && containment >= .45;
-  const genericEntities = new Set(['samsung', 'galaxy', 'apple', 'google', 'microsoft', 'xiaomi', 'huawei', 'garmin', 'openai', 'android', 'iphone', 'ipad', 'watch', 'update']);
-  const distinctiveEntityMatch = common >= 2 && containment >= .3 && commonTokens.some((word) => word.length >= 5 && !genericEntities.has(word));
-  const accepted = exactTitle || translatedModelMatch || distinctiveEntityMatch || (common >= 3 && score >= .72) || shortStrong;
-  return { accepted, score: exactTitle ? 1 : score, common, reason: accepted ? 'title' : 'weak' };
 }
 
 function clamp(value) { return Math.max(0, Math.min(100, Math.round(Number(value) || 0))); }
@@ -239,13 +205,16 @@ async function reconcilePredictionOutcomes() {
     let bestScore = 0;
     const directUrl = directMap.get(prediction.url);
     for (const post of posts.rows) {
-      const score = directUrl && directUrl.replace(/\/+$/, '') === post.url.replace(/\/+$/, '') ? 1 : overlap(tokens(prediction.title), tokens(post.title));
+      const direct = Boolean(directUrl && canonicalUrl(directUrl) && canonicalUrl(directUrl) === canonicalUrl(post.url));
+      const match = direct ? { accepted: true, score: 1 } : publicationMatch(prediction.title, post.title, prediction.url, post.url);
+      if (!match.accepted) continue;
+      const score = match.score;
       const predictedAt = new Date(prediction.predicted_at).getTime();
       const publishedAt = new Date(post.published_at).getTime();
       if (publishedAt < predictedAt - 12 * 3600000 || publishedAt > predictedAt + 21 * 86400000) continue;
       if (score > bestScore) { best = post; bestScore = score; }
     }
-    if (!best || bestScore < .48) continue;
+    if (!best) continue;
     await queryLocal(`INSERT INTO prediction_outcomes(prediction_url,published_url,model_version,match_score,discover_probability,news_probability,expected_clicks_low,expected_clicks_high,matched_at)
       VALUES($1,$2,$3,$4,$5,$6,$7,$8,NOW()) ON CONFLICT(prediction_url,published_url) DO UPDATE SET
       model_version=EXCLUDED.model_version,match_score=GREATEST(prediction_outcomes.match_score,EXCLUDED.match_score),

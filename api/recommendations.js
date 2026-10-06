@@ -277,7 +277,7 @@ function publicationLookup(posts = []) {
   return { posts, byToken };
 }
 
-function withPublicationState(item = {}, lookup, checkedAt) {
+function withPublicationState(item = {}, lookup, checkedAt, lookupAvailable = true) {
   if (isOwnedPublishedItem(item)) {
     return {
       ...item,
@@ -293,6 +293,9 @@ function withPublicationState(item = {}, lookup, checkedAt) {
       }
     };
   }
+
+  if (!lookupAvailable) return { ...item, publication_checked: false,
+    publication_checked_at: null, teknoblog_published: false, publication_match: null };
 
   const votes = new Map();
   for (const token of storyTokens(item)) {
@@ -797,6 +800,7 @@ export default async function handler(req, res) {
     let performanceProfiles = [];
     let intelligenceModel = null;
     let publishedPosts = [];
+    let publicationLookupAvailable = false;
     try {
       const learned = await queryLocal(`SELECT title,discover_clicks,discover_impressions,discover_ctr,ga4_views,ga4_active_users,ga4_engagement_seconds,ga4_engagement_rate FROM published_performance
         WHERE title IS NOT NULL AND title<>'' AND published_at>=NOW()-INTERVAL '365 days' AND (discover_impressions>0 OR ga4_views>0)
@@ -814,10 +818,11 @@ export default async function handler(req, res) {
     } catch {}
     try { intelligenceModel = await loadIntelligenceModel(); } catch {}
     try {
-      const published = await queryLocal(`SELECT title,url,published_at FROM teknoblog_content
+      const published = await queryLocal(`SELECT title,url,published_at,updated_at FROM teknoblog_content
         WHERE title IS NOT NULL AND title<>'' AND published_at>=NOW()-INTERVAL '45 days'
         ORDER BY published_at DESC LIMIT 4000`);
       publishedPosts = published.rows || [];
+      publicationLookupAvailable = publishedPosts.some((post) => Date.parse(post.updated_at || '') >= Date.now() - 48 * 3600000);
     } catch {}
 
     const candidateItems = (candidates || [])
@@ -839,7 +844,7 @@ export default async function handler(req, res) {
     const checkedAt = new Date().toISOString();
     const lookup = publicationLookup(publishedPosts);
     const publicationCheckedItems = dedupeItems([...candidateItems, ...rawFallback])
-      .map((item) => withPublicationState(item, lookup, checkedAt));
+      .map((item) => withPublicationState(item, lookup, checkedAt, publicationLookupAvailable));
     const matchedPublishedCount = publicationCheckedItems.filter((item) => item.teknoblog_published).length;
     const actionableItems = publicationCheckedItems
       .filter((item) => includePublished || !item.teknoblog_published);
@@ -867,6 +872,7 @@ export default async function handler(req, res) {
         raw_fallback_count: rawFallback.length,
         publication_checked_count: publicationCheckedItems.length,
         publication_reference_count: publishedPosts.length,
+        publication_reference_status: publicationLookupAvailable ? 'available' : 'unavailable',
         matched_published_count: matchedPublishedCount,
         excluded_published_count: includePublished ? 0 : matchedPublishedCount,
         story_cluster_count: clusteredItems.length,

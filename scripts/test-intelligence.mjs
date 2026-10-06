@@ -23,6 +23,16 @@ assert.equal(publicationMatch(
 ).accepted, false, 'yalnızca marka ortaklığı yayın teyidi sayılmamalı');
 
 assert.equal(publicationMatch(
+  'MG Ekim 2026 Fiyat Listesi',
+  'Audi Ekim 2026 fiyat listesinde A3 3,6 milyon TL’den başlıyor'
+).accepted, false, 'ortak ay ve fiyat sözcükleri farklı markaları eşleştirmemeli');
+
+assert.equal(publicationMatch(
+  'Google Pixel 11 için yeni kamera güncellemesi',
+  'Google Pixel 10 için yeni kamera güncellemesi'
+).accepted, false, 'farklı model sürümleri aynı haber sayılmamalı');
+
+assert.equal(publicationMatch(
   'Başlık tamamen farklı',
   'Teknoblog yayını',
   'https://www.teknoblog.com/ornek-haber/?utm_source=radar',

@@ -38,14 +38,16 @@ export default async function handler(req, res) {
           AND COALESCE(s.source_type,'')<>'owned'
           AND COALESCE(r.source_name,'') NOT ILIKE 'Teknoblog%'
         ORDER BY r.created_at DESC LIMIT 1200`),
-      queryLocal(`SELECT title,url,published_at FROM teknoblog_content
+      queryLocal(`SELECT title,url,published_at,updated_at FROM teknoblog_content
         WHERE published_at>=NOW()-INTERVAL '45 days' ORDER BY published_at DESC LIMIT 1000`),
       queryLocal(`SELECT title,discover_clicks,ga4_views FROM published_performance
         WHERE title IS NOT NULL AND published_at>=NOW()-INTERVAL '180 days'
           AND (discover_clicks>0 OR ga4_views>0)
         ORDER BY published_at DESC LIMIT 800`)
     ]);
-    const { observed_cards: observedCards, ...result } = buildEditorialDashboard(items.rows, publications.rows, Date.now(), performance.rows);
+    const publicationChecked = publications.rows.some((post) => Date.parse(post.updated_at || '') >= Date.now() - 48 * 3600000);
+    const { observed_cards: observedCards, ...result } = buildEditorialDashboard(items.rows,
+      publicationChecked ? publications.rows : [], Date.now(), performance.rows, publicationChecked);
     const storage = snapshot ? await saveEditorialSnapshot(observedCards) : null;
     const history = await attachStoryHistory(result.lanes);
     cached = { ...result, lanes: history.lanes, recorded_count: history.recorded_count,
