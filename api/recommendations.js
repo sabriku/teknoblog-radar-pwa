@@ -275,6 +275,8 @@ function publicationLookup(posts = []) {
       byToken.get(token).add(index);
     }
   });
+  const maxPostingSize = Math.max(80, Math.ceil(posts.length * .08));
+  for (const [token, indexes] of byToken) if (indexes.size > maxPostingSize) byToken.delete(token);
   return { posts, byToken };
 }
 
