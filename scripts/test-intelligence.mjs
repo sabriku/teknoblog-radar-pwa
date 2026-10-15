@@ -50,6 +50,16 @@ assert.equal(publicationMatch(
   'NVIDIA’nın Çin payı yüzde 34’e indi, Huawei farkı kapatıyor'
 ).accepted, true, 'yüzde ve adet rakamları ürün modeli sanılmamalı');
 
+assert.equal(publicationMatch(
+  'Nvidia Broadcast 2.3 ile iki yeni faydalı özellik kullanıma sunuldu',
+  'NVIDIA Broadcast 2.3, kayıtlı videolara da efekt uyguluyor nvidia broadcast 2 3 kayitlari da isliyor'
+).accepted, true, 'Teknoblog URL slug kelimeleri sürümlü ürün eşleşmesini bozmamalı');
+
+assert.equal(publicationMatch(
+  'Oppo teases true-to-life imaging on the new Find X10 series',
+  'Oppo Find X10’da aşırı parlak yüzleri azaltmayı hedefleyen kamera sistemini anlattı oppo find x10 da dogal fotograflari hedefliyor'
+).accepted, true, 'imaging ve kamera aynı ürün olayında eşleşmeli');
+
 for (const [source, published] of [
   ['Huawei FreeBuds Neo inceleme: Bu fiyata efsane gürültü engelleme ve ses', 'Huawei FreeBuds Neo Türkiye fiyatıyla satışa çıktı: Pil ve gürültü engelleme ayrıntıları'],
   ['Galaxy S27 Ultra, S26 Ultra\'daki En Büyük Sorunlardan Birini Çözecek', 'Galaxy S27 Ultra, S26 Ultra’nın boyutlarını büyük ölçüde koruyabilir'],
