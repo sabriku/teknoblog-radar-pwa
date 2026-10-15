@@ -320,7 +320,7 @@ function withPublicationState(item = {}, lookup, checkedAt, lookupAvailable = tr
     // A broad brand plus a generic verb (for example "Oppo" + "tanıtıldı")
     // is not enough to declare that Teknoblog already covered the same story.
     // Direct URL matches remain exact; title matches need a minimum confidence.
-    const reliable = match.reason === 'url' || match.score >= .34;
+    const reliable = match.reason === 'url' || match.score >= .3;
     if (match.accepted && reliable && (!best || match.score > best.match.score)) best = { post, match };
   }
   return {
