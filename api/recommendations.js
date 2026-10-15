@@ -316,7 +316,13 @@ function withPublicationState(item = {}, lookup, checkedAt, lookupAvailable = tr
   let best = null;
   for (const [index] of candidates) {
     const post = lookup.posts[index];
-    const match = publicationMatch(item.title, publicationSearchText(post.title, post.url), item.url || item.canonical_url || item.link, post.url);
+    const itemUrl = item.url || item.canonical_url || item.link;
+    const titleMatch = publicationMatch(item.title, post.title, itemUrl, post.url);
+    const slugMatch = publicationMatch(item.title, publicationSearchText(post.title, post.url), itemUrl, post.url);
+    // Slugs recover model/version words sometimes omitted from an editorial
+    // headline, but their extra generic words must not dilute an otherwise
+    // strong translated-title match. Keep the strongest interpretation.
+    const match = titleMatch.accepted && (!slugMatch.accepted || titleMatch.score >= slugMatch.score) ? titleMatch : slugMatch;
     // A broad brand plus a generic verb (for example "Oppo" + "tanıtıldı")
     // is not enough to declare that Teknoblog already covered the same story.
     // Direct URL matches remain exact; title matches need a minimum confidence.
