@@ -35,10 +35,17 @@ assert.equal(publicationMatch(
 for (const [source, published] of [
   ['Gran Turismo 7’ye eklenen yeni araçlar ve özel DualSense kontrolcü duyuruldu', 'Gran Turismo 7 altı araç ekliyor, özel DualSense de geliyor'],
   ['YouTube Yorumlarına GIF ve Görsel Desteği Geliyor', 'YouTube görsel ve GIF yorumlarını kasımda tüm kullanıcılara açıyor'],
+  ['YouTube begins rolling out GIF support for comments very slowly; it’s for a reason', 'YouTube görsel ve GIF yorumlarını kasımda tüm kullanıcılara açıyor'],
+  ["iPhone Duo'nun Türkiye Tamir Ücretleri Açıklandı", 'iPhone Duo’nun iç ekran onarımı ABD’de 999 doları buluyor'],
   ['Samsung Health güncellendi: Uyku ve koşu koçluğu gelişiyor', 'Samsung Health’te uyku koçluğu için artık yedi gün beklemek gerekmiyor'],
   ['Nvidia Broadcast 2.3 ile iki yeni faydalı özellik kullanıma sunuldu', 'NVIDIA Broadcast 2.3, kayıtlı videolara da efekt uyguluyor'],
   ['OnePlus 16 Satışa Çıktı: İlk Saatte 70 Bin Adet Satıldı', 'OnePlus 16 satışa çıkar çıkmaz 70 bin adedi geride bıraktı']
 ]) assert.equal(publicationMatch(source, published).accepted, true, `aynı güncel olay eşleşmeli: ${source}`);
+
+assert.equal(publicationMatch(
+  "Samsung Health's new Scan Meal feature could make calorie tracking effortless",
+  'Samsung Health’te uyku koçluğu için artık yedi gün beklemek gerekmiyor'
+).accepted, false, 'aynı ürünün farklı özelliği aynı haber sayılmamalı');
 
 assert.equal(publicationMatch(
   'Oppo announces compact tablet with flagship Snapdragon chip and matte OLED display',
