@@ -45,6 +45,11 @@ assert.equal(publicationMatch(
   'Oppo Find X10’da aşırı parlak yüzleri azaltmayı hedefleyen kamera sistemini anlattı'
 ).accepted, false, 'aynı markanın farklı ürünleri eşleşmemeli');
 
+assert.equal(publicationMatch(
+  'Nvidia Çin’de kan kaybediyor, Huawei yükseliyor',
+  'NVIDIA’nın Çin payı yüzde 34’e indi, Huawei farkı kapatıyor'
+).accepted, true, 'yüzde ve adet rakamları ürün modeli sanılmamalı');
+
 for (const [source, published] of [
   ['Huawei FreeBuds Neo inceleme: Bu fiyata efsane gürültü engelleme ve ses', 'Huawei FreeBuds Neo Türkiye fiyatıyla satışa çıktı: Pil ve gürültü engelleme ayrıntıları'],
   ['Galaxy S27 Ultra, S26 Ultra\'daki En Büyük Sorunlardan Birini Çözecek', 'Galaxy S27 Ultra, S26 Ultra’nın boyutlarını büyük ölçüde koruyabilir'],
