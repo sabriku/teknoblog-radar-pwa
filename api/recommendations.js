@@ -316,7 +316,7 @@ function withPublicationState(item = {}, lookup, checkedAt, lookupAvailable = tr
   let best = null;
   for (const [index] of candidates) {
     const post = lookup.posts[index];
-    const match = publicationMatch(itemSearchText, publicationSearchText(post.title, post.url), item.url || item.canonical_url || item.link, post.url);
+    const match = publicationMatch(item.title, publicationSearchText(post.title, post.url), item.url || item.canonical_url || item.link, post.url);
     // A broad brand plus a generic verb (for example "Oppo" + "tanıtıldı")
     // is not enough to declare that Teknoblog already covered the same story.
     // Direct URL matches remain exact; title matches need a minimum confidence.
