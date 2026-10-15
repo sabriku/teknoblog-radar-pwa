@@ -33,6 +33,19 @@ assert.equal(publicationMatch(
 ).accepted, false, 'farklı model sürümleri aynı haber sayılmamalı');
 
 for (const [source, published] of [
+  ['Gran Turismo 7’ye eklenen yeni araçlar ve özel DualSense kontrolcü duyuruldu', 'Gran Turismo 7 altı araç ekliyor, özel DualSense de geliyor'],
+  ['YouTube Yorumlarına GIF ve Görsel Desteği Geliyor', 'YouTube görsel ve GIF yorumlarını kasımda tüm kullanıcılara açıyor'],
+  ['Samsung Health güncellendi: Uyku ve koşu koçluğu gelişiyor', 'Samsung Health’te uyku koçluğu için artık yedi gün beklemek gerekmiyor'],
+  ['Nvidia Broadcast 2.3 ile iki yeni faydalı özellik kullanıma sunuldu', 'NVIDIA Broadcast 2.3, kayıtlı videolara da efekt uyguluyor'],
+  ['OnePlus 16 Satışa Çıktı: İlk Saatte 70 Bin Adet Satıldı', 'OnePlus 16 satışa çıkar çıkmaz 70 bin adedi geride bıraktı']
+]) assert.equal(publicationMatch(source, published).accepted, true, `aynı güncel olay eşleşmeli: ${source}`);
+
+assert.equal(publicationMatch(
+  'Oppo announces compact tablet with flagship Snapdragon chip and matte OLED display',
+  'Oppo Find X10’da aşırı parlak yüzleri azaltmayı hedefleyen kamera sistemini anlattı'
+).accepted, false, 'aynı markanın farklı ürünleri eşleşmemeli');
+
+for (const [source, published] of [
   ['Huawei FreeBuds Neo inceleme: Bu fiyata efsane gürültü engelleme ve ses', 'Huawei FreeBuds Neo Türkiye fiyatıyla satışa çıktı: Pil ve gürültü engelleme ayrıntıları'],
   ['Galaxy S27 Ultra, S26 Ultra\'daki En Büyük Sorunlardan Birini Çözecek', 'Galaxy S27 Ultra, S26 Ultra’nın boyutlarını büyük ölçüde koruyabilir'],
   ['Huawei Mate 90 Pro Max Sınıfta Kaldı: Performansı Yetersiz Kaldı', 'Huawei Mate 90 Pro Max 1 inç kamera modülüyle fark yaratıyor'],
