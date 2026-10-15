@@ -311,7 +311,8 @@ function withPublicationState(item = {}, lookup, checkedAt, lookupAvailable = tr
   for (const token of publicationTerms(itemSearchText)) {
     for (const index of lookup.byToken.get(token) || []) votes.set(index, (votes.get(index) || 0) + 1);
   }
-  const candidates = [...votes.entries()].sort((a, b) => b[1] - a[1]).slice(0, 24);
+  const candidates = [...votes.entries()].filter(([, votesCount]) => votesCount >= 2)
+    .sort((a, b) => b[1] - a[1]).slice(0, 10);
   let best = null;
   for (const [index] of candidates) {
     const post = lookup.posts[index];
