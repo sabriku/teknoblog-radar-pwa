@@ -2,6 +2,7 @@ import { getSupabaseAdmin, json, queryLocal } from './_lib.js';
 import opportunityRadar from './opportunity-radar.js';
 import { loadIntelligenceModel, modelInfluence, predictWithModel, primaryTopicKey, savePredictions } from './_intelligence-model.js';
 import { publicationMatch } from './intelligence.js';
+import { publicationTerms } from '../lib/publication-match.js';
 
 // Scoring several thousand candidates is intentionally richer than a plain DB
 // sort. Keep the computed feed briefly so tab/sort changes do not repeat that
@@ -269,12 +270,18 @@ function isOwnedPublishedItem(item = {}) {
 function publicationLookup(posts = []) {
   const byToken = new Map();
   posts.forEach((post, index) => {
-    for (const token of storyTokens({ title: post.title })) {
+    for (const token of publicationTerms(publicationSearchText(post.title, post.url))) {
       if (!byToken.has(token)) byToken.set(token, new Set());
       byToken.get(token).add(index);
     }
   });
   return { posts, byToken };
+}
+
+function publicationSearchText(title = '', url = '') {
+  let slug = '';
+  try { slug = decodeURIComponent(new URL(String(url || '')).pathname).replace(/[\/_-]+/g, ' '); } catch {}
+  return `${String(title || '')} ${slug}`.trim();
 }
 
 function withPublicationState(item = {}, lookup, checkedAt, lookupAvailable = true) {
@@ -298,14 +305,15 @@ function withPublicationState(item = {}, lookup, checkedAt, lookupAvailable = tr
     publication_checked_at: null, teknoblog_published: false, publication_match: null };
 
   const votes = new Map();
-  for (const token of storyTokens(item)) {
+  const itemSearchText = publicationSearchText(item.title, item.url || item.canonical_url || item.link);
+  for (const token of publicationTerms(itemSearchText)) {
     for (const index of lookup.byToken.get(token) || []) votes.set(index, (votes.get(index) || 0) + 1);
   }
   const candidates = [...votes.entries()].sort((a, b) => b[1] - a[1]).slice(0, 24);
   let best = null;
   for (const [index] of candidates) {
     const post = lookup.posts[index];
-    const match = publicationMatch(item.title, post.title, item.url || item.canonical_url || item.link, post.url);
+    const match = publicationMatch(itemSearchText, publicationSearchText(post.title, post.url), item.url || item.canonical_url || item.link, post.url);
     // A broad brand plus a generic verb (for example "Oppo" + "tanıtıldı")
     // is not enough to declare that Teknoblog already covered the same story.
     // Direct URL matches remain exact; title matches need a minimum confidence.
