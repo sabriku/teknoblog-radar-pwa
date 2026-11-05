@@ -254,7 +254,7 @@
         <p style="margin:0;font-size:14px;line-height:1.55;color:#475569;display:-webkit-box;-webkit-line-clamp:${settings.clamp};-webkit-box-orient:vertical;overflow:hidden">${esc(summary(item))}</p>
         ${Array.isArray(item.score_reasons) && item.score_reasons.length ? `<details style="font-size:12px;color:#475569"><summary style="cursor:pointer;font-weight:800">Puan neden böyle?</summary><ul style="padding-left:18px">${item.score_reasons.map((reason) => `<li>${reason.impact > 0 ? '+' : ''}${Number(reason.impact || 0)} ${esc(reason.label || '')}</li>`).join('')}</ul></details>` : ''}
         ${alternatives.length ? `<details style="font-size:12px;color:#475569"><summary style="cursor:pointer;font-weight:800">${Number(item.corroborating_source_count || alternatives.length + 1)} kaynak doğruluyor</summary><ul style="padding-left:18px;margin-bottom:0">${alternatives.map((entry) => `<li><a href="${esc(entry.url)}" target="_blank" rel="noopener noreferrer">${esc(entry.source_name || entry.title || 'Alternatif kaynak')}</a></li>`).join('')}</ul></details>` : ''}
-        <div style="display:flex;gap:8px;flex-wrap:wrap"><a href="${esc(itemUrl || '#')}" target="_blank" rel="noopener noreferrer" style="padding:10px 12px;border-radius:10px;background:#f04a0a;color:#fff;text-decoration:none;font-size:14px;font-weight:800;${itemUrl ? '' : 'pointer-events:none;opacity:.5'}">Haberi Aç</a><button type="button" data-copy-url="${esc(itemUrl)}" class="tb-small-btn">URL kopyala</button><button type="button" data-add-queue='${esc(JSON.stringify({ candidate_id: item.id, title: title(item), url: itemUrl, source_name: sourceName(item), image_url: itemImage, status: 'new', priority: score(item, 'discover_score') }))}' class="tb-small-btn">Yazılacaklara ekle</button></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><a href="${esc(itemUrl || '#')}" target="_blank" rel="noopener noreferrer" style="padding:10px 12px;border-radius:10px;background:#f04a0a;color:#fff;text-decoration:none;font-size:14px;font-weight:800;${itemUrl ? '' : 'pointer-events:none;opacity:.5'}">Haberi Aç</a><button type="button" data-copy-url="${esc(itemUrl)}" class="tb-small-btn">URL kopyala</button><button type="button" data-add-queue='${esc(JSON.stringify({ candidate_id: item.id, title: title(item), url: itemUrl, source_name: sourceName(item), image_url: itemImage, status: 'new', priority: score(item, 'discover_score') }))}' class="tb-small-btn">Yazılacaklara ekle</button><button type="button" data-dot-dispatch='${esc(JSON.stringify({ candidate_id: item.id, title: title(item), url: itemUrl, source_name: sourceName(item) }))}' class="tb-small-btn" ${itemUrl ? '' : 'disabled'}>● Dot’a gönder</button></div>
       </div>
     </article>`;
   }
@@ -444,6 +444,29 @@
         const old = copy.textContent;
         copy.textContent = 'Kopyalandı';
         setTimeout(() => { copy.textContent = old; }, 1000);
+        return;
+      }
+      const dotButton = event.target.closest('[data-dot-dispatch]');
+      if (dotButton) {
+        const old = dotButton.textContent;
+        dotButton.disabled = true;
+        dotButton.textContent = 'Dot’a gönderiliyor…';
+        try {
+          const payload = JSON.parse(dotButton.getAttribute('data-dot-dispatch') || '{}');
+          const response = await fetch('/api/dot-dispatch', {
+            method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'enqueue', ...payload })
+          });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+          dotButton.textContent = data.duplicate ? '✓ Zaten Dot kuyruğunda' : '✓ Dot kuyruğunda';
+          dotButton.style.borderColor = '#22c55e';
+          dotButton.style.color = '#166534';
+        } catch (error) {
+          dotButton.disabled = false;
+          dotButton.textContent = old;
+          alert(`Dot gönderimi başarısız: ${error.message || error}`);
+        }
         return;
       }
       if (event.target.closest('#tb-copy-selected')) {
