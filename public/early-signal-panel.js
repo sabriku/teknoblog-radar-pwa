@@ -24,7 +24,7 @@
     const links = (item.items || []).slice(0, 4).map((entry) => `<a href="${esc(entry.url)}" target="_blank" rel="noopener">${esc(entry.source_name || 'Kaynak')}</a>`).join('');
     const references = (item.editorial_package?.references || item.source_timeline || item.items || []).slice(0, 6).map((entry) => ({ title: entry.title || '', source_name: entry.source_name || entry.source || '', url: entry.url || '' })).filter((entry) => entry.url);
     const queueData = esc(JSON.stringify({ candidate_id: news.id, title: item.cluster_name, url: news.url, source_name: news.source_name, image_url: news.image_url, status: 'new', priority: item.first_mover_score, references }));
-    return `<article class="tb-e-card ${esc(item.signal_stage)}">${news.image_url ? `<img src="${esc(news.image_url)}" alt="" loading="lazy" onerror="this.hidden=true">` : ''}<div class="tb-e-body"><div class="tb-e-badges"><b>${stageLabel(item.signal_stage)}</b><span>Öncülük ${item.first_mover_score}</span><span>Patlama %${item.breakout_probability}</span></div><h3>${esc(item.cluster_name)}</h3><p><strong>İlk sinyal:</strong> ${esc(item.first_source_name || '—')} · ${ago(item.first_seen_at)}</p><div class="tb-e-window">⏱ ${esc(lead)}</div><div class="tb-e-facts"><span>${item.source_count} kaynak</span><span>${item.official_source_count} resmî</span><span>${item.competitor_count} Türkiye rakibi</span><span>Hız ${item.acceleration_score}</span></div><ul>${(item.reasons || []).map((reason) => `<li>${esc(reason)}</li>`).join('')}</ul><nav>${links}<button data-early-queue="${queueData}">＋ Yazılacaklara</button><button data-early-slack="${queueData}">Slack'e gönder</button></nav></div></article>`;
+    return `<article class="tb-e-card ${esc(item.signal_stage)}">${news.image_url ? `<img src="${esc(news.image_url)}" alt="" loading="lazy" onerror="this.hidden=true">` : ''}<div class="tb-e-body"><div class="tb-e-badges"><b>${stageLabel(item.signal_stage)}</b><span>Öncülük ${item.first_mover_score}</span><span>Patlama %${item.breakout_probability}</span></div><h3>${esc(item.cluster_name)}</h3><p><strong>İlk sinyal:</strong> ${esc(item.first_source_name || '—')} · ${ago(item.first_seen_at)}</p><div class="tb-e-window">⏱ ${esc(lead)}</div><div class="tb-e-facts"><span>${item.source_count} kaynak</span><span>${item.official_source_count} resmî</span><span>${item.competitor_count} Türkiye rakibi</span><span>Hız ${item.acceleration_score}</span></div><ul>${(item.reasons || []).map((reason) => `<li>${esc(reason)}</li>`).join('')}</ul><nav>${links}<button data-early-queue="${queueData}">＋ Yazılacaklara</button><button data-early-slack="${queueData}">Slack'e gönder</button><button data-early-dot="${queueData}" ${news.url ? '' : 'disabled'}>● Dot’a gönder</button></nav></div></article>`;
   }
 
   function render() {
@@ -48,6 +48,31 @@
     if (event.target.closest('[data-early-reload]')) { load(); return; }
     const queue = event.target.closest('[data-early-queue]');
     if (queue) { try { await post({ action: 'queue_upsert', ...JSON.parse(queue.dataset.earlyQueue) }); queue.textContent = '✓ Eklendi'; queue.disabled = true; } catch (error) { alert(error.message); } return; }
+    const dot = event.target.closest('[data-early-dot]');
+    if (dot) {
+      const old = dot.textContent;
+      dot.disabled = true;
+      dot.textContent = 'Dot’a gönderiliyor…';
+      try {
+        const item = JSON.parse(dot.dataset.earlyDot || '{}');
+        const response = await fetch('/api/dot-dispatch', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ action: 'enqueue', ...item })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+        dot.textContent = data.duplicate ? '✓ Zaten Dot kuyruğunda' : '✓ Dot kuyruğunda';
+        dot.style.borderColor = '#22c55e';
+        dot.style.color = '#166534';
+      } catch (error) {
+        dot.disabled = false;
+        dot.textContent = old;
+        alert(`Dot gönderimi başarısız: ${error.message || error}`);
+      }
+      return;
+    }
     const slack = event.target.closest('[data-early-slack]');
     if (slack) { try { const item = JSON.parse(slack.dataset.earlySlack); const response = await fetch('/api/push-to-slack', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ items: [item] }) }); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`); await post({ action: 'queue_upsert', ...item }); slack.textContent = '✓ Gönderildi'; slack.disabled = true; } catch (error) { alert(error.message); } }
   });
