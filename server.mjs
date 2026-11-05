@@ -23,6 +23,7 @@ const API_ROUTES = {
   '/api/editorial-insights': './api/editorial-insights.js',
   '/api/editorial-origin': './api/editorial-origin.js',
   '/api/editorial-review': './api/editorial-review.js',
+  '/api/dot-dispatch': './api/dot-dispatch.js',
   '/api/google-news-tech': './api/google-news-tech.js',
   '/api/google-auth': './api/google-auth.js',
   '/api/google-auth/callback': './api/google-auth.js',
