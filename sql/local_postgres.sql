@@ -703,3 +703,24 @@ ON CONFLICT(name) DO NOTHING;
 CREATE INDEX IF NOT EXISTS idx_early_signal_snapshots_time ON early_signal_snapshots(capture_bucket DESC,first_mover_score DESC);
 CREATE INDEX IF NOT EXISTS idx_google_trends_cache_expiry ON google_trends_cache(expires_at DESC);
 CREATE INDEX IF NOT EXISTS idx_google_news_cache_expiry ON google_news_cache(expires_at DESC);
+
+CREATE TABLE IF NOT EXISTS dot_dispatch_queue (
+  id BIGSERIAL PRIMARY KEY,
+  request_key TEXT NOT NULL UNIQUE,
+  candidate_id TEXT,
+  title TEXT NOT NULL,
+  source_url TEXT NOT NULL,
+  source_name TEXT,
+  prompt TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  claimed_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  scheduled_for TIMESTAMPTZ,
+  published_url TEXT,
+  worker_note TEXT,
+  error TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_dot_dispatch_queue_status ON dot_dispatch_queue(status,created_at);
+CREATE INDEX IF NOT EXISTS idx_dot_dispatch_queue_url ON dot_dispatch_queue(source_url,created_at DESC);
